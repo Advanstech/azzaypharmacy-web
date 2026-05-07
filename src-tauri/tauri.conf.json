@@ -1,0 +1,53 @@
+{
+  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Azzay Pharmacy",
+  "version": "2.0.0",
+  "identifier": "com.azzay.pharmacy.nexus",
+  "build": {
+    "frontendDist": "../out",
+    "devUrl": "http://localhost:3001",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "TAURI_ENV_PLATFORM=desktop npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Azzay Pharmacy Pro \u2014 NEXUS v2.0",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1280,
+        "minHeight": 800,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "copyright": "2026 Azzay Pharmacy",
+    "category": "Business",
+    "shortDescription": "AI-Powered Pharmaceutical Intelligence Terminal",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": null,
+      "entitlements": null
+    },
+    "android": {
+      "debugApplicationIdSuffix": ".debug"
+    }
+  }
+}

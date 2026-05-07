@@ -1,0 +1,37 @@
+{
+  "name": "Azzay Pharmacy Pro NEXUS",
+  "short_name": "Azzay NEXUS",
+  "description": "AI-Powered Pharmaceutical Intelligence Terminal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#060B14",
+  "theme_color": "#00D9FF",
+  "orientation": "landscape",
+  "categories": ["business", "medical"],
+  "icons": [
+    {
+      "src": "/azzay-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/azzay-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Point of Sale",
+      "url": "/dashboard/pos",
+      "description": "Open POS terminal"
+    },
+    {
+      "name": "Inventory",
+      "url": "/dashboard/inventory",
+      "description": "View inventory"
+    }
+  ]
+}
