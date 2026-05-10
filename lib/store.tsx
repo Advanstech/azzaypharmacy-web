@@ -450,7 +450,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       setMe(meData.me ?? null);
     } catch (e: any) {
       console.warn('[store] staff fetch failed:', e.message);
-      if (e.message.includes('Unauthorized') || e.message.includes('Auth')) {
+      if (e.message.includes('Unauthorized') || e.message.includes('not authenticated')) {
         setError('Your session has expired. Please log out and sign in again to view the staff list.');
       }
     } finally {
@@ -521,6 +521,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const refetchAll = useCallback(async () => {
     setSyncStatus('syncing');
+    setError(null);
     try {
       await Promise.all([
         refetchProducts(),

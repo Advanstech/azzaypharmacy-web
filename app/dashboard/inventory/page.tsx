@@ -10,6 +10,7 @@ import {
   MoreHorizontal
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth-context';
 import { usePagination } from '@/hooks/use-pagination';
 
 const STATUS_CONFIG = {
@@ -36,6 +37,7 @@ export default function InventoryPage() {
     adjustProductStock,
     error: storeError
   } = useStore();
+  const { signOut } = useAuth();
   const router = useRouter();
 
   const [search, setSearch] = useState('');
@@ -283,10 +285,19 @@ export default function InventoryPage() {
       </div>
 
       {storeError && (
-        <div className="p-4 rounded-xl border flex items-center gap-3 animate-bounce" 
+        <div className="p-4 rounded-xl border flex items-center justify-between gap-3"
           style={{ background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>
-          <AlertCircle size={20} />
-          <p className="text-sm font-bold">{storeError}</p>
+          <div className="flex items-center gap-3">
+            <AlertCircle size={20} />
+            <p className="text-sm font-bold">{storeError}</p>
+          </div>
+          <button
+            onClick={signOut}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg border shrink-0"
+            style={{ borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.15)' }}
+          >
+            Sign Out
+          </button>
         </div>
       )}
 
@@ -389,9 +400,22 @@ export default function InventoryPage() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <Truck size={12} style={{ color: card.subtle }} />
-                        <span className="text-[10px] font-medium max-w-[120px] truncate" style={{ color: card.muted }}>
-                          {suppliers.find(s => s.id === p.supplierId)?.name || 'Direct / Unknown'}
-                        </span>
+                        {suppliers.find(s => s.id === p.supplierId) ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/dashboard/suppliers/${p.supplierId}`);
+                            }}
+                            className="text-[10px] font-medium max-w-[120px] truncate hover:underline transition-colors"
+                            style={{ color: card.primary }}
+                          >
+                            {suppliers.find(s => s.id === p.supplierId)?.name}
+                          </button>
+                        ) : (
+                          <span className="text-[10px] font-medium max-w-[120px] truncate" style={{ color: card.muted }}>
+                            Direct / Unknown
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-5 py-4 font-mono text-sm font-bold" style={{ color: card.text }}>{p.stock}</td>

@@ -12,19 +12,18 @@ let _token: string | null = null;
 export function setAuthToken(token: string | null) { _token = token; }
 
 async function resolveAuthToken(): Promise<string | null> {
-  if (_token) return _token;
-
   try {
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token ?? null;
     if (token) {
       _token = token;
+      return token;
     }
-    return token;
   } catch (error) {
     console.warn('[gql] Failed to resolve auth token from Supabase session', error);
-    return null;
   }
+  // Fall back to externally-set token if session lookup failed
+  return _token;
 }
 
 export async function gql<T = unknown>(
@@ -55,6 +54,7 @@ export async function gql<T = unknown>(
 
     if (res.status === 401) {
       console.error(`[gql] [${queryName}] Unauthorized! Status: 401`);
+      _token = null; // Clear stale token so next call forces a fresh session lookup
     }
 
     if (!res.ok) {

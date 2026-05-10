@@ -1,13 +1,13 @@
 {
-  "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Azzay Pharmacy",
   "version": "2.0.0",
   "identifier": "com.azzay.pharmacy.nexus",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3001",
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "TAURI_ENV_PLATFORM=desktop npm run build"
+    "beforeDevCommand": "pnpm dev --port 3001",
+    "beforeBuildCommand": "TAURI_ENV_PLATFORM=desktop pnpm build"
   },
   "app": {
     "windows": [

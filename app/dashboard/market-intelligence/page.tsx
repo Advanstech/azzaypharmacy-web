@@ -2,21 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { 
+import { useRouter } from 'next/navigation';
+import {
   TrendingUp, TrendingDown, Zap, Target, Activity,
   AlertTriangle, Crosshair, Map, ShieldAlert, Cpu, Package, CheckCircle2,
   RefreshCw, Clock, ArrowRight, ArrowUpRight, DollarSign, LocateFixed, Eye, Newspaper, HeartPulse, GraduationCap,
   Sparkles, ChevronRight, Search, BrainCircuit
 } from 'lucide-react';
 import { mockIntelligenceData } from '@/lib/intelligence-data';
+import { useStore } from '@/lib/store';
 
 export default function MarketIntelligencePage() {
   const { theme } = useTheme();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState('Market Prices');
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const { products } = useStore();
 
   useEffect(() => {
     setMounted(true);
@@ -356,7 +360,23 @@ export default function MarketIntelligencePage() {
                       <div className="absolute -right-10 -top-10 opacity-5"><BrainCircuit size={200} /></div>
                       
                       <div className="flex items-center justify-between relative z-10">
-                        <h4 className="text-xl font-display font-bold text-[#00D9FF]">{drug.product}</h4>
+                        <button onClick={() => {
+                          // Find matching product in inventory
+                          const matchingProduct = products.find(p =>
+                            p.name.toLowerCase().includes(drug.product.toLowerCase()) ||
+                            p.genericName?.toLowerCase().includes(drug.product.toLowerCase()) ||
+                            drug.product.toLowerCase().includes(p.name.toLowerCase())
+                          );
+
+                          if (matchingProduct) {
+                            router.push(`/dashboard/inventory/${matchingProduct.id}`);
+                          } else {
+                            // If no exact match, navigate to inventory with search query
+                            router.push(`/dashboard/inventory?search=${encodeURIComponent(drug.product)}`);
+                          }
+                        }} className="text-xl font-display font-bold text-[#00D9FF] hover:underline transition-colors text-left">
+                          {drug.product}
+                        </button>
                         <span className="px-3 py-1 rounded-full bg-[#00D9FF]/10 text-[#00D9FF] text-[10px] font-bold border border-[#00D9FF]/20">AI Monograph</span>
                       </div>
 

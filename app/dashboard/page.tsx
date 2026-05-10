@@ -118,10 +118,14 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
     <div className="space-y-6 animate-in fade-in duration-500">
 
       {/* ── WELCOME + ROLE BADGE ─────────────────────────────── */}
-      <div className="sticky top-0 z-20 flex items-center justify-between pb-4 pt-4 -mt-4 backdrop-blur-xl"
+      <div className="sticky -top-6 z-20 flex items-center justify-between pb-4 pt-4 -mt-6 backdrop-blur-xl"
         style={{ 
           background: isDark ? 'rgba(10, 14, 26, 0.85)' : 'rgba(240, 249, 255, 0.85)',
-          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.3)'}`
+          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.3)'}`,
+          marginLeft: '-24px',
+          marginRight: '-24px',
+          paddingLeft: '24px',
+          paddingRight: '24px',
         }}>
         <div>
           <h2 className="font-display text-xl font-bold" style={{ color: s.textMain }}>Executive Command</h2>
@@ -142,7 +146,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           { label: 'Staff on Duty', value: `${staffOnDuty}/${totalStaff}`, sub: `${totalStaff - staffOnDuty} off duty · ${staff.filter(s => !s.isActive).length} inactive`, icon: UserCheck, color: '#6366F1' },
         ].map(kpi => (
           <div key={kpi.label} className="rounded-2xl border p-5 backdrop-blur-xl transition-all hover:scale-[1.01]"
-            style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+            style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: s.border, boxShadow: s.shadow }}>
             <div className="flex items-center gap-2 mb-3">
               <div className="p-2 rounded-lg" style={{ background: `${kpi.color}18`, color: kpi.color }}>
                 <kpi.icon size={18} />
@@ -327,10 +331,14 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
     <div className="space-y-6 animate-in fade-in duration-500">
 
       {/* ── WELCOME ────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 flex items-center justify-between pb-4 pt-4 -mt-4 backdrop-blur-xl"
+      <div className="sticky -top-6 z-20 flex items-center justify-between pb-4 pt-4 -mt-6 backdrop-blur-xl"
         style={{ 
           background: isDark ? 'rgba(10, 14, 26, 0.85)' : 'rgba(240, 249, 255, 0.85)',
-          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.3)'}`
+          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.3)'}`,
+          marginLeft: '-24px',
+          marginRight: '-24px',
+          paddingLeft: '24px',
+          paddingRight: '24px',
         }}>
         <div>
           <h2 className="font-display text-xl font-bold" style={{ color: s.textMain }}>Clinical Station</h2>
@@ -353,7 +361,7 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
           { label: 'Products', value: loadingProducts ? '…' : String(products.length), sub: 'SKUs in formulary', icon: Pill, color: '#8B5CF6' },
         ].map(kpi => (
           <div key={kpi.label} className="rounded-2xl border p-5 backdrop-blur-xl transition-all hover:scale-[1.01]"
-            style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+            style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: s.border, boxShadow: s.shadow }}>
             <div className="flex items-center gap-2 mb-3">
               <div className="p-2 rounded-lg" style={{ background: `${kpi.color}18`, color: kpi.color }}>
                 <kpi.icon size={18} />
@@ -492,10 +500,14 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
     <div className="space-y-6 animate-in fade-in duration-500">
 
       {/* ── WELCOME ────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-20 flex items-center justify-between pb-4 pt-4 -mt-4 backdrop-blur-xl"
+      <div className="sticky -top-6 z-20 flex items-center justify-between pb-4 pt-4 -mt-6 backdrop-blur-xl"
         style={{ 
           background: isDark ? 'rgba(10, 14, 26, 0.85)' : 'rgba(240, 249, 255, 0.85)',
-          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.3)'}`
+          borderBottom: `1px solid ${isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.3)'}`,
+          marginLeft: '-24px',
+          marginRight: '-24px',
+          paddingLeft: '24px',
+          paddingRight: '24px',
         }}>
         <div>
           <h2 className="font-display text-xl font-bold" style={{ color: s.textMain }}>Sales Terminal</h2>
@@ -540,7 +552,7 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
           },
         ].map(kpi => (
           <div key={kpi.label} className="rounded-2xl border p-5 backdrop-blur-xl transition-all hover:scale-[1.01]"
-            style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+            style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: s.border, boxShadow: s.shadow }}>
             <div className="flex items-center gap-2 mb-3">
               <div className="p-2 rounded-lg" style={{ background: `${kpi.color}18`, color: kpi.color }}>
                 <kpi.icon size={18} />

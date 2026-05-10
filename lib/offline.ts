@@ -41,6 +41,19 @@ export async function saveToCache(storeName: string, items: any[]) {
   }
 }
 
+export async function clearCache(): Promise<void> {
+  try {
+    const db = await openDB();
+    const stores = ['products_cache', 'staff_cache', 'pending_sales'];
+    for (const storeName of stores) {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.objectStore(storeName).clear();
+    }
+  } catch (e) {
+    console.warn('[offline] Failed to clear cache:', e);
+  }
+}
+
 export async function getFromCache(storeName: string): Promise<any[]> {
   try {
     const db = await openDB();

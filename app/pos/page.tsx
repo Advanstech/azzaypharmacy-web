@@ -50,7 +50,7 @@ interface CartItem {
 type PaymentMethod = 'Cash' | 'MoMo' | 'Card' | 'NHIS';
 
 function POSInner() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const { 
     products: liveProducts, 
@@ -64,7 +64,7 @@ function POSInner() {
   } = useStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme ?? theme) === 'dark';
 
   // Clock
   const [now, setNow] = useState(new Date());
@@ -231,7 +231,7 @@ function POSInner() {
   const c = {
     header: '#059669', // Emerald Green
     bg: isDark ? '#0A0F1E' : '#F1F5F9',
-    card: isDark ? 'rgba(15,23,42,0.8)' : '#fff',
+    card: isDark ? 'rgba(15,23,42,0.86)' : '#fff',
     border: isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.5)',
     text: isDark ? '#F8FAFC' : '#0F172A',
     muted: isDark ? '#94A3B8' : '#64748B',
@@ -239,7 +239,7 @@ function POSInner() {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[#f3f4f6]">
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: c.bg, color: c.text }}>
       {/* Custom Header - EXACT Match */}
       <header className="flex items-center justify-between px-4 h-14 shrink-0 z-10 text-white"
         style={{ background: '#059669' }}>
@@ -296,7 +296,7 @@ function POSInner() {
       {/* Main Content */}
       <main className="flex flex-1 overflow-hidden">
         {/* Left: Product Selection */}
-        <div className="flex flex-col flex-1 min-w-0 border-r bg-white/50" style={{ borderColor: c.border }}>
+        <div className="flex flex-col flex-1 min-w-0 border-r" style={{ borderColor: c.border, background: isDark ? 'rgba(10,15,30,0.92)' : 'rgba(255,255,255,0.55)' }}>
           
           {storeError && (
             <div className="p-3 mx-4 mt-4 rounded-xl border flex items-center justify-between gap-3 animate-pulse" 
@@ -312,23 +312,23 @@ function POSInner() {
           {/* Search Bar matching screenshot */}
           <div className="px-6 pt-4 pb-2 z-20">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: c.muted }} size={20} />
               <input 
                 type="text" 
                 placeholder="Search products by name, brand, or category..." 
-                className="w-full pl-12 pr-12 py-3 rounded-xl border focus:outline-none focus:border-[#059669] transition-colors text-sm bg-white text-slate-800"
-                style={{ borderColor: c.border }}
+                className="w-full pl-12 pr-12 py-3 rounded-xl border focus:outline-none focus:border-[#059669] transition-colors text-sm"
+                style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.9)' : '#fff', color: c.text }}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 autoFocus
               />
               {search && (
-                <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <button onClick={() => setSearch('')} className="absolute right-4 top-1/2 -translate-y-1/2" style={{ color: c.muted }}>
                   <X size={18} />
                 </button>
               )}
             </div>
-            <p className="text-xs text-slate-500 mt-2 ml-1 font-medium">
+            <p className="text-xs mt-2 ml-1 font-medium" style={{ color: c.muted }}>
               {searchResults.length} products found
             </p>
           </div>
@@ -338,8 +338,8 @@ function POSInner() {
               <button 
                 onClick={() => scrollCategories('left')}
                 aria-label="Scroll Categories Left"
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center border hover:scale-110 transition-transform"
-                style={{ borderColor: c.border }}
+                className="absolute left-0 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 transition-transform"
+                style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.95)' : '#fff' }}
               >
                 <ChevronLeft size={16} style={{ color: c.muted }} />
               </button>
@@ -368,8 +368,8 @@ function POSInner() {
               <button 
                 onClick={() => scrollCategories('right')}
                 aria-label="Scroll Categories Right"
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center border hover:scale-110 transition-transform"
-                style={{ borderColor: c.border }}
+                className="absolute right-0 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 transition-transform"
+                style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.95)' : '#fff' }}
               >
                 <ChevronRight size={16} style={{ color: c.muted }} />
               </button>
@@ -400,7 +400,7 @@ function POSInner() {
               </div>
             ) : filteredProducts.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center gap-4 opacity-50">
-                <div className="w-20 h-20 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
+                <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: isDark ? 'rgba(30,41,59,0.8)' : 'rgba(203,213,225,0.8)' }}>
                   <Package size={48} />
                 </div>
                 <div className="text-center">
@@ -428,15 +428,16 @@ function POSInner() {
                   <button 
                     key={p.id} onClick={() => addToCart(p)}
                     disabled={p.stockQuantity === 0}
-                    className="group text-left rounded-2xl border bg-white hover:border-[#059669] transition-all shadow-sm active:scale-[0.98] overflow-hidden relative"
+                    className="group text-left rounded-2xl border hover:border-[#059669] transition-all shadow-sm active:scale-[0.98] overflow-hidden relative"
                     style={{ 
+                      background: isDark ? 'rgba(15,23,42,0.86)' : '#fff',
                       borderColor: cart.find(i => i.product.id === p.id) ? '#059669' : c.border,
                       opacity: p.stockQuantity === 0 ? 0.5 : 1
                     }}
                   >
                     <div className="flex w-full h-full p-2.5 gap-4 items-center">
                       {/* Left: Image Container */}
-                      <div className="w-24 h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden bg-slate-100">
+                      <div className="w-24 h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden" style={{ background: isDark ? 'rgba(30,41,59,0.7)' : '#F1F5F9' }}>
                         <img 
                           src={getProductImage(p)} 
                           alt={p.name} 
@@ -452,7 +453,7 @@ function POSInner() {
                               {p.category || 'OTC'}
                             </span>
                           </div>
-                          <h3 className="font-extrabold text-sm text-slate-800 leading-tight truncate uppercase pr-16 hover:text-[#059669]">
+                          <h3 className="font-extrabold text-sm leading-tight truncate uppercase pr-16 hover:text-[#059669]" style={{ color: c.text }}>
                             <span onClick={(e) => { e.stopPropagation(); setPreviewProduct(p); }} className="hover:underline cursor-pointer">{p.name}</span>
                           </h3>
                         </div>
@@ -487,20 +488,20 @@ function POSInner() {
         </div>
 
         {/* Right: Cart & Preview Container */}
-        <div className="w-[380px] xl:w-[420px] shrink-0 flex flex-col z-20 border-l bg-white relative overflow-hidden" style={{ borderColor: c.border }}>
+        <div className="w-[380px] xl:w-[420px] shrink-0 flex flex-col z-20 border-l relative overflow-hidden" style={{ borderColor: c.border, background: c.card }}>
           <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: c.border }}>
             <div className="flex items-center gap-2">
-              <ShoppingCart size={18} className="text-slate-700" />
-              <h2 className="font-bold text-sm text-slate-800">Current Sale</h2>
+              <ShoppingCart size={18} style={{ color: c.text }} />
+              <h2 className="font-bold text-sm" style={{ color: c.text }}>Current Sale</h2>
             </div>
             <button onClick={() => setCart([])} className="text-[10px] font-bold text-red-500 hover:underline">Clear Cart</button>
           </div>
 
           {/* CUSTOMER (optional) Section */}
-          <div className="p-4 border-b bg-slate-50/50" style={{ borderColor: c.border }}>
+          <div className="p-4 border-b" style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.68)' : 'rgba(248,250,252,0.75)' }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                <div className="w-3 h-3 rounded bg-slate-200 flex items-center justify-center text-[8px]">X</div>
+              <span className="text-[10px] font-bold flex items-center gap-1" style={{ color: c.muted }}>
+                <div className="w-3 h-3 rounded flex items-center justify-center text-[8px]" style={{ background: isDark ? 'rgba(30,41,59,0.85)' : '#E2E8F0' }}>X</div>
                 CUSTOMER <span className="opacity-60 font-normal">(optional)</span>
               </span>
             </div>
@@ -521,7 +522,8 @@ function POSInner() {
                 <input 
                   type="text" 
                   placeholder="Search by PP- code..." 
-                  className="flex-1 px-3 py-2 text-xs rounded-lg border bg-white focus:outline-none focus:border-[#059669]"
+                  className="flex-1 px-3 py-2 text-xs rounded-lg border focus:outline-none focus:border-[#059669]"
+                  style={{ background: isDark ? 'rgba(15,23,42,0.9)' : '#fff', borderColor: c.border, color: c.text }}
                 />
                 <button 
                   onClick={() => setShowCustomerSearch(true)}
@@ -554,7 +556,7 @@ function POSInner() {
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => updateQty(item.product.id, -1)} className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-800 flex items-center justify-center"><Minus size={12} /></button>
+                      <button onClick={() => updateQty(item.product.id, -1)} className="w-7 h-7 rounded-lg bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-200"><Minus size={12} /></button>
                       <span className="w-8 text-center font-mono text-sm font-bold">{item.quantity}</span>
                       <button onClick={() => updateQty(item.product.id, 1)} className="w-7 h-7 rounded-lg bg-primary/20 text-primary flex items-center justify-center"><Plus size={12} /></button>
                     </div>
@@ -582,7 +584,9 @@ function POSInner() {
                 <button 
                   key={m} onClick={() => setPaymentMethod(m)}
                   className={`py-2 rounded-xl text-[10px] font-bold border transition-all ${
-                    paymentMethod === m ? 'bg-primary text-white border-primary' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 opacity-60'
+                    paymentMethod === m 
+                      ? 'bg-primary text-white border-primary' 
+                      : 'bg-white text-slate-800 border-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 opacity-60'
                   }`}
                 >
                   {m}

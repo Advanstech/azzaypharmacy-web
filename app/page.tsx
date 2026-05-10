@@ -150,6 +150,7 @@ function StaffSelectorModal({
 // ── Particle Field ─────────────────────────────────────────────────────────
 function ParticleField({ isDark }: { isDark: boolean }) {
   const ref = useRef<THREE.Points>(null);
+  const elapsed = useRef(0);
   const count = 800;
   const positions = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
@@ -157,8 +158,9 @@ function ParticleField({ isDark }: { isDark: boolean }) {
     positions[i * 3 + 1] = (Math.random() - 0.5) * 30;
     positions[i * 3 + 2] = (Math.random() - 0.5) * 30;
   }
-  useFrame((s) => {
-    if (ref.current) ref.current.rotation.y = s.clock.elapsedTime * 0.02;
+  useFrame((s: any) => {
+    elapsed.current += s.delta;
+    if (ref.current) ref.current.rotation.y = elapsed.current * 0.02;
   });
   return (
     <points ref={ref}>
@@ -173,14 +175,16 @@ function ParticleField({ isDark }: { isDark: boolean }) {
 // ── DNA Double Helix ────────────────────────────────────────────────────────
 function DNAHelix({ isDark }: { isDark: boolean }) {
   const group = useRef<THREE.Group>(null);
+  const elapsed = useRef(0);
   const N = 60;
   const R = 1.2;
   const H = 10;
 
-  useFrame((s) => {
+  useFrame((s: any) => {
+    elapsed.current += s.delta;
     if (group.current) {
-      group.current.rotation.y = s.clock.elapsedTime * 0.18;
-      group.current.position.y = Math.sin(s.clock.elapsedTime * 0.3) * 0.15;
+      group.current.rotation.y = elapsed.current * 0.15;
+      group.current.position.y = Math.sin(elapsed.current * 0.3) * 0.15;
     }
   });
 
@@ -226,10 +230,12 @@ function Molecule({ pos, color, speed, distort }: { pos: [number,number,number];
 // ── Rotating Torus (pill shape) ─────────────────────────────────────────────
 function PillRing({ isDark }: { isDark: boolean }) {
   const ref = useRef<THREE.Mesh>(null);
-  useFrame((s) => {
+  const elapsed = useRef(0);
+  useFrame((s: any) => {
+    elapsed.current += s.delta;
     if (ref.current) {
-      ref.current.rotation.x = s.clock.elapsedTime * 0.25;
-      ref.current.rotation.z = s.clock.elapsedTime * 0.15;
+      ref.current.rotation.x = elapsed.current * 0.25;
+      ref.current.rotation.z = elapsed.current * 0.15;
     }
   });
   return (
@@ -243,10 +249,12 @@ function PillRing({ isDark }: { isDark: boolean }) {
 // ── Cross / Plus (medical symbol) ──────────────────────────────────────────
 function MedicalCross({ isDark }: { isDark: boolean }) {
   const ref = useRef<THREE.Group>(null);
-  useFrame((s) => {
+  const elapsed = useRef(0);
+  useFrame((s: any) => {
+    elapsed.current += s.delta;
     if (ref.current) {
-      ref.current.rotation.z = s.clock.elapsedTime * 0.2;
-      ref.current.position.y = 2 + Math.sin(s.clock.elapsedTime * 0.5) * 0.3;
+      ref.current.rotation.z = elapsed.current * 0.2;
+      ref.current.position.y = 2 + Math.sin(elapsed.current * 0.5) * 0.3;
     }
   });
   const mat = <meshStandardMaterial color={isDark ? '#34D399' : '#059669'} emissive={isDark ? '#34D399' : '#059669'} emissiveIntensity={isDark ? 0.7 : 0.25} metalness={0.6} roughness={0.2} />;
@@ -638,6 +646,7 @@ export default function LoginPage() {
   const router                  = useRouter();
   const { resolvedTheme }       = useTheme();
   const passwordRef             = useRef<HTMLInputElement>(null);
+  const isFetchingRef           = useRef(false);
 
   useEffect(() => {
     setMounted(true);
@@ -645,6 +654,9 @@ export default function LoginPage() {
   }, []);
 
   const fetchStaff = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    
     try {
       const cached = await getFromCache('staff_cache');
       if (cached?.length) setStaff(cached);
@@ -656,6 +668,8 @@ export default function LoginPage() {
       }
     } catch (e) {
       console.error("Failed to fetch staff list", e);
+    } finally {
+      isFetchingRef.current = false;
     }
   };
 
