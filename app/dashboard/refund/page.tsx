@@ -16,13 +16,14 @@ export default function RefundPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && theme === 'dark';
 
-  const { sales, me } = useStore();
+  const { sales, me, refundSale } = useStore();
   const role = user?.user_metadata?.role || me?.role;
-  const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   const [receiptSearch, setReceiptSearch] = useState('');
   const [foundSale, setFoundSale] = useState<any>(null);
   const [refundReason, setRefundReason] = useState('');
+  const [processing, setProcessing] = useState(false);
 
   const lookupReceipt = () => {
     const q = receiptSearch.trim().toLowerCase();
@@ -44,31 +45,76 @@ export default function RefundPage() {
     success: '#10B981',
   };
 
-  const [refunds, setRefunds] = useState([
-    { id: 1, receipt: 'AZY-171483001', date: '2026-05-04', item: 'Amoxiclav 625mg', amount: 110, reason: 'Wrong dosage dispensed', status: 'PENDING', requestedBy: 'Cashier Kwame' },
-    { id: 2, receipt: 'AZY-171483055', date: '2026-05-03', item: 'Paracetamol 500mg', amount: 5, reason: 'Duplicate purchase', status: 'APPROVED', requestedBy: 'Pharmacist Dery' },
-  ]);
+  // Real refunds are those already marked as refunded in our sales list
+  // Pending refunds are simulated for this demo as "requests" that haven't been processed yet
+  // In a real system, we'd have a RefundRequest table. For now, I'll use local state for pending.
+  const [refundRequests, setRefundRequests] = useState<any[]>([]);
 
-  const handleAction = (id: number, status: string) => {
-    setRefunds(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  const handleRefund = async (saleId: string, reason: string) => {
+    setProcessing(true);
+    try {
+      await refundSale(saleId, reason);
+      setFoundSale(null);
+      setReceiptSearch('');
+      setRefundReason('');
+      // Remove from pending if it was there
+      setRefundRequests(prev => prev.filter(r => r.saleId !== saleId));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProcessing(false);
+    }
   };
+
+  const submitRequest = () => {
+    if (!foundSale || !refundReason.trim()) return;
+    
+    // If manager, process immediately
+    if (isManager) {
+      handleRefund(foundSale.id, refundReason);
+      return;
+    }
+
+    // Otherwise, add to pending requests (local for now)
+    setRefundRequests(prev => [{
+      id: `req-${Date.now()}`,
+      saleId: foundSale.id,
+      date: new Date().toISOString(),
+      item: foundSale.items[0]?.product?.name || 'Multiple items',
+      amount: foundSale.totalAmount,
+      reason: refundReason,
+      status: 'PENDING',
+      requestedBy: me?.name || user?.email || 'Staff',
+      sale: foundSale
+    }, ...prev]);
+    setFoundSale(null);
+    setReceiptSearch('');
+    setRefundReason('');
+  };
+
+  const recentRefunds = sales.filter(s => (s as any).status === 'REFUNDED').slice(0, 10);
+
+  if (!mounted) return null;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>Sales Refunds</h1>
-          <p className="text-sm" style={{ color: c.muted }}>Process returns and manage credit notes</p>
+          <p className="text-sm" style={{ color: c.muted }}>
+            {isManager ? 'Process returns and authorize refunds' : 'Initiate return requests for manager approval'}
+          </p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/* Initiation Section */}
           <div className="rounded-[32px] border p-8 text-center backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
             <div className="w-16 h-16 rounded-full bg-slate-500/10 flex items-center justify-center mx-auto mb-4">
               <RotateCcw size={32} style={{ color: c.muted }} />
             </div>
-            <h3 className="text-lg font-bold mb-2" style={{ color: c.text }}>Initiate a Refund</h3>
+            <h3 className="text-lg font-bold mb-2" style={{ color: c.text }}>Find Sale to Refund</h3>
             <div className="max-w-md mx-auto relative mt-4">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2" size={18} style={{ color: c.muted }} />
               <input
@@ -76,123 +122,166 @@ export default function RefundPage() {
                 value={receiptSearch}
                 onChange={e => setReceiptSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && lookupReceipt()}
-                placeholder="Enter receipt ID or customer name..."
+                placeholder="Receipt ID or customer name..."
                 className="w-full pl-12 pr-4 py-3 rounded-2xl border outline-none font-mono text-sm"
                 style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: c.border, color: c.text }}
               />
               <button
                 onClick={lookupReceipt}
-                className="absolute right-2 top-1.5 bottom-1.5 px-4 rounded-xl font-bold text-[10px] bg-blue-500 text-white hover:bg-blue-600 transition-all">
-                FIND
+                className="absolute right-2 top-1.5 bottom-1.5 px-4 rounded-xl font-bold text-[10px] bg-blue-500 text-white hover:bg-blue-600 transition-all uppercase tracking-widest">
+                Search
               </button>
             </div>
+
             {foundSale && (
-              <div className="max-w-md mx-auto mt-4 p-4 rounded-2xl border" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', borderColor: c.border }}>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="font-mono text-xs font-bold" style={{ color: c.primary }}>{foundSale.id}</p>
-                  <span className="text-xs px-2 py-0.5 rounded-full font-bold" style={{ background: 'rgba(16,185,129,0.1)', color: c.success }}>Found</span>
+              <div className="max-w-md mx-auto mt-6 p-6 rounded-[24px] border text-left animate-in zoom-in-95 duration-300" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', borderColor: c.border }}>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <p className="font-mono text-[10px] font-black uppercase tracking-widest" style={{ color: c.primary }}>{foundSale.id}</p>
+                    <p className="text-xs font-bold" style={{ color: c.muted }}>{new Date(foundSale.createdAt).toLocaleDateString()}</p>
+                  </div>
+                  <span className="text-[10px] px-2.5 py-1 rounded-full font-black uppercase tracking-widest" style={{ background: 'rgba(16,185,129,0.1)', color: c.success }}>ELIGIBLE</span>
                 </div>
-                <p className="text-sm font-medium mb-1" style={{ color: c.text }}>{foundSale.customerName || 'Walk-in Customer'}</p>
-                <p className="text-xs mb-3" style={{ color: c.muted }}>{foundSale.items.length} items · GH₵ {foundSale.totalAmount.toFixed(2)} · {foundSale.paymentMethod}</p>
-                <div className="space-y-2">
-                  <textarea
-                    value={refundReason}
-                    onChange={e => setRefundReason(e.target.value)}
-                    placeholder="Reason for refund..."
-                    rows={2}
-                    className="w-full px-3 py-2 rounded-xl text-sm outline-none resize-none"
-                    style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
-                  />
-                  <button
-                    onClick={() => {
-                      if (!refundReason.trim()) return;
-                      setRefunds(prev => [{
-                        id: prev.length + 1,
-                        receipt: foundSale.id,
-                        date: new Date().toISOString().split('T')[0],
-                        item: foundSale.items[0]?.product?.name || 'Multiple items',
-                        amount: foundSale.totalAmount,
-                        reason: refundReason,
-                        status: 'PENDING',
-                        requestedBy: me?.name || user?.email || 'Staff',
-                      }, ...prev]);
-                      setFoundSale(null);
-                      setReceiptSearch('');
-                      setRefundReason('');
-                    }}
-                    className="w-full py-2.5 rounded-xl font-bold text-sm"
-                    style={{ background: c.primary, color: isDark ? '#060B14' : '#fff' }}>
-                    Submit Refund Request
-                  </button>
+                
+                <div className="space-y-1 mb-4">
+                  <p className="text-sm font-bold" style={{ color: c.text }}>{foundSale.customerName || 'Walk-in Customer'}</p>
+                  <p className="text-xs" style={{ color: c.muted }}>{foundSale.items?.length || 0} items · GH₵ {Number(foundSale.totalAmount).toFixed(2)} · {foundSale.paymentMethod}</p>
                 </div>
+
+                {foundSale.status === 'REFUNDED' ? (
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle size={14} /> This sale has already been refunded.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Reason for Refund</label>
+                    <textarea
+                      value={refundReason}
+                      onChange={e => setRefundReason(e.target.value)}
+                      placeholder="e.g. Expired product, Customer changed mind..."
+                      rows={2}
+                      className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none focus:ring-2 focus:ring-blue-500/20 transition-all"
+                      style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+                    />
+                    <button
+                      onClick={submitRequest}
+                      disabled={!refundReason.trim() || processing}
+                      className="w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50"
+                      style={{ background: c.primary, color: isDark ? '#060B14' : '#fff' }}>
+                      {processing ? 'Processing...' : isManager ? 'Execute Refund Now' : 'Request Refund Approval'}
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-            {receiptSearch && !foundSale && (
-              <p className="text-xs mt-3 text-center" style={{ color: c.muted }}>No sale found. Try the full receipt ID.</p>
             )}
           </div>
 
-          <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
-            <div className="p-4 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>
-              <h3 className="font-display text-sm font-bold" style={{ color: c.text }}>Pending Approvals</h3>
-            </div>
-            <div className="divide-y" style={{ borderColor: c.border }}>
-              {refunds.map((r) => (
-                <div key={r.id} className="p-4 flex items-center justify-between hover:bg-white/5 transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center">
-                      <Receipt size={20} className="text-amber-400" />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold" style={{ color: c.text }}>{r.receipt}</p>
-                        <span className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest uppercase"
-                          style={{ 
-                            background: r.status === 'APPROVED' ? `${c.success}20` : `${c.warning}20`,
-                            color: r.status === 'APPROVED' ? c.success : c.warning
-                          }}>
-                          {r.status}
-                        </span>
+          {/* Pending Requests (For Managers) */}
+          {isManager && refundRequests.length > 0 && (
+            <div className="rounded-[32px] border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
+              <div className="p-6 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>
+                <h3 className="font-display text-sm font-bold uppercase tracking-widest" style={{ color: c.text }}>Pending Authorizations</h3>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">{refundRequests.length}</span>
+              </div>
+              <div className="divide-y" style={{ borderColor: c.border }}>
+                {refundRequests.map((r) => (
+                  <div key={r.id} className="p-6 flex items-center justify-between hover:bg-white/5 transition-all">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                        <Receipt size={24} className="text-amber-400" />
                       </div>
-                      <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
-                        {r.item} • GH₵ {r.amount.toFixed(2)} • Requested by <span className="text-emerald-400">{r.requestedBy}</span>
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5 italic">"{r.reason}"</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold" style={{ color: c.text }}>{r.saleId}</p>
+                          <span className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest uppercase bg-amber-500/10 text-amber-500">
+                            PENDING
+                          </span>
+                        </div>
+                        <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
+                          {r.item} • GH₵ {Number(r.amount).toFixed(2)} • Requested by <span className="text-blue-400">{r.requestedBy}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-1 italic">"{r.reason}"</p>
+                      </div>
                     </div>
-                  </div>
-                  
-                  {isManager && r.status === 'PENDING' && (
+                    
                     <div className="flex gap-2">
                       <button 
-                        onClick={() => handleAction(r.id, 'APPROVED')}
-                        className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500 hover:text-white transition-all"
-                        title="Approve"
+                        onClick={() => handleRefund(r.saleId, r.reason)}
+                        className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all"
+                        title="Authorize Refund"
                       >
-                        <CheckCircle size={18} />
+                        <CheckCircle size={20} />
                       </button>
                       <button 
-                        onClick={() => handleAction(r.id, 'REJECTED')}
-                        className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition-all"
-                        title="Reject"
+                        onClick={() => setRefundRequests(prev => prev.filter(req => req.id !== r.id))}
+                        className="p-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all"
+                        title="Reject Request"
                       >
-                        <XCircle size={18} />
+                        <XCircle size={20} />
                       </button>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recent Refund History */}
+          <div className="rounded-[32px] border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
+            <div className="p-6 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>
+              <h3 className="font-display text-sm font-bold uppercase tracking-widest" style={{ color: c.text }}>Processed Refunds</h3>
+            </div>
+            <div className="divide-y" style={{ borderColor: c.border }}>
+              {recentRefunds.length === 0 ? (
+                <div className="p-12 text-center text-sm" style={{ color: c.muted }}>No recently processed refunds</div>
+              ) : (
+                recentRefunds.map((r) => (
+                  <div key={r.id} className="p-4 flex items-center justify-between opacity-80">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
+                        <RotateCcw size={18} style={{ color: c.muted }} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold" style={{ color: c.text }}>{r.id}</p>
+                        <p className="text-[10px] uppercase font-black tracking-widest text-emerald-500">REFUNDED · GH₵ {Number(r.totalAmount).toFixed(2)}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold" style={{ color: c.muted }}>{new Date((r as any).refundedAt || (r as any).updatedAt || r.createdAt).toLocaleDateString()}</p>
+                      <p className="text-[10px] italic" style={{ color: c.muted }}>{(r as any).refundReason || 'No reason'}</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
 
+        {/* Sidebar Policies */}
         <div className="space-y-6">
-          <div className="rounded-2xl border p-6" style={{ background: c.bg, borderColor: c.border }}>
-            <h4 className="text-xs font-black uppercase tracking-widest mb-4" style={{ color: c.muted }}>Policy Reminder</h4>
-            <ul className="space-y-3 text-xs" style={{ color: c.muted }}>
-              <li className="flex items-start gap-2"><AlertCircle size={14} className="shrink-0" /> Cold-chain items are not eligible for return.</li>
-              <li className="flex items-start gap-2"><AlertCircle size={14} className="shrink-0" /> Full refund only if packaging is untampered.</li>
-              <li className="flex items-start gap-2"><AlertCircle size={14} className="shrink-0" /> Credit notes expire in 90 days.</li>
+          <div className="rounded-[32px] border p-8 backdrop-blur-xl bg-amber-500/5 border-dashed" style={{ borderColor: c.warning + '40' }}>
+            <h4 className="text-xs font-black uppercase tracking-widest mb-6" style={{ color: c.warning }}>Azzay Return Policy</h4>
+            <ul className="space-y-4 text-xs font-medium" style={{ color: c.muted }}>
+              <li className="flex items-start gap-3">
+                <AlertCircle size={16} className="shrink-0 text-amber-500" /> 
+                <span>Cold-chain medications (Insulin, Vaccines) are <b>non-returnable</b> once they leave the pharmacy.</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <AlertCircle size={16} className="shrink-0 text-amber-500" /> 
+                <span>Controlled substances require a manager's signature and regulatory log entry for return.</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <AlertCircle size={16} className="shrink-0 text-amber-500" /> 
+                <span>Full refund is only applicable within 48 hours and with untampered packaging.</span>
+              </li>
             </ul>
+          </div>
+          
+          <div className="rounded-[32px] border p-8 backdrop-blur-xl bg-blue-500/5" style={{ borderColor: c.primary + '30' }}>
+            <h4 className="text-xs font-black uppercase tracking-widest mb-4" style={{ color: c.primary }}>Compliance Note</h4>
+            <p className="text-[10px] leading-relaxed" style={{ color: c.muted }}>
+              All refunds are automatically broadcast to the Ledger, Sales reports, and Stock Inventory. Restoring stock will update the branch inventory levels in real-time.
+            </p>
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
 import { 
@@ -152,29 +153,89 @@ export default function FinancialsPage() {
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* 3D KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Revenue', value: `GH₵ ${(totalRevenue/1000).toFixed(1)}k`, sub: 'YTD Sales', icon: TrendingUp, color: '#10B981' },
-          { label: 'Net Profit', value: `GH₵ ${(netProfit/1000).toFixed(1)}k`, sub: `${((netProfit/totalRevenue)*100).toFixed(1)}% margin`, icon: DollarSign, color: '#8B5CF6' },
-          { label: 'Outstanding Payables', value: `GH₵ ${outstandingPayables.toLocaleString()}`, sub: 'Due to suppliers', icon: Receipt, color: '#F59E0B' },
-          { label: 'Inventory Value', value: `GH₵ ${(inventoryValue/1000).toFixed(1)}k`, sub: 'Stock on hand', icon: Package, color: '#0EA5E9' },
+          { label: 'Total Revenue', value: `GH₵ ${(totalRevenue/1000).toFixed(1)}k`, sub: 'YTD Sales', icon: TrendingUp, color: '#10B981', gradient: 'from-emerald-500/20 to-teal-500/5' },
+          { label: 'Net Profit', value: `GH₵ ${(netProfit/1000).toFixed(1)}k`, sub: `${((netProfit/totalRevenue)*100).toFixed(1)}% margin`, icon: DollarSign, color: '#8B5CF6', gradient: 'from-violet-500/20 to-purple-500/5' },
+          { label: 'Outstanding Payables', value: `GH₵ ${outstandingPayables.toLocaleString()}`, sub: 'Due to suppliers', icon: Receipt, color: '#F59E0B', gradient: 'from-amber-500/20 to-orange-500/5' },
+          { label: 'Inventory Value', value: `GH₵ ${(inventoryValue/1000).toFixed(1)}k`, sub: 'Stock on hand', icon: Package, color: '#0EA5E9', gradient: 'from-sky-500/20 to-cyan-500/5' },
         ].map(s => {
           const Icon = s.icon;
           return (
-            <div key={s.label} className="rounded-2xl border p-4 backdrop-blur-xl"
+            <div key={s.label} className="rounded-2xl border p-5 backdrop-blur-xl relative overflow-hidden group"
               style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-              <div className="flex items-center gap-2 mb-2">
-                <div className="p-2 rounded-lg" style={{ background: `${s.color}18`, color: s.color }}>
-                  <Icon size={16} />
+              <div className={`absolute inset-0 bg-gradient-to-br ${s.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none`} />
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2.5 rounded-xl" style={{ background: `${s.color}18`, color: s.color, boxShadow: `0 0 20px ${s.color}20` }}>
+                    <Icon size={18} />
+                  </div>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: `${s.color}10` }}>
+                    <ArrowUpRight size={14} style={{ color: s.color }} />
+                  </div>
                 </div>
-                <p className="text-xs" style={{ color: card.subtle }}>{s.label}</p>
+                <p className="font-display text-xl font-black" style={{ color: s.color }}>{s.value}</p>
+                <p className="text-xs font-bold mt-1" style={{ color: card.text }}>{s.label}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: card.muted }}>{s.sub}</p>
               </div>
-              <p className="font-display text-lg font-bold" style={{ color: s.color }}>{s.value}</p>
-              <p className="text-[10px]" style={{ color: card.muted }}>{s.sub}</p>
             </div>
           );
         })}
+      </div>
+
+      {/* Financial Pipeline */}
+      <div className="rounded-[32px] border p-8 relative overflow-hidden" style={{ background: isDark ? 'linear-gradient(135deg, rgba(15,23,42,0.8), rgba(0,0,0,0.9))' : 'linear-gradient(135deg, #ffffff, #f1f5f9)', borderColor: card.border }}>
+        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+        <div className="relative z-10">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <p className="text-xs font-black uppercase tracking-widest opacity-50" style={{ color: card.text }}>Capital Flow Pipeline</p>
+              <p className="text-[10px] mt-1 opacity-40" style={{ color: card.text }}>Real-time distribution of revenue, expenses, and retained capital</p>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: card.primaryBg, border: `1px solid ${card.primaryBorder}` }}>
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] font-bold" style={{ color: card.primary }}>Live</span>
+            </div>
+          </div>
+          <div className="h-14 w-full rounded-2xl flex overflow-hidden relative shadow-inner" style={{ background: isDark ? '#000' : '#e2e8f0', boxShadow: 'inset 0 4px 6px rgba(0,0,0,0.2)' }}>
+             <motion.div initial={{ width: 0 }} animate={{ width: `${(totalRevenue / (totalRevenue + totalExpenses + Math.abs(netProfit))) * 100}%` }}
+               className="h-full bg-emerald-500 relative"
+               style={{ boxShadow: 'inset 0 4px 8px rgba(255,255,255,0.4), 0 0 20px rgba(16,185,129,0.5)' }}
+             />
+             <motion.div initial={{ width: 0 }} animate={{ width: `${(totalExpenses / (totalRevenue + totalExpenses + Math.abs(netProfit))) * 100}%` }}
+               className="h-full bg-red-500 relative"
+               style={{ boxShadow: 'inset 0 4px 8px rgba(255,255,255,0.2), 0 0 20px rgba(239,68,68,0.5)' }}
+             />
+             <motion.div initial={{ width: 0 }} animate={{ width: `${(Math.max(0, netProfit) / (totalRevenue + totalExpenses + Math.abs(netProfit))) * 100}%` }}
+               className="h-full bg-violet-500 relative"
+               style={{ boxShadow: 'inset 0 4px 8px rgba(255,255,255,0.3), 0 0 20px rgba(139,92,246,0.5)' }}
+             />
+          </div>
+          <div className="grid grid-cols-3 gap-4 mt-6 pt-6 border-t" style={{ borderColor: card.border }}>
+             <div className="flex items-center gap-3">
+               <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+               <div>
+                 <span className="text-[10px] font-bold opacity-50 uppercase tracking-widest block" style={{ color: card.text }}>Revenue Inflow</span>
+                 <p className="font-display text-lg font-black" style={{ color: card.text }}>GH₵ {totalRevenue.toLocaleString()}</p>
+               </div>
+             </div>
+             <div className="flex items-center gap-3">
+               <div className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+               <div>
+                 <span className="text-[10px] font-bold opacity-50 uppercase tracking-widest block" style={{ color: card.text }}>Expense Outflow</span>
+                 <p className="font-display text-lg font-black" style={{ color: card.text }}>GH₵ {totalExpenses.toLocaleString()}</p>
+               </div>
+             </div>
+             <div className="flex items-center gap-3">
+               <div className="w-3 h-3 rounded-full bg-violet-500 shadow-[0_0_10px_rgba(139,92,246,0.5)]" />
+               <div>
+                 <span className="text-[10px] font-bold opacity-50 uppercase tracking-widest block" style={{ color: card.text }}>Retained Capital</span>
+                 <p className="font-display text-lg font-black" style={{ color: card.text }}>GH₵ {Math.max(0, netProfit).toLocaleString()}</p>
+               </div>
+             </div>
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}

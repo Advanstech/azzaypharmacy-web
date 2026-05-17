@@ -74,32 +74,33 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
     dayMap[d] = (dayMap[d] || 0) + s.totalAmount;
   });
   const sparkData = days.map(d => ({ day: d, amount: dayMap[d] || 0 }));
-  const sparkMax = Math.max(...sparkData.map(d => d.amount), 1);
 
-  // Top products by revenue
+  // Top products by revenue — scoped to last 7 days
   const topProducts = useMemo(() => {
     const map: Record<string, { name: string; revenue: number; qty: number }> = {};
-    sales.forEach(s => s.items.forEach(item => {
+    sales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => s.items.forEach(item => {
       const n = item.product?.name || 'Unknown';
       if (!map[n]) map[n] = { name: n, revenue: 0, qty: 0 };
       map[n].revenue += item.total;
       map[n].qty += item.quantity;
     }));
     return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  }, [sales]);
+  }, [sales, weekAgo]);
 
-  // Payment method breakdown (all time)
+  // Payment method breakdown by revenue (last 7 days)
   const paymentMix = useMemo(() => {
-    const counts: Record<string, number> = {};
-    sales.forEach(s => { counts[s.paymentMethod] = (counts[s.paymentMethod] || 0) + 1; });
-    const total = sales.length || 1;
+    const amounts: Record<string, number> = {};
+    sales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => {
+      amounts[s.paymentMethod] = (amounts[s.paymentMethod] || 0) + s.totalAmount;
+    });
+    const total = weekRevenue || 1;
     return [
-      { label: 'Cash', pct: Math.round(((counts['CASH'] || 0) / total) * 100), color: '#0EA5E9', icon: Banknote },
-      { label: 'MoMo', pct: Math.round(((counts['MOMO'] || 0) / total) * 100), color: '#10B981', icon: Smartphone },
-      { label: 'Card', pct: Math.round(((counts['CARD'] || 0) / total) * 100), color: '#8B5CF6', icon: CreditCard },
-      { label: 'NHIS', pct: Math.round(((counts['NHIS'] || 0) / total) * 100), color: '#F59E0B', icon: ShieldAlert },
-    ];
-  }, [sales]);
+      { label: 'Cash', pct: Math.round(((amounts['CASH'] || 0) / total) * 100), color: '#0EA5E9', icon: Banknote },
+      { label: 'MoMo', pct: Math.round(((amounts['MOMO'] || 0) / total) * 100), color: '#10B981', icon: Smartphone },
+      { label: 'Card', pct: Math.round(((amounts['CARD'] || 0) / total) * 100), color: '#8B5CF6', icon: CreditCard },
+      { label: 'NHIS', pct: Math.round(((amounts['NHIS'] || 0) / total) * 100), color: '#F59E0B', icon: ShieldAlert },
+    ].filter(pm => pm.pct > 0);
+  }, [sales, weekAgo, weekRevenue]);
 
   // Sales by staff for manager overview
   const staffSales = useMemo(() => {
@@ -308,6 +309,45 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           </Link>
         </div>
       </div>
+
+      {/* ── RECENT TRANSACTIONS ──────────────────────────────── */}
+      <div className="rounded-2xl border p-6 backdrop-blur-xl"
+        style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-display text-sm font-bold" style={{ color: s.textMain }}>Recent Transactions</h3>
+            <p className="text-[11px]" style={{ color: s.textDim }}>Latest 3 across all staff</p>
+          </div>
+          <Link href="/dashboard/sales" className="text-[11px] font-bold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors hover:opacity-80"
+            style={{ background: `${s.accent}18`, color: s.accent }}>View All <ChevronRight size={14} /></Link>
+        </div>
+        {loadingSales ? (
+          <div className="flex items-center justify-center py-6">
+            <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderTopColor: 'transparent', borderColor: s.accent }} />
+          </div>
+        ) : sales.length === 0 ? (
+          <p className="text-xs text-center py-4" style={{ color: s.textMuted }}>No transactions recorded yet</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[...sales].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 3).map(sale => (
+              <div key={sale.id} className="flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all hover:scale-[1.01]"
+                style={{ background: isDark ? 'rgba(148,163,184,0.06)' : 'rgba(203,213,225,0.2)' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${s.success}15` }}>
+                  <Receipt size={18} style={{ color: s.success }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold truncate" style={{ color: s.textMain }}>{sale.customerName || 'Walk-in'}</p>
+                  <p className="text-[10px]" style={{ color: s.textDim }}>{sale.user?.name || 'Staff'} · {sale.paymentMethod}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="font-mono text-sm font-bold" style={{ color: s.accent }}>GH₵{sale.totalAmount.toFixed(2)}</p>
+                  <p className="text-[10px]" style={{ color: s.textDim }}>{new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -316,7 +356,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
 //  CLINICAL VIEW — Pharmacist / Technician Overview
 // ═══════════════════════════════════════════════════════════════
 function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
-  const { products, sales, todayRevenue, todayTransactions, lowStockProducts, loadingProducts, loadingSales, me } = useStore();
+  const { products, sales, todayRevenue, todayTransactions, lowStockProducts, loadingProducts, loadingSales, me, updateDutyStatus } = useStore();
 
   const criticalDrugs = lowStockProducts.filter(p =>
     ['Antimalarial', 'Antibiotic', 'Chronic', 'Pain Relief'].includes(p.category)
@@ -326,6 +366,26 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
   const myRevenue = myTodaySales.reduce((sum, s) => sum + s.totalAmount, 0);
 
   const { isManagement } = useRole();
+  const visibleSales = isManagement 
+    ? sales 
+    : sales.filter(sale => sale.user?.id === me?.id);
+
+  // Hourly Activity for today
+  const hourlyData = useMemo(() => {
+    const hours = ['8 AM','10 AM','12 PM','2 PM','4 PM','6 PM','8 PM'];
+    const data = hours.map(h => ({ day: h, amount: 0 })); // 'day' is used by PharmaChart as label
+    myTodaySales.forEach(s => {
+      const hour = new Date(s.createdAt).getHours();
+      if (hour >= 8 && hour < 10) data[0].amount += s.totalAmount;
+      else if (hour >= 10 && hour < 12) data[1].amount += s.totalAmount;
+      else if (hour >= 12 && hour < 14) data[2].amount += s.totalAmount;
+      else if (hour >= 14 && hour < 16) data[3].amount += s.totalAmount;
+      else if (hour >= 16 && hour < 18) data[4].amount += s.totalAmount;
+      else if (hour >= 18 && hour < 20) data[5].amount += s.totalAmount;
+      else if (hour >= 20) data[6].amount += s.totalAmount;
+    });
+    return data;
+  }, [myTodaySales]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -344,10 +404,22 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
           <h2 className="font-display text-xl font-bold" style={{ color: s.textMain }}>Clinical Station</h2>
           <p className="text-xs mt-1" style={{ color: s.textMuted }}>Dispensing, verification & patient care</p>
         </div>
-        <span className="text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
-          style={{ background: `${s.success}18`, color: s.success, border: `1px solid ${s.success}40` }}>
-          {me?.isOnDuty ? 'On Duty' : 'Off Duty'}
-        </span>
+        <button
+          type="button"
+          onClick={async () => {
+            if (me?.id) {
+              await updateDutyStatus(me.id, !me.isOnDuty);
+            }
+          }}
+          className="text-[10px] font-bold px-3.5 py-1.5 rounded-full uppercase tracking-wider shadow-sm transition-all hover:scale-105 active:scale-95 border"
+          style={{
+            background: me?.isOnDuty ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+            color: me?.isOnDuty ? '#10B981' : '#EF4444',
+            borderColor: me?.isOnDuty ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+          }}
+        >
+          {me?.isOnDuty ? '● On Duty' : '○ Off Duty'}
+        </button>
       </div>
 
       {/* ── PERSONAL STATS + QUICK ACTIONS ───────────────────── */}
@@ -377,30 +449,57 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
       {/* ── MAIN GRID ──────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Quick Actions */}
-        <div className="rounded-2xl border p-6 backdrop-blur-xl"
+        {/* Intelligence / Performance Chart */}
+        <div className="rounded-2xl border p-6 backdrop-blur-xl relative overflow-hidden flex flex-col"
           style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
-          <h3 className="font-display text-sm font-bold mb-4" style={{ color: s.textMain }}>Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: 'New Prescription', icon: Pill, href: '/dashboard/prescriptions', color: '#06B6D4', desc: 'Dispense Rx' },
-              { label: 'Drug Check', icon: Sparkles, href: '/dashboard/ai', color: '#EC4899', desc: 'Interactions' },
-              { label: 'POS Terminal', icon: ShoppingCart, href: '/dashboard/pos', color: '#10B981', desc: 'Quick sale' },
-              { label: 'Inventory', icon: Package, href: '/dashboard/inventory', color: '#0EA5E9', desc: 'Stock check' },
-            ].map(action => (
-              <Link key={action.label} href={action.href}
-                className="rounded-xl border p-4 backdrop-blur-xl transition-all hover:scale-[1.02] block"
-                style={{ background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.6)', borderColor: s.border }}>
-                <div className="p-2 rounded-lg mb-2 inline-flex" style={{ background: `${action.color}18`, color: action.color }}>
-                  <action.icon size={18} />
-                </div>
-                <p className="font-display text-xs font-bold" style={{ color: s.textMain }}>{action.label}</p>
-                <p className="text-[10px]" style={{ color: s.textDim }}>{action.desc}</p>
-              </Link>
-            ))}
+          <div className="relative z-10 mb-4 flex-1">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="font-display text-sm font-bold" style={{ color: s.textMain }}>My Activity Pulse</h3>
+                <p className="text-[11px] mt-0.5" style={{ color: s.textDim }}>Your hourly performance trajectory</p>
+              </div>
+            </div>
+            <div className="mb-2">
+              <span className="font-display text-2xl font-bold" style={{ color: s.accent }}>
+                <AnimatedCounter value={myRevenue} prefix="GH₵" isDark={isDark} duration={2000} />
+              </span>
+              <span className="text-[11px] ml-2" style={{ color: s.textMuted }}>cleared today</span>
+            </div>
+          </div>
+          <div className="h-[180px] w-full relative">
+            <PharmaChart data={hourlyData} isDark={isDark} accent={s.accent} height={180} />
+            <MolecularBg isDark={isDark} />
           </div>
         </div>
 
+        <div className="flex flex-col gap-6">
+          {/* Quick Actions */}
+          <div className="rounded-2xl border p-6 backdrop-blur-xl flex-1"
+            style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+            <h3 className="font-display text-sm font-bold mb-4" style={{ color: s.textMain }}>Quick Actions</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'New Prescription', icon: Pill, href: '/dashboard/prescriptions', color: '#06B6D4', desc: 'Dispense Rx' },
+                { label: 'Drug Check', icon: Sparkles, href: '/dashboard/ai', color: '#EC4899', desc: 'Interactions' },
+                { label: 'POS Terminal', icon: ShoppingCart, href: '/dashboard/pos', color: '#10B981', desc: 'Quick sale' },
+                { label: 'Inventory', icon: Package, href: '/dashboard/inventory', color: '#0EA5E9', desc: 'Stock check' },
+              ].map(action => (
+                <Link key={action.label} href={action.href}
+                  className="rounded-xl border p-4 backdrop-blur-xl transition-all hover:scale-[1.02] block"
+                  style={{ background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.6)', borderColor: s.border }}>
+                  <div className="p-2 rounded-lg mb-2 inline-flex" style={{ background: `${action.color}18`, color: action.color }}>
+                    <action.icon size={18} />
+                  </div>
+                  <p className="font-display text-xs font-bold" style={{ color: s.textMain }}>{action.label}</p>
+                  <p className="text-[10px]" style={{ color: s.textDim }}>{action.desc}</p>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Critical Drug Stock */}
         <div className="rounded-2xl border p-6 backdrop-blur-xl"
           style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
@@ -431,41 +530,44 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
             ))}
           </div>
         </div>
-      </div>
 
-      {/* ── RECENT TRANSACTIONS ──────────────────────────────── */}
-      <div className="rounded-2xl border p-6 backdrop-blur-xl"
-        style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display text-sm font-bold" style={{ color: s.textMain }}>Recent Transactions</h3>
-          <Link href="/dashboard/sales" className="text-[11px] font-medium flex items-center gap-1" style={{ color: s.accent }}>View All <ChevronRight size={14} /></Link>
-        </div>
-        {loadingSales ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderTopColor: 'transparent', borderColor: s.accent }} />
+        {/* ── RECENT TRANSACTIONS ──────────────────────────────── */}
+        <div className="rounded-2xl border p-6 backdrop-blur-xl flex flex-col"
+          style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-display text-sm font-bold" style={{ color: s.textMain }}>Recent Transactions</h3>
+            <Link href="/dashboard/sales" className="text-[11px] font-bold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors hover:opacity-80" 
+              style={{ background: `${s.accent}18`, color: s.accent }}>View All <ChevronRight size={14} /></Link>
           </div>
-        ) : sales.slice(0, 5).length === 0 ? (
-          <p className="text-xs text-center py-6" style={{ color: s.textMuted }}>No transactions yet today</p>
-        ) : (
-          <div className="space-y-2">
-            {sales.slice(0, 5).map(sale => (
-              <div key={sale.id} className="flex items-center gap-4 px-4 py-3 rounded-xl"
-                style={{ background: isDark ? 'rgba(148,163,184,0.04)' : 'rgba(203,213,225,0.15)' }}>
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${s.success}15` }}>
-                  <Receipt size={16} style={{ color: s.success }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: s.textMain }}>{sale.customerName || 'Walk-in'}</p>
-                  <p className="text-[10px]" style={{ color: s.textDim }}>{sale.items.length} items · {sale.paymentMethod}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono text-sm font-bold" style={{ color: s.accent }}>GH₵{sale.totalAmount.toFixed(2)}</p>
-                  <p className="text-[10px]" style={{ color: s.textDim }}>{new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
+          <div className="flex-1">
+            {loadingSales ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderTopColor: 'transparent', borderColor: s.accent }} />
               </div>
-            ))}
+            ) : visibleSales.slice(0, 3).length === 0 ? (
+              <p className="text-xs text-center py-6" style={{ color: s.textMuted }}>No transactions yet today</p>
+            ) : (
+              <div className="space-y-3">
+                {visibleSales.slice(0, 3).map(sale => (
+                  <div key={sale.id} className="flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all hover:scale-[1.01]"
+                    style={{ background: isDark ? 'rgba(148,163,184,0.06)' : 'rgba(203,213,225,0.2)' }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${s.success}15` }}>
+                      <Receipt size={18} style={{ color: s.success }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate" style={{ color: s.textMain }}>{sale.customerName || 'Walk-in Customer'}</p>
+                      <p className="text-[11px] font-medium" style={{ color: s.textDim }}>{sale.items.length} items · {sale.paymentMethod}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono text-sm font-bold" style={{ color: s.accent }}>GH₵{sale.totalAmount.toFixed(2)}</p>
+                      <p className="text-[11px] font-medium" style={{ color: s.textDim }}>{new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -475,11 +577,28 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
 //  SALES VIEW — Cashier / Chemical Cashier Overview
 // ═══════════════════════════════════════════════════════════════
 function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
-  const { sales, todayRevenue, todayTransactions, lowStockProducts, loadingSales, me } = useStore();
+  const { sales, todayRevenue, todayTransactions, lowStockProducts, loadingSales, me, updateDutyStatus } = useStore();
 
   const myTodaySales = sales.filter(s => s.user?.id === me?.id && new Date(s.createdAt).toDateString() === new Date().toDateString());
   const myRevenue = myTodaySales.reduce((sum, s) => sum + s.totalAmount, 0);
   const myTxns = myTodaySales.length;
+
+  // Hourly Activity for today
+  const hourlyData = useMemo(() => {
+    const hours = ['8 AM','10 AM','12 PM','2 PM','4 PM','6 PM','8 PM'];
+    const data = hours.map(h => ({ day: h, amount: 0 })); // 'day' is used by PharmaChart as label
+    myTodaySales.forEach(s => {
+      const hour = new Date(s.createdAt).getHours();
+      if (hour >= 8 && hour < 10) data[0].amount += s.totalAmount;
+      else if (hour >= 10 && hour < 12) data[1].amount += s.totalAmount;
+      else if (hour >= 12 && hour < 14) data[2].amount += s.totalAmount;
+      else if (hour >= 14 && hour < 16) data[3].amount += s.totalAmount;
+      else if (hour >= 16 && hour < 18) data[4].amount += s.totalAmount;
+      else if (hour >= 18 && hour < 20) data[5].amount += s.totalAmount;
+      else if (hour >= 20) data[6].amount += s.totalAmount;
+    });
+    return data;
+  }, [myTodaySales]);
 
   // Payment breakdown for today
   const todayPayment = useMemo(() => {
@@ -513,10 +632,22 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
           <h2 className="font-display text-xl font-bold" style={{ color: s.textMain }}>Sales Terminal</h2>
           <p className="text-xs mt-1" style={{ color: s.textMuted }}>Shift operations & transaction flow</p>
         </div>
-        <span className="text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
-          style={{ background: `${s.accent}18`, color: s.accent, border: `1px solid ${s.accent}40` }}>
-          {me?.isOnDuty ? `On Shift · ${shiftDuration}m` : 'Off Shift'}
-        </span>
+        <button
+          type="button"
+          onClick={async () => {
+            if (me?.id) {
+              await updateDutyStatus(me.id, !me.isOnDuty);
+            }
+          }}
+          className="text-[10px] font-bold px-3.5 py-1.5 rounded-full uppercase tracking-wider shadow-sm transition-all hover:scale-105 active:scale-95 border"
+          style={{
+            background: me?.isOnDuty ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)',
+            color: me?.isOnDuty ? '#10B981' : '#EF4444',
+            borderColor: me?.isOnDuty ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)',
+          }}
+        >
+          {me?.isOnDuty ? `● On Shift · ${shiftDuration}m` : '○ Off Shift'}
+        </button>
       </div>
 
       {/* ── BIG POS BUTTON + SHIFT STATS ─────────────────────── */}
@@ -568,36 +699,63 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
       {/* ── MAIN GRID ──────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Today's Payment Breakdown */}
-        <div className="rounded-2xl border p-6 backdrop-blur-xl"
+        {/* Intelligence / Performance Chart */}
+        <div className="rounded-2xl border p-6 backdrop-blur-xl relative overflow-hidden flex flex-col"
           style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
-          <h3 className="font-display text-sm font-bold mb-1" style={{ color: s.textMain }}>Payment Breakdown</h3>
-          <p className="text-[11px] mb-5" style={{ color: s.textDim }}>Your shift payment methods</p>
-          {todayPayment.length === 0 ? (
-            <p className="text-xs text-center py-6" style={{ color: s.textMuted }}>No sales yet this shift</p>
-          ) : (
-            <div className="space-y-4">
-              {todayPayment.map(pm => (
-                <div key={pm.label} className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg shrink-0" style={{ background: `${pm.color}18`, color: pm.color }}>
-                    <pm.icon size={16} />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium" style={{ color: s.textMuted }}>{pm.label}</span>
-                      <span className="text-xs font-mono font-bold" style={{ color: pm.color }}>GH₵{pm.amount.toFixed(2)}</span>
-                    </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(148,163,184,0.15)' : 'rgba(203,213,225,0.3)' }}>
-                      <div className="h-full rounded-full transition-all duration-700"
-                        style={{ width: `${myRevenue > 0 ? (pm.amount / myRevenue) * 100 : 0}%`, background: pm.color }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
+          <div className="relative z-10 mb-4 flex-1">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h3 className="font-display text-sm font-bold" style={{ color: s.textMain }}>My Activity Pulse</h3>
+                <p className="text-[11px] mt-0.5" style={{ color: s.textDim }}>Your hourly performance trajectory</p>
+              </div>
             </div>
-          )}
+            <div className="mb-2">
+              <span className="font-display text-2xl font-bold" style={{ color: s.accent }}>
+                <AnimatedCounter value={myRevenue} prefix="GH₵" isDark={isDark} duration={2000} />
+              </span>
+              <span className="text-[11px] ml-2" style={{ color: s.textMuted }}>cleared today</span>
+            </div>
+          </div>
+          <div className="h-[180px] w-full relative">
+            <PharmaChart data={hourlyData} isDark={isDark} accent={s.accent} height={180} />
+            <MolecularBg isDark={isDark} />
+          </div>
         </div>
 
+        <div className="flex flex-col gap-6">
+          {/* Today's Payment Breakdown */}
+          <div className="rounded-2xl border p-6 backdrop-blur-xl flex-1"
+            style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+            <h3 className="font-display text-sm font-bold mb-1" style={{ color: s.textMain }}>Payment Breakdown</h3>
+            <p className="text-[11px] mb-5" style={{ color: s.textDim }}>Your shift payment methods</p>
+            {todayPayment.length === 0 ? (
+              <p className="text-xs text-center py-6" style={{ color: s.textMuted }}>No sales yet this shift</p>
+            ) : (
+              <div className="space-y-4">
+                {todayPayment.map(pm => (
+                  <div key={pm.label} className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg shrink-0" style={{ background: `${pm.color}18`, color: pm.color }}>
+                      <pm.icon size={16} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium" style={{ color: s.textMuted }}>{pm.label}</span>
+                        <span className="text-xs font-mono font-bold" style={{ color: pm.color }}>GH₵{pm.amount.toFixed(2)}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(148,163,184,0.15)' : 'rgba(203,213,225,0.3)' }}>
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${myRevenue > 0 ? (pm.amount / myRevenue) * 100 : 0}%`, background: pm.color }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Quick Actions */}
         <div className="rounded-2xl border p-6 backdrop-blur-xl"
           style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
@@ -621,41 +779,44 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
             ))}
           </div>
         </div>
-      </div>
 
-      {/* ── RECENT TRANSACTIONS ──────────────────────────────── */}
-      <div className="rounded-2xl border p-6 backdrop-blur-xl"
-        style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display text-sm font-bold" style={{ color: s.textMain }}>My Recent Sales</h3>
-          <Link href="/dashboard/sales" className="text-[11px] font-medium flex items-center gap-1" style={{ color: s.accent }}>View All <ChevronRight size={14} /></Link>
-        </div>
-        {loadingSales ? (
-          <div className="flex items-center justify-center py-8">
-            <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderTopColor: 'transparent', borderColor: s.accent }} />
+        {/* ── RECENT TRANSACTIONS ──────────────────────────────── */}
+        <div className="rounded-2xl border p-6 backdrop-blur-xl flex flex-col"
+          style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-display text-sm font-bold" style={{ color: s.textMain }}>My Recent Sales</h3>
+            <Link href="/dashboard/sales" className="text-[11px] font-bold flex items-center gap-1 px-3 py-1.5 rounded-lg transition-colors hover:opacity-80" 
+              style={{ background: `${s.accent}18`, color: s.accent }}>View All <ChevronRight size={14} /></Link>
           </div>
-        ) : myTodaySales.slice(0, 5).length === 0 ? (
-          <p className="text-xs text-center py-6" style={{ color: s.textMuted }}>No sales yet this shift</p>
-        ) : (
-          <div className="space-y-2">
-            {myTodaySales.slice(0, 5).map(sale => (
-              <div key={sale.id} className="flex items-center gap-4 px-4 py-3 rounded-xl"
-                style={{ background: isDark ? 'rgba(148,163,184,0.04)' : 'rgba(203,213,225,0.15)' }}>
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${s.success}15` }}>
-                  <Receipt size={16} style={{ color: s.success }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: s.textMain }}>{sale.customerName || 'Walk-in'}</p>
-                  <p className="text-[10px]" style={{ color: s.textDim }}>{sale.items.length} items · {sale.paymentMethod}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono text-sm font-bold" style={{ color: s.accent }}>GH₵{sale.totalAmount.toFixed(2)}</p>
-                  <p className="text-[10px]" style={{ color: s.textDim }}>{new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
+          <div className="flex-1">
+            {loadingSales ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderTopColor: 'transparent', borderColor: s.accent }} />
               </div>
-            ))}
+            ) : myTodaySales.slice(0, 3).length === 0 ? (
+              <p className="text-xs text-center py-6" style={{ color: s.textMuted }}>No sales yet this shift</p>
+            ) : (
+              <div className="space-y-3">
+                {myTodaySales.slice(0, 3).map(sale => (
+                  <div key={sale.id} className="flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all hover:scale-[1.01]"
+                    style={{ background: isDark ? 'rgba(148,163,184,0.06)' : 'rgba(203,213,225,0.2)' }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${s.success}15` }}>
+                      <Receipt size={18} style={{ color: s.success }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate" style={{ color: s.textMain }}>{sale.customerName || 'Walk-in'}</p>
+                      <p className="text-[11px] font-medium" style={{ color: s.textDim }}>{sale.items.length} items · {sale.paymentMethod}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-mono text-sm font-bold" style={{ color: s.accent }}>GH₵{sale.totalAmount.toFixed(2)}</p>
+                      <p className="text-[11px] font-medium" style={{ color: s.textDim }}>{new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* ── LOW STOCK WARNING ────────────────────────────────── */}

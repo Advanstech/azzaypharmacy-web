@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
+import { Plus, Image as ImageIcon } from 'lucide-react';
 
 interface TopResultPillProps {
   product: any;
@@ -9,9 +10,19 @@ interface TopResultPillProps {
   isDark?: boolean;
 }
 
-export function TopResultPill({ product, isDark = false, onPreviewProduct, onPreviewSupplier }: TopResultPillProps) {
+// Helper to get product image (same as in POS page)
+const getProductImage = (product: any) => {
+  if (product.imageUrl) return product.imageUrl;
+  if (product.images?.[0]?.url) return product.images[0].url;
+  if (product.image) return product.image;
+  if (product.photoUrl) return product.photoUrl;
+  return null;
+};
+
+export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewProduct, onPreviewSupplier }: TopResultPillProps) {
   const { suppliers } = useStore();
   const supplier = product.supplier || suppliers.find(s => s.id === product.supplierId);
+  const productImage = getProductImage(product);
 
   // We use the exact light green colors from the screenshot
   const bg = '#f0fdf4'; // green-50
@@ -21,33 +32,76 @@ export function TopResultPill({ product, isDark = false, onPreviewProduct, onPre
 
   return (
     <div 
-      className="flex items-center px-4 py-3 rounded-xl border mb-4 shadow-sm"
+      className="flex items-center gap-4 px-4 py-3 rounded-xl border mb-4 shadow-sm"
       style={{ background: bg, borderColor: border }}
     >
-      <div className="flex-1 text-sm">
-        {onPreviewProduct ? (
-          <button onClick={() => onPreviewProduct(product)} className="font-bold hover:underline" style={{ color: textDark }}>
-            {product.name}
-          </button>
+      {/* Product Image */}
+      <div className="relative flex-shrink-0">
+        {productImage ? (
+          <img 
+            src={productImage} 
+            alt={product.name}
+            className="w-16 h-16 rounded-lg object-cover border"
+            style={{ borderColor: border }}
+          />
         ) : (
-          <span className="font-bold" style={{ color: textDark }}>{product.name}</span>
+          <div 
+            className="w-16 h-16 rounded-lg flex items-center justify-center border"
+            style={{ background: '#dcfce7', borderColor: border }}
+          >
+            <ImageIcon size={24} style={{ color: textLight }} />
+          </div>
         )}
-        <span style={{ color: textLight }}>
-          {`: In stock (${product.stockQuantity}/${product.maxStock || product.stockQuantity}). Supplier: `}
-        </span>
-        {product.supplierId ? (
-          onPreviewSupplier ? (
-            <button onClick={() => onPreviewSupplier(product.supplierId)} className="font-bold hover:underline" style={{ color: textDark }}>
-              {supplier?.name || 'Unknown'}
-            </button>
-          ) : (
-            <span className="font-bold" style={{ color: textDark }}>{supplier?.name || 'Unknown'}</span>
-          )
-        ) : (
-          <span className="font-bold" style={{ color: textDark }}>{product.brand || 'Unknown'}</span>
-        )}
-        <span style={{ color: textDark }}>.</span>
+        {/* Stock indicator */}
+        <div 
+          className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2"
+          style={{ 
+            background: product.stockQuantity > 10 ? '#22c55e' : product.stockQuantity > 0 ? '#f59e0b' : '#ef4444',
+            borderColor: '#f0fdf4',
+            color: '#fff'
+          }}
+        >
+          {product.stockQuantity}
+        </div>
       </div>
+
+      <div className="flex-1 min-w-0">
+        <Link href={`/dashboard/inventory/${product.id}`} className="font-bold hover:underline block truncate" style={{ color: textDark }}>
+          {product.name}
+        </Link>
+        <p className="text-xs truncate" style={{ color: textLight }}>
+          {product.genericName || product.brand || 'No brand'} · In stock
+          {product.supplierId && (
+            <> · Supplier: {supplier?.name || 'Unknown'}</>
+          )}
+        </p>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="font-bold text-sm" style={{ color: textDark }}>
+            GH¢{product.sellingPrice || product.price || 0}
+          </span>
+          {product.costPrice && (
+            <span className="text-xs line-through" style={{ color: textLight }}>
+              GH¢{product.costPrice}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Add to Cart Button */}
+      {onAddToCart && (
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onAddToCart(product);
+          }}
+          className="flex-shrink-0 p-2 rounded-lg transition-all hover:scale-110 active:scale-95"
+          style={{ background: '#22c55e', color: '#fff' }}
+          title="Add to cart"
+        >
+          <Plus size={20} />
+        </button>
+      )}
     </div>
   );
 }

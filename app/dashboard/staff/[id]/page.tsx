@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { useStore } from '@/lib/store';
 import { 
   ArrowLeft, Mail, Phone, MapPin, Calendar, Award, Briefcase, Shield,
-  Clock, Activity, TrendingUp, Package, ShoppingCart, DollarSign, UserCheck,
-  FileText, BarChart3, Timer, ChevronRight, Edit2, MoreVertical, CheckCircle2,
-  AlertCircle, XCircle, ClipboardList, CalendarDays
+  Clock, Activity, Package, ShoppingCart, DollarSign, UserCheck,
+  FileText, BarChart3, CalendarDays, Edit2, CheckCircle2, AlertCircle
 } from 'lucide-react';
 
 interface StaffMember {
@@ -30,6 +30,26 @@ interface StaffMember {
   totalSales: number;
   performanceScore: number;
 }
+
+type StaffDetail = StaffMember | {
+  id: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  role: string;
+  branch?: string | { name: string };
+  status?: string;
+  isActive?: boolean;
+  lastLogin?: string;
+  joinedDate?: string;
+  licenseNumber?: string;
+  specialization?: string;
+  address?: string;
+  emergencyContact?: string;
+  shiftsThisWeek?: number;
+  totalSales?: number;
+  performanceScore?: number;
+};
 
 const STAFF: StaffMember[] = [
   { id: '1', firstName: 'Kwame', lastName: 'Asante', email: 'kwame@azzay.app', phone: '+233 24 000 0001', role: 'OWNER', branch: 'Azzay Pharmacy', status: 'active', lastLogin: '2 min ago', joinedDate: '2023-01-15', licenseNumber: 'GPhC-2023-001', address: 'Dormaa Central, Bono Region', emergencyContact: '+233 24 111 1111', shiftsThisWeek: 7, totalSales: 125000, performanceScore: 98 },
@@ -128,26 +148,68 @@ const ACTIVITY_COLORS = {
   shift: '#6366F1',
 };
 
-function getInitials(firstName: string, lastName: string) {
-  return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+function getNameParts(staff: StaffDetail) {
+  const fullName = typeof (staff as any).name === 'string'
+    ? (staff as any).name
+    : 'firstName' in staff && staff.firstName && 'lastName' in staff && staff.lastName
+      ? `${staff.firstName} ${staff.lastName}`
+      : staff.email || 'Unknown';
+  const [firstName = '', ...rest] = fullName.split(' ');
+  const lastName = rest.join(' ');
+  return { fullName, firstName, lastName };
 }
 
-function getFullName(staff: StaffMember) {
-  return `${staff.firstName} ${staff.lastName}`;
+function getInitials(staff: StaffDetail) {
+  const { firstName, lastName } = getNameParts(staff);
+  return `${firstName?.charAt(0) || ''}${lastName?.charAt(0) || ''}`.toUpperCase();
+}
+
+function getFullName(staff: StaffDetail) {
+  return getNameParts(staff).fullName;
 }
 
 export default function StaffDetailPage() {
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const params = useParams();
-  const router = useRouter();
   const staffId = params.id as string;
-  
-  useEffect(() => setMounted(true), []);
+  const { staff: liveStaff, loadingStaff } = useStore();
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const isDark = mounted && theme === 'dark';
 
-  const staff = STAFF.find(s => s.id === staffId);
+  const liveStaffMember = liveStaff.find(s => s.id === staffId);
+  const staff = liveStaffMember ?? STAFF.find(s => s.id === staffId);
   const activities = ACTIVITIES[staffId] || [];
+
+  if (!mounted) return null;
+  if (loadingStaff && !staff) {
+    return (
+      <div className="py-20 text-center">
+        <p className="text-sm font-medium" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>
+          Loading staff details...
+        </p>
+      </div>
+    );
+  }
+
+  if (!staff) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <AlertCircle size={48} style={{ color: isDark ? '#94A3B8' : '#64748B' }} />
+        <p className="mt-4 text-lg font-semibold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>
+          Staff member not found
+        </p>
+        <Link href="/dashboard/staff" className="mt-4 px-4 py-2 rounded-xl text-sm font-medium"
+          style={{ background: isDark ? 'rgba(248,250,252,0.08)' : 'rgba(14,165,233,0.1)', color: isDark ? '#F8FAFC' : '#0F172A' }}>
+          Back to Staff
+        </Link>
+      </div>
+    );
+  }
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
@@ -180,7 +242,13 @@ export default function StaffDetailPage() {
   }
 
   const roleStyle = ROLE_COLORS[staff.role] || ROLE_COLORS.CASHIER;
-  const statusStyle = STATUS_COLORS[staff.status];
+  const statusKey = typeof (staff as any).status === 'string'
+    ? (staff as any).status
+    : (staff as any).isActive
+      ? 'active'
+      : 'inactive';
+  const statusStyle = STATUS_COLORS[statusKey] || STATUS_COLORS.active;
+  const staffBranch = typeof staff.branch === 'string' ? staff.branch : staff.branch?.name || 'Main Branch';
   const todaySales = activities.filter(a => a.type === 'sale').reduce((sum, a) => sum + (a.amount || 0), 0);
   const todayTransactions = activities.filter(a => a.type === 'sale').length;
 
@@ -200,7 +268,7 @@ export default function StaffDetailPage() {
           <div className="w-24 h-24 rounded-3xl flex items-center justify-center shrink-0"
             style={{ background: roleStyle.bg, border: `3px solid ${roleStyle.color}40` }}>
             <span className="font-display text-3xl font-bold" style={{ color: roleStyle.color }}>
-              {getInitials(staff.firstName, staff.lastName)}
+              {getInitials(staff)}
             </span>
           </div>
 
@@ -223,11 +291,11 @@ export default function StaffDetailPage() {
               </span>
               <span className="flex items-center gap-1.5">
                 <MapPin size={14} />
-                {staff.branch}
+                {staffBranch}
               </span>
               <span className="flex items-center gap-1.5">
                 <Clock size={14} />
-                Last active {staff.lastLogin}
+                 Last active {(staff as any).lastLogin || 'N/A'}
               </span>
             </div>
 
@@ -238,7 +306,7 @@ export default function StaffDetailPage() {
                   <DollarSign size={14} style={{ color: card.primary }} />
                 </div>
                 <div>
-                  <p className="text-xs" style={{ color: card.muted }}>Today's Sales</p>
+                  <p className="text-xs" style={{ color: card.muted }}>Today&apos;s Sales</p>
                   <p className="font-display font-bold" style={{ color: card.text }}>GH₵ {todaySales.toFixed(2)}</p>
                 </div>
               </div>
@@ -257,7 +325,7 @@ export default function StaffDetailPage() {
                 </div>
                 <div>
                   <p className="text-xs" style={{ color: card.muted }}>Performance</p>
-                  <p className="font-display font-bold" style={{ color: card.warning }}>{staff.performanceScore}%</p>
+                  <p className="font-display font-bold" style={{ color: card.warning }}>{(staff as any).performanceScore || 100}%</p>
                 </div>
               </div>
             </div>
@@ -296,23 +364,23 @@ export default function StaffDetailPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Phone size={14} style={{ color: card.subtle }} />
-                <span className="text-sm" style={{ color: card.text }}>{staff.phone}</span>
+                <span className="text-sm" style={{ color: card.text }}>{(staff as any).phone || 'N/A'}</span>
               </div>
-              {staff.emergencyContact && (
+              {(staff as any).emergencyContact && (
                 <div className="flex items-center gap-3 pt-2 border-t" style={{ borderColor: card.divider }}>
                   <AlertCircle size={14} style={{ color: '#EF4444' }} />
                   <div>
                     <p className="text-xs" style={{ color: card.muted }}>Emergency Contact</p>
-                    <p className="text-sm" style={{ color: card.text }}>{staff.emergencyContact}</p>
+                    <p className="text-sm" style={{ color: card.text }}>{(staff as any).emergencyContact}</p>
                   </div>
                 </div>
               )}
-              {staff.address && (
+              {(staff as any).address && (
                 <div className="flex items-start gap-3 pt-2 border-t" style={{ borderColor: card.divider }}>
                   <MapPin size={14} style={{ color: card.subtle }} className="mt-0.5" />
                   <div>
                     <p className="text-xs" style={{ color: card.muted }}>Address</p>
-                    <p className="text-sm" style={{ color: card.text }}>{staff.address}</p>
+                    <p className="text-sm" style={{ color: card.text }}>{(staff as any).address}</p>
                   </div>
                 </div>
               )}
@@ -326,21 +394,21 @@ export default function StaffDetailPage() {
               Professional Details
             </h3>
             <div className="space-y-3">
-              {staff.licenseNumber && (
+              {(staff as any).licenseNumber && (
                 <div className="flex items-center gap-3">
                   <Shield size={14} style={{ color: card.subtle }} />
                   <div>
                     <p className="text-xs" style={{ color: card.muted }}>License Number</p>
-                    <p className="text-sm font-medium" style={{ color: card.text }}>{staff.licenseNumber}</p>
+                    <p className="text-sm font-medium" style={{ color: card.text }}>{(staff as any).licenseNumber}</p>
                   </div>
                 </div>
               )}
-              {staff.specialization && (
+              {(staff as any).specialization && (
                 <div className="flex items-center gap-3 pt-2 border-t" style={{ borderColor: card.divider }}>
                   <Briefcase size={14} style={{ color: card.subtle }} />
                   <div>
                     <p className="text-xs" style={{ color: card.muted }}>Specialization</p>
-                    <p className="text-sm font-medium" style={{ color: card.text }}>{staff.specialization}</p>
+                    <p className="text-sm font-medium" style={{ color: card.text }}>{(staff as any).specialization}</p>
                   </div>
                 </div>
               )}
@@ -349,7 +417,7 @@ export default function StaffDetailPage() {
                 <div>
                   <p className="text-xs" style={{ color: card.muted }}>Joined Date</p>
                   <p className="text-sm font-medium" style={{ color: card.text }}>
-                    {new Date(staff.joinedDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    {new Date((staff as any).joinedDate || (staff as any).createdAt || new Date()).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>
                 </div>
               </div>
@@ -357,7 +425,7 @@ export default function StaffDetailPage() {
                 <Clock size={14} style={{ color: card.subtle }} />
                 <div>
                   <p className="text-xs" style={{ color: card.muted }}>Shifts This Week</p>
-                  <p className="text-sm font-medium" style={{ color: card.text }}>{staff.shiftsThisWeek} shifts</p>
+                  <p className="text-sm font-medium" style={{ color: card.text }}>{(staff as any).shiftsThisWeek || 0} shifts</p>
                 </div>
               </div>
             </div>
@@ -373,29 +441,29 @@ export default function StaffDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs" style={{ color: card.muted }}>Performance Score</span>
-                  <span className="text-xs font-bold" style={{ color: staff.performanceScore >= 90 ? '#10B981' : staff.performanceScore >= 75 ? '#F59E0B' : '#EF4444' }}>
-                    {staff.performanceScore}%
+                  <span className="text-xs font-bold" style={{ color: ((staff as any).performanceScore ?? 100) >= 90 ? '#10B981' : ((staff as any).performanceScore ?? 100) >= 75 ? '#F59E0B' : '#EF4444' }}>
+                    {((staff as any).performanceScore ?? 100)}%
                   </span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#E2E8F0' }}>
                   <div className="h-full rounded-full transition-all" 
                     style={{ 
-                      width: `${staff.performanceScore}%`, 
-                      background: staff.performanceScore >= 90 ? '#10B981' : staff.performanceScore >= 75 ? '#F59E0B' : '#EF4444'
+                      width: `${((staff as any).performanceScore ?? 100)}%`, 
+                      background: ((staff as any).performanceScore ?? 100) >= 90 ? '#10B981' : ((staff as any).performanceScore ?? 100) >= 75 ? '#F59E0B' : '#EF4444'
                     }} />
                 </div>
               </div>
               <div className="pt-3 border-t" style={{ borderColor: card.divider }}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs" style={{ color: card.muted }}>Total Sales (All Time)</span>
-                  <span className="text-sm font-bold" style={{ color: card.text }}>GH₵ {(staff.totalSales / 1000).toFixed(1)}k</span>
+                  <span className="text-sm font-bold" style={{ color: card.text }}>GH₵ {(((staff as any).totalSales || 0) / 1000).toFixed(1)}k</span>
                 </div>
               </div>
               <div className="pt-2 border-t" style={{ borderColor: card.divider }}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs" style={{ color: card.muted }}>Average per Shift</span>
                   <span className="text-sm font-bold" style={{ color: card.text }}>
-                    GH₵ {staff.shiftsThisWeek > 0 ? (staff.totalSales / staff.shiftsThisWeek / 4).toFixed(0) : 0}
+                    GH₵ {((staff as any).shiftsThisWeek || 0) > 0 ? (((staff as any).totalSales || 0) / ((staff as any).shiftsThisWeek || 0) / 4).toFixed(0) : 0}
                   </span>
                 </div>
               </div>
@@ -463,7 +531,7 @@ export default function StaffDetailPage() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display text-sm font-bold flex items-center gap-2" style={{ color: card.text }}>
                 <CalendarDays size={16} style={{ color: card.primary }} />
-                This Week's Schedule
+                This Week&apos;s Schedule
               </h3>
               <button className="text-xs px-3 py-1.5 rounded-lg font-medium"
                 style={{ background: card.primaryBg, color: card.primary }}>
@@ -472,7 +540,7 @@ export default function StaffDetailPage() {
             </div>
             <div className="grid grid-cols-7 gap-2">
               {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
-                const isWorking = staff.shiftsThisWeek > i;
+                const isWorking = ((staff as any).shiftsThisWeek || 0) > i;
                 return (
                   <div key={day} className="text-center">
                     <div className={`w-full aspect-square rounded-xl flex flex-col items-center justify-center gap-1 border transition-all

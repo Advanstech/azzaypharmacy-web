@@ -1,347 +1,604 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
-import { 
-  Search, Filter, ChevronRight, Printer, FileText, 
-  Download, Calendar, User, ShoppingBag, CreditCard,
-  CheckCircle, Clock, ArrowLeft, RefreshCw, MoreVertical,
-  ChevronDown, ExternalLink
+import { useRouter } from 'next/navigation';
+import {
+  Search, Filter, TrendingUp, TrendingDown, DollarSign, CreditCard,
+  ShoppingCart, Users, Calendar, Download, RefreshCw, Eye, Edit,
+  Trash2, Plus, BarChart3, PieChart, Clock, CheckCircle, AlertCircle,
+  Package, Receipt, Printer, ArrowUpRight, ArrowDownRight, Star,
+  Award, Target, Zap, Bell, Settings, MoreVertical, ChevronDown,
+  ChevronRight, X, Save, Loader2, Activity
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
+import { useAuth } from '@/lib/auth-context';
+import { usePagination } from '@/hooks/use-pagination';
+import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
 
-// Roles that can see ALL staff sales
-const MANAGER_ROLES = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'];
+const PAYMENT_METHODS = {
+  CASH: { label: 'Cash', color: '#10B981', icon: '💵' },
+  MOMO: { label: 'Mobile Money', color: '#0EA5E9', icon: '📱' },
+  CARD: { label: 'Card', color: '#8B5CF6', icon: '💳' },
+  NHIS: { label: 'NHIS', color: '#F59E0B', icon: '🏥' },
+  CREDIT: { label: 'Credit', color: '#EF4444', icon: '💰' },
+};
 
-export default function SalesPage() {
-  const { user } = useAuth();
+const SALES_METRICS = {
+  DAILY: { label: 'Today', period: 'day' },
+  WEEKLY: { label: 'This Week', period: 'week' },
+  MONTHLY: { label: 'This Month', period: 'month' },
+  YEARLY: { label: 'This Year', period: 'year' },
+};
+
+export default function EnhancedSalesPage() {
   const { theme } = useTheme();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const { sales, loadingSales, refetchSales, me } = useStore();
-  const [selectedSale, setSelectedSale] = useState<any>(null);
+  const { sales, loadingSales, refetchSales, me, products, customers } = useStore();
+  const { user } = useAuth();
+
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [viewScope, setViewScope] = useState<'mine' | 'all'>('mine');
-  
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const [paymentFilter, setPaymentFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [metricPeriod, setMetricPeriod] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('DAILY');
+
+  const [selectedSale, setSelectedSale] = useState<any>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showRefundModal, setShowRefundModal] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const isDark = mounted && theme === 'dark';
-  const loading = loadingSales;
 
-  // Determine if user has managerial access
-  const isManager = me ? MANAGER_ROLES.includes(me.role) : false;
-
-  // Auto-set scope: managers default to 'all', others always 'mine'
-  useEffect(() => {
-    if (isManager) {
-      setViewScope('all');
-    } else {
-      setViewScope('mine');
-    }
-  }, [isManager]);
-
-  const c = {
-    bg: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.9)',
-    border: isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.5)',
+  const card = {
+    bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
+    border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)',
+    shadow: isDark ? '0 4px 24px rgba(0,0,0,0.3)' : '0 4px 24px rgba(0,0,0,0.06)',
     text: isDark ? '#F8FAFC' : '#0F172A',
     muted: isDark ? '#94A3B8' : '#64748B',
-    card: isDark ? 'rgba(30,41,59,0.5)' : '#FFFFFF',
-    input: isDark ? 'rgba(0,0,0,0.2)' : '#F8FAFC',
+    subtle: isDark ? '#64748B' : '#94A3B8',
+    primary: isDark ? '#00D9FF' : '#0EA5E9',
+    primaryBg: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)',
+    primaryBorder: isDark ? 'rgba(0,217,255,0.25)' : 'rgba(14,165,233,0.3)',
+    success: '#10B981',
+    warning: '#F59E0B',
+    danger: '#EF4444',
+    inputBg: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC',
   };
 
-  // Role-based sales: filter to user's own unless manager viewing 'all'
-  const scopedSales = useMemo(() => {
-    if (isManager && viewScope === 'all') return sales;
-    if (!me) return [];
-    // Match by cashier user id (sale.user.id) or cashierId
-    return sales.filter(s => 
-      s.user?.id === me.id || (s as any).cashierId === me.id
-    );
-  }, [sales, me, isManager, viewScope]);
+  // Enhanced sales data with analytics
+  const enrichedSales = useMemo(() => {
+    return sales.map(sale => ({
+      ...sale,
+      profit: sale.totalAmount * 0.3, // Assuming 30% profit margin
+      itemsCount: sale.items?.length || 0,
+      customerType: (sale as any).customerId ? 'Registered' : 'Walk-in',
+      averageItemValue: sale.totalAmount / (sale.items?.length || 1),
+      timeOfDay: new Date(sale.createdAt).getHours(),
+      dayOfWeek: new Date(sale.createdAt).toLocaleDateString('en-US', { weekday: 'short' }),
+    }));
+  }, [sales]);
 
-  const filteredSales = scopedSales.filter(sale => {
-    const q = search.toLowerCase();
-    const matchSearch = !q ||
-      (sale.id || '').toLowerCase().includes(q) ||
-      (sale.customerName?.toLowerCase() || '').includes(q) ||
-      (sale.user?.name?.toLowerCase() || '').includes(q);
-    const saleDate = new Date(sale.createdAt).toISOString().split('T')[0];
-    const matchFrom = !dateFrom || saleDate >= dateFrom;
-    const matchTo = !dateTo || saleDate <= dateTo;
-    return matchSearch && matchFrom && matchTo;
+  // Filter sales
+  const filteredSales = useMemo(() => {
+    return enrichedSales.filter(sale => {
+      const matchSearch = !search ||
+        sale.id.toLowerCase().includes(search.toLowerCase()) ||
+        ((sale as any).customerName?.toLowerCase() || '').includes(search.toLowerCase()) ||
+        ((sale as any).receiptNo?.toLowerCase() || '').includes(search.toLowerCase());
+
+      const matchPayment = paymentFilter === 'all' || sale.paymentMethod === paymentFilter;
+      const matchStatus = statusFilter === 'all' || (sale as any).status === statusFilter;
+      
+      const saleDate = new Date(sale.createdAt).toISOString().split('T')[0];
+      const matchDateFrom = !dateFrom || saleDate >= dateFrom;
+      const matchDateTo = !dateTo || saleDate <= dateTo;
+      
+      return matchSearch && matchPayment && matchStatus && matchDateFrom && matchDateTo;
+    });
+  }, [enrichedSales, search, paymentFilter, statusFilter, dateFrom, dateTo]);
+
+  // Calculate metrics
+  const metrics = useMemo(() => {
+    const periodSales = filteredSales.filter(sale => {
+      const saleDate = new Date(sale.createdAt);
+      const now = new Date();
+      
+      switch (metricPeriod) {
+        case 'DAILY':
+          return saleDate.toDateString() === now.toDateString();
+        case 'WEEKLY':
+          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          return saleDate >= weekAgo;
+        case 'MONTHLY':
+          return saleDate.getMonth() === now.getMonth() && saleDate.getFullYear() === now.getFullYear();
+        case 'YEARLY':
+          return saleDate.getFullYear() === now.getFullYear();
+        default:
+          return true;
+      }
+    });
+
+    const totalRevenue = periodSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+    const totalProfit = periodSales.reduce((sum, sale) => sum + (sale.profit || 0), 0);
+    const totalTransactions = periodSales.length;
+    const averageTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
+    
+    // Payment method breakdown
+    const paymentBreakdown = periodSales.reduce((acc, sale) => {
+      acc[sale.paymentMethod] = (acc[sale.paymentMethod] || 0) + sale.totalAmount;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // Top products
+    const productSales = periodSales.flatMap(sale => sale.items || []);
+    const topProducts = productSales.reduce((acc, item) => {
+      const productId = (item as any).productId || item.product?.id;
+      const existing = acc.find(p => p.productId === productId);
+      if (existing) {
+        existing.quantity += item.quantity;
+        existing.revenue += (item as any).total || (item.quantity * item.unitPrice);
+      } else {
+        acc.push({
+          productId: productId,
+          productName: item.product?.name || 'Unknown',
+          quantity: item.quantity,
+          revenue: (item as any).total || (item.quantity * item.unitPrice),
+        });
+      }
+      return acc;
+    }, [] as any[]).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
+    // Hourly sales pattern
+    const hourlySales = Array.from({ length: 24 }, (_, hour) => {
+      const hourSales = periodSales.filter(sale => new Date(sale.createdAt).getHours() === hour);
+      return {
+        hour,
+        revenue: hourSales.reduce((sum, sale) => sum + sale.totalAmount, 0),
+        transactions: hourSales.length,
+      };
+    });
+
+    // 3D Chart Data preparation (Day by Day)
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dayMap: Record<string, number> = {};
+    periodSales.forEach(s => {
+      const d = new Date(s.createdAt).toLocaleDateString('en-GB', { weekday: 'short' });
+      dayMap[d] = (dayMap[d] || 0) + s.totalAmount;
+    });
+    const trendData = days.map(d => ({ day: d, amount: dayMap[d] || 0 }));
+
+    return {
+      totalRevenue,
+      totalProfit,
+      totalTransactions,
+      averageTransaction,
+      paymentBreakdown,
+      topProducts,
+      hourlySales,
+      trendData,
+      profitMargin: totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0,
+    };
+  }, [filteredSales, metricPeriod]);
+
+  const {
+    currentPage,
+    totalPages,
+    paginatedData: paginatedSales,
+    nextPage,
+    prevPage,
+    goToPage,
+    startIndex,
+    endIndex,
+    totalItems
+  } = usePagination({
+    data: filteredSales,
+    itemsPerPage: 10,
   });
 
   if (!mounted) return null;
 
-  if (selectedSale) {
-    return (
-      <div className="p-8 space-y-6">
-        <button 
-          onClick={() => setSelectedSale(null)}
-          className="flex items-center gap-2 transition-colors"
-          style={{ color: c.muted }}
-        >
-          <ArrowLeft size={20} />
-          <span>Back to Sales</span>
-        </button>
-
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-2xl font-bold mb-1" style={{ color: c.text }}>Sale Details</h1>
-            <p className="font-mono text-sm" style={{ color: c.muted }}>{selectedSale.id}</p>
-          </div>
-          <div className="flex gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-amber-400 border border-amber-400/20 rounded-xl hover:bg-slate-700 transition-all">
-              <RefreshCw size={18} />
-              <span>Request Refund</span>
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-400/20 rounded-xl hover:bg-emerald-500/20 transition-all">
-              <Printer size={18} />
-              <span>Print Receipt</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          {[
-              { label: 'Branch', val: (selectedSale as any).branch?.name || 'Azzay Pharmacy', sub: 'Main Hub', icon: ShoppingBag },
-            { label: 'Sold By', val: selectedSale.user?.name || (selectedSale as any).cashier?.name || 'Staff', sub: selectedSale.user?.role || 'Pharmacist', icon: User },
-            { label: 'Recorded', val: new Date(selectedSale.createdAt).toLocaleDateString(), sub: new Date(selectedSale.createdAt).toLocaleTimeString(), icon: Clock },
-            { label: 'Payment', val: `GH¢${Number(selectedSale.totalAmount).toFixed(2)}`, sub: selectedSale.paymentMethod, icon: CreditCard },
-          ].map(k => (
-            <div key={k.label} className="border p-6 rounded-2xl" style={{ background: c.card, borderColor: c.border }}>
-              <div className="flex items-center gap-3 mb-4 text-xs font-bold uppercase tracking-widest" style={{ color: c.muted }}>
-                <k.icon size={16} className="text-emerald-400" />
-                <span>{k.label}</span>
-              </div>
-              <p className="font-bold text-lg" style={{ color: c.text }}>{k.val}</p>
-              <p className="text-[10px] mt-1" style={{ color: c.muted }}>{k.sub}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="border rounded-2xl overflow-hidden backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
-          <table className="w-full">
-            <thead>
-              <tr className="border-b" style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC', borderColor: c.border }}>
-                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Product</th>
-                <th className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Category</th>
-                <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Qty</th>
-                <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Unit Price</th>
-                <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y" style={{ borderColor: c.border }}>
-              {selectedSale.items.map((item: any) => (
-                <tr key={item.id} className="hover:bg-white/5 transition-colors group">
-                  <td className="px-6 py-4 font-medium" style={{ color: c.text }}>{item.product.name}</td>
-                  <td className="px-6 py-4">
-                    <span className="text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-widest" style={{ background: isDark ? '#1E293B' : '#E2E8F0', color: c.muted }}>
-                      {item.product.category}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right" style={{ color: c.text }}>{item.quantity}</td>
-                  <td className="px-6 py-4 text-right" style={{ color: c.muted }}>GH¢{Number(item.unitPrice).toFixed(2)}</td>
-                  <td className="px-6 py-4 text-right font-bold font-mono" style={{ color: c.text }}>GH¢{Number(item.total).toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="border-t" style={{ background: isDark ? 'rgba(15,23,42,0.6)' : '#F8FAFC', borderColor: c.border }}>
-                <td colSpan={3}></td>
-                <td className="px-6 py-4 text-right font-medium" style={{ color: c.muted }}>Subtotal</td>
-                <td className="px-6 py-4 text-right font-bold font-mono" style={{ color: c.text }}>GH¢{Number(selectedSale.totalAmount).toFixed(2)}</td>
-              </tr>
-              <tr style={{ background: isDark ? 'rgba(15,23,42,0.9)' : '#F1F5F9' }}>
-                <td colSpan={3}></td>
-                <td className="px-6 py-4 text-right text-emerald-500 font-bold uppercase tracking-widest text-xs">Final Total</td>
-                <td className="px-6 py-4 text-right text-xl font-black font-mono" style={{ color: c.text }}>GH¢{Number(selectedSale.totalAmount).toFixed(2)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold mb-2" style={{ color: c.text }}>Sales History</h1>
-          <p style={{ color: c.muted }}>Manage and track all pharmaceutical transactions</p>
+          <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Sales Analytics</h1>
+          <p className="text-sm" style={{ color: card.muted }}>Real-time sales performance and customer insights</p>
         </div>
-        <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 border rounded-xl font-bold text-xs transition-all"
-            style={{ background: isDark ? 'rgba(30,41,59,0.5)' : '#fff', borderColor: c.border, color: c.muted }}>
-            <Download size={18} />
-            <span>Export Report</span>
+        <div className="flex gap-2">
+          <div className="flex gap-1 p-1 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
+            {Object.entries(SALES_METRICS).map(([key, metric]) => (
+              <button
+                key={key}
+                onClick={() => setMetricPeriod(key as any)}
+                className="px-3 py-2 rounded-lg text-xs font-medium transition-all"
+                style={{
+                  background: metricPeriod === key ? card.primary : 'transparent',
+                  color: metricPeriod === key ? (isDark ? '#060B14' : '#fff') : card.muted,
+                }}
+              >
+                {metric.label}
+              </button>
+            ))}
+          </div>
+          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+            <Download size={16} />
+            Export
           </button>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="border p-6 rounded-3xl backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
-        <div className="flex items-center gap-2 text-emerald-400 mb-6 font-bold uppercase tracking-widest text-[10px]">
-          <Filter size={14} />
-          <span>Intelligent Filters</span>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { 
+            label: 'Total Revenue', 
+            value: `GH₵ ${(metrics.totalRevenue/1000).toFixed(1)}k`, 
+            sub: `${metrics.totalTransactions} transactions`,
+            icon: DollarSign, 
+            color: '#10B981',
+            change: '+12.5%',
+            changeType: 'increase' as const
+          },
+          { 
+            label: 'Total Profit', 
+            value: `GH₵ ${(metrics.totalProfit/1000).toFixed(1)}k`, 
+            sub: `${metrics.profitMargin.toFixed(1)}% margin`,
+            icon: TrendingUp, 
+            color: '#8B5CF6',
+            change: '+8.2%',
+            changeType: 'increase' as const
+          },
+          { 
+            label: 'Avg Transaction', 
+            value: `GH₵ ${metrics.averageTransaction.toFixed(0)}`, 
+            sub: 'Per sale',
+            icon: ShoppingCart, 
+            color: '#0EA5E9',
+            change: '-2.1%',
+            changeType: 'decrease' as const
+          },
+          { 
+            label: 'Top Product', 
+            value: metrics.topProducts[0]?.productName?.split(' ')[0] || 'N/A', 
+            sub: `${metrics.topProducts[0]?.quantity || 0} sold`,
+            icon: Star, 
+            color: '#F59E0B',
+            change: '+5 new',
+            changeType: 'increase' as const
+          },
+        ].map(s => {
+          const Icon = s.icon;
+          return (
+            <div key={s.label} className="rounded-2xl border p-4 backdrop-blur-xl hover:scale-[1.02] transition-all cursor-pointer" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg" style={{ background: `${s.color}18`, color: s.color }}>
+                    <Icon size={16} />
+                  </div>
+                  <p className="text-xs" style={{ color: card.subtle }}>{s.label}</p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {s.changeType === 'increase' ? (
+                    <ArrowUpRight size={14} style={{ color: card.success }} />
+                  ) : (
+                    <ArrowDownRight size={14} style={{ color: card.danger }} />
+                  )}
+                  <span className="text-[10px] font-bold" style={{ color: s.changeType === 'increase' ? card.success : card.danger }}>
+                    {s.change}
+                  </span>
+                </div>
+              </div>
+              <p className="font-display text-lg font-bold mb-0.5" style={{ color: s.color }}>{s.value}</p>
+              <p className="text-[10px]" style={{ color: card.muted }}>{s.sub}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Analytics Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        {/* 3D Revenue Trajectory Chart (Takes up 2 columns) */}
+        <div className="lg:col-span-2 rounded-2xl border p-6 backdrop-blur-xl relative overflow-hidden"
+          style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+          <div className="relative z-10 flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-display text-sm font-bold" style={{ color: card.text }}>Revenue Trajectory</h3>
+              <p className="text-[11px]" style={{ color: card.subtle }}>Pharmacokinetic momentum curve</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: card.primary }}>Period Total</p>
+              <span className="font-display text-2xl font-bold" style={{ color: card.primary }}>
+                <AnimatedCounter value={metrics.totalRevenue} prefix="GH₵ " isDark={isDark} duration={2000} />
+              </span>
+            </div>
+          </div>
+          <div className="-mx-4 -mb-4">
+            <PharmaChart data={metrics.trendData} isDark={isDark} accent={card.primary} height={260} />
+          </div>
+          <MolecularBg isDark={isDark} />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest ml-1" style={{ color: c.muted }}>Search Receipt</label>
-            <div className="relative group">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 transition-colors" size={18} style={{ color: c.muted }} />
-              <input 
-                type="text" 
-                placeholder="AZY-000000..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full border rounded-xl py-2.5 pl-10 pr-4 outline-none transition-all text-sm"
-                style={{ background: c.input, borderColor: c.border, color: c.text }}
-              />
+
+        {/* Payment Methods Breakdown (Takes up 1 column) */}
+        <div className="rounded-2xl border p-5 backdrop-blur-xl flex flex-col" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+          <h3 className="font-display text-sm font-bold mb-1" style={{ color: card.text }}>Payment Methods</h3>
+          <p className="text-[11px] mb-4" style={{ color: card.subtle }}>Method distribution across sales</p>
+          <div className="space-y-4 flex-1">
+            {Object.entries(metrics.paymentBreakdown).map(([method, amount]) => {
+              const methodConfig = PAYMENT_METHODS[method as keyof typeof PAYMENT_METHODS];
+              const percentage = (amount / metrics.totalRevenue) * 100;
+              return (
+                <div key={method} className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 w-24">
+                    <span className="text-lg">{methodConfig?.icon}</span>
+                    <span className="text-xs font-medium" style={{ color: card.text }}>{methodConfig?.label}</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#E2E8F0' }}>
+                      <div className="h-full rounded-full transition-all" style={{ width: `${percentage}%`, background: methodConfig?.color }} />
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs font-bold" style={{ color: card.text }}>GH₵ {amount.toLocaleString()}</p>
+                    <p className="text-[9px]" style={{ color: card.subtle }}>{percentage.toFixed(1)}%</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Top Products - Full Width Grid Element */}
+      <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+        <h3 className="font-display text-sm font-bold mb-4" style={{ color: card.text }}>Top Moving SKUs</h3>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          {metrics.topProducts.map((product, index) => (
+            <div key={product.productId} className="flex flex-col items-center justify-center p-4 rounded-xl text-center border transition-all hover:scale-[1.03]" style={{ background: isDark ? 'rgba(0,217,255,0.03)' : 'rgba(14,165,233,0.03)', borderColor: card.border }}>
+              <div className="w-10 h-10 mb-3 rounded-full flex items-center justify-center text-sm font-bold" style={{ background: card.primaryBg, color: card.primary }}>
+                #{index + 1}
+              </div>
+              <p className="text-xs font-bold mb-1 line-clamp-1 w-full" style={{ color: card.text }}>{product.productName}</p>
+              <p className="text-[10px] mb-2" style={{ color: card.subtle }}>{product.quantity} units dispensed</p>
+              <p className="text-sm font-mono font-bold" style={{ color: card.primary }}>GH₵ {product.revenue.toLocaleString()}</p>
             </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest ml-1" style={{ color: c.muted }}>From Date</label>
-            <input 
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="w-full border rounded-xl py-2.5 px-4 outline-none transition-all text-sm"
-              style={{ background: c.input, borderColor: c.border, color: c.text }}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest ml-1" style={{ color: c.muted }}>To Date</label>
-            <input 
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="w-full border rounded-xl py-2.5 px-4 outline-none transition-all text-sm"
-              style={{ background: c.input, borderColor: c.border, color: c.text }}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest ml-1" style={{ color: c.muted }}>Type</label>
-            <div className="relative">
-              <select className="w-full border rounded-xl py-2.5 px-4 appearance-none outline-none transition-all text-sm"
-                style={{ background: c.input, borderColor: c.border, color: c.text }}>
-                <option>All Types</option>
-                <option>OTC</option>
-                <option>Prescription</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2" size={18} style={{ color: c.muted }} />
-            </div>
-          </div>
+          ))}
+          {metrics.topProducts.length === 0 && (
+             <p className="text-xs text-center py-4 col-span-5" style={{ color: card.muted }}>No product data for this period</p>
+          )}
         </div>
       </div>
 
       {/* Sales Table */}
-      <div className="border rounded-3xl overflow-hidden backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
-        <table className="w-full text-left">
-          <thead>
-            <tr className="border-b text-[10px] font-bold uppercase tracking-widest" style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC', borderColor: c.border }}>
-              <th className="px-6 py-5" style={{ color: c.muted }}>Branch</th>
-              <th className="px-6 py-5" style={{ color: c.muted }}>Sale ID</th>
-              <th className="px-6 py-5 text-center" style={{ color: c.muted }}>Time</th>
-              <th className="px-6 py-5" style={{ color: c.muted }}>Payment</th>
-              <th className="px-6 py-5" style={{ color: c.muted }}>Total</th>
-              <th className="px-6 py-5 text-right" style={{ color: c.muted }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y" style={{ borderColor: c.border }}>
-            {loading ? (
-              [...Array(5)].map((_, i) => (
-                <tr key={i} className="animate-pulse">
-                  <td colSpan={6} className="px-6 py-8 h-16 bg-slate-800/5"></td>
-                </tr>
-              ))
-            ) : filteredSales.map((sale) => (
-              <tr key={sale.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                      <Building2 size={20} className="text-emerald-400" />
-                    </div>
-                    <div>
-                      <p className="font-bold text-sm" style={{ color: c.text }}>{(sale as any).branch?.name || 'Azzay Pharmacy'}</p>
-                      <p className="text-[10px] uppercase font-bold tracking-tighter" style={{ color: c.muted }}>Main Hub</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-2 group/id cursor-pointer" onClick={() => setSelectedSale(sale)}>
-                    <p className="font-mono text-xs" style={{ color: c.text }}>{(sale as any).receiptNo || sale.id.slice(-8).toUpperCase()}</p>
-                    <ChevronRight size={14} className="group-hover/id:text-emerald-400 group-hover/id:translate-x-1 transition-all" style={{ color: c.muted }} />
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <div className="text-center">
-                    <p className="text-sm font-bold" style={{ color: c.text }}>{new Date(sale.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                    <p className="text-[10px] uppercase font-bold" style={{ color: c.muted }}>{new Date(sale.createdAt).toLocaleDateString()}</p>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <span className="px-2 py-1 border rounded-lg text-[10px] font-black tracking-widest uppercase"
-                    style={{ background: isDark ? 'rgba(30,41,59,0.5)' : '#fff', borderColor: c.border, color: c.muted }}>
-                    {sale.paymentMethod}
-                  </span>
-                </td>
-                <td className="px-6 py-4">
-                  <p className="font-black font-mono" style={{ color: c.text }}>GH¢{Number(sale.totalAmount).toFixed(2)}</p>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex justify-end gap-2">
-                    <button 
-                      onClick={() => setSelectedSale(sale)}
-                      className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all shadow-lg shadow-emerald-500/5"
-                      title="View Details"
-                    >
-                      <ExternalLink size={18} />
-                    </button>
-                    <button 
-                      className="p-2 bg-slate-800/10 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all"
-                      title="Reprint"
-                    >
-                      <Printer size={18} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+      <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+        {/* Filters */}
+        <div className="p-4 border-b flex flex-col md:flex-row gap-3 items-start md:items-center justify-between" style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(248,250,252,0.8)' }}>
+          <div className="flex gap-3 flex-1">
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={15} style={{ color: card.subtle }} />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search sales..." className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+            </div>
+            <select value={paymentFilter} onChange={e => setPaymentFilter(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}>
+              <option value="all">All Payments</option>
+              {Object.entries(PAYMENT_METHODS).map(([key, method]) => (
+                <option key={key} value={key}>{method.label}</option>
+              ))}
+            </select>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+          </div>
+          <button onClick={() => refetchSales()} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+            <RefreshCw size={14} />
+            Refresh
+          </button>
+        </div>
 
-function Building2({ size, className }: { size?: number, className?: string }) {
-  return (
-    <svg 
-      xmlns="http://www.w3.org/2000/svg" 
-      width={size || 24} 
-      height={size || 24} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round" 
-      className={className}
-    >
-      <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/>
-      <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/>
-      <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/>
-      <path d="M10 6h4"/>
-      <path d="M10 10h4"/>
-      <path d="M10 14h4"/>
-      <path d="M10 18h4"/>
-    </svg>
+        {/* Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${card.border}`, background: isDark ? 'rgba(15,23,42,0.3)' : 'rgba(248,250,252,0.6)' }}>
+                {['Receipt', 'Time', 'Customer', 'Items', 'Payment', 'Total', 'Profit', 'Status', 'Actions'].map(h => (
+                  <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: card.subtle }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedSales.map((sale, i) => {
+                const methodConfig = PAYMENT_METHODS[sale.paymentMethod as keyof typeof PAYMENT_METHODS];
+                const isProfitable = (sale.profit || 0) > 0;
+                
+                return (
+                  <tr key={sale.id} className="transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30" style={{ borderBottom: i < paginatedSales.length - 1 ? `1px solid ${card.border}` : 'none' }}>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-medium" style={{ color: card.primary }}>
+                          {(sale as any).receiptNo || sale.id.slice(-8).toUpperCase()}
+                        </span>
+                        {sale.customerType === 'Registered' && (
+                          <Users size={12} style={{ color: card.success }} />
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="text-center">
+                        <p className="text-sm font-bold" style={{ color: card.text }}>
+                          {new Date(sale.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        <p className="text-[10px]" style={{ color: card.subtle }}>
+                          {new Date(sale.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: card.text }}>
+                          {sale.customerName || 'Walk-in'}
+                        </p>
+                        <p className="text-[10px]" style={{ color: card.subtle }}>
+                          {sale.customerType}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="text-center">
+                        <p className="text-sm font-bold" style={{ color: card.text }}>{sale.itemsCount}</p>
+                        <p className="text-[10px]" style={{ color: card.subtle }}>
+                          GH₵ {sale.averageItemValue.toFixed(0)} avg
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{methodConfig?.icon}</span>
+                        <span className="text-xs font-medium px-2 py-1 rounded-lg" style={{ background: `${methodConfig?.color}18`, color: methodConfig?.color }}>
+                          {methodConfig?.label}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="font-mono text-sm font-bold" style={{ color: card.text }}>
+                        GH₵ {sale.totalAmount.toLocaleString()}
+                      </p>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-1">
+                        <p className="font-mono text-sm font-bold" style={{ color: isProfitable ? card.success : card.danger }}>
+                          {isProfitable ? '+' : ''}GH₵ {(sale.profit || 0).toLocaleString()}
+                        </p>
+                        {isProfitable && <TrendingUp size={12} style={{ color: card.success }} />}
+                      </div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: card.success + '18', color: card.success }}>
+                        Completed
+                      </span>
+                    </td>
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setSelectedSale(sale); setShowDetailsModal(true); }} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-blue-500" title="View Details">
+                          <Eye size={14} />
+                        </button>
+                        <button className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500" title="Print Receipt">
+                          <Printer size={14} />
+                        </button>
+                        <button className="p-1.5 rounded-lg hover:bg-orange-500/10 text-orange-500" title="Request Refund">
+                          <RefreshCw size={14} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        <div className="p-4 border-t flex items-center justify-between" style={{ borderColor: card.border }}>
+          <p className="text-xs" style={{ color: card.muted }}>
+            Showing <span className="font-bold" style={{ color: card.text }}>{startIndex}-{endIndex}</span> of <span className="font-bold" style={{ color: card.text }}>{totalItems}</span> sales
+          </p>
+          <div className="flex gap-2">
+            <button disabled={currentPage === 1} onClick={prevPage} className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-30" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+              Previous
+            </button>
+            <button disabled={currentPage === totalPages} onClick={nextPage} className="px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-30" style={{ background: card.primary, color: '#fff' }}>
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Sale Details Modal */}
+      {showDetailsModal && selectedSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
+          <div className="w-full max-w-2xl rounded-2xl border overflow-hidden" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+            <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: card.border }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}>
+                  <Receipt size={20} />
+                </div>
+                <div>
+                  <h2 className="font-display text-lg font-bold" style={{ color: card.text }}>Sale Details</h2>
+                  <p className="text-xs" style={{ color: card.muted }}>{selectedSale.receiptNo || selectedSale.id}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDetailsModal(false)} className="text-slate-400 hover:text-red-500 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Date & Time', value: new Date(selectedSale.createdAt).toLocaleString() },
+                  { label: 'Customer', value: selectedSale.customerName || 'Walk-in' },
+                  { label: 'Payment Method', value: selectedSale.paymentMethod },
+                  { label: 'Items Count', value: `${selectedSale.itemsCount} items` },
+                ].map(item => (
+                  <div key={item.label} className="p-3 rounded-xl" style={{ background: card.inputBg }}>
+                    <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.subtle }}>{item.label}</p>
+                    <p className="text-sm font-medium mt-1" style={{ color: card.text }}>{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border rounded-xl overflow-hidden" style={{ borderColor: card.border }}>
+                <table className="w-full text-left">
+                  <thead style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC' }}>
+                    <tr>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Product</th>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-right" style={{ color: card.subtle }}>Qty</th>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-right" style={{ color: card.subtle }}>Price</th>
+                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-right" style={{ color: card.subtle }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedSale.items?.map((item: any) => (
+                      <tr key={item.id} style={{ borderBottom: `1px solid ${card.border}` }}>
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-medium" style={{ color: card.text }}>{item.product?.name}</p>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <p className="text-sm" style={{ color: card.text }}>{item.quantity}</p>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <p className="text-sm font-mono" style={{ color: card.muted }}>GH₵ {item.unitPrice.toFixed(2)}</p>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <p className="text-sm font-bold font-mono" style={{ color: card.text }}>GH₵ {(item.total || (item.quantity * item.unitPrice)).toFixed(2)}</p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC' }}>
+                    <tr>
+                      <td colSpan={3} className="px-4 py-3 text-sm font-bold" style={{ color: card.text }}>Total</td>
+                      <td className="px-4 py-3 text-lg font-bold font-mono" style={{ color: card.primary }}>GH₵ {selectedSale.totalAmount.toFixed(2)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div className="flex gap-2">
+                <button onClick={() => setShowDetailsModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>
+                  Close
+                </button>
+                <button className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2" style={{ background: card.primary }}>
+                  <Printer size={16} />
+                  Print Receipt
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

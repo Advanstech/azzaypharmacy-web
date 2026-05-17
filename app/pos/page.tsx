@@ -54,13 +54,18 @@ function POSInner() {
   const router = useRouter();
   const { 
     products: liveProducts, 
-    loadingProducts, 
+    suppliers,
+    sales, 
+    customers,
+    createSale, 
+    createCustomer,
+    me,
+    loadingProducts,
+    loadingCustomers,
+    error: storeError,
     refetchProducts,
     refetchAll,
-    syncStatus,
-    error: storeError,
-    me,
-    createSale
+    syncStatus
   } = useStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -86,6 +91,9 @@ function POSInner() {
   const [searching, setSearching] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [newCustomer, setNewCustomer] = useState({ name: '', phone: '', email: '', address: '' });
   const [showNumpad, setShowNumpad] = useState(false);
   const [previewProduct, setPreviewProduct] = useState<any>(null);
   const [previewSupplier, setPreviewSupplier] = useState<string | null>(null);
@@ -165,6 +173,33 @@ function POSInner() {
   const total = cart.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0);
   const tenderedNum = parseFloat(tendered) || 0;
   const change = tenderedNum - total;
+  const quickAmounts = useMemo(() => {
+    // Always provide useful quick amounts based on total
+    const baseAmount = total > 0 ? total : 0;
+    const ceilTo = (step: number) => Math.ceil(baseAmount / step) * step;
+    
+    // Generate smart suggestions: exact + rounded up to common bill denominations
+    const suggestions = [baseAmount];
+    
+    // Add rounded amounts based on common Ghana bill denominations (5, 10, 20, 50, 100, 200)
+    [5, 10, 20, 50, 100].forEach(step => {
+      const rounded = ceilTo(step);
+      if (rounded > baseAmount && suggestions.length < 5) {
+        suggestions.push(rounded);
+      }
+    });
+    
+    // If still no suggestions (empty cart), show common default amounts
+    if (suggestions.length === 1 && baseAmount === 0) {
+      return [0, 5, 10, 20, 50, 100];
+    }
+    
+    return Array.from(new Set(suggestions)).sort((a, b) => a - b);
+  }, [total]);
+
+  const setTenderedAmount = (value: number) => {
+    setTendered(value.toFixed(2));
+  };
 
   const handleComplete = async () => {
     if (cart.length === 0 || submitting) return;
@@ -174,7 +209,10 @@ function POSInner() {
         items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
         paymentMethod,
         amountPaid: paymentMethod === 'Cash' ? tenderedNum || total : total,
+        customerId: selectedCustomer?.id,
         customerName: selectedCustomer?.name || 'Walk-in Customer',
+        customerPhone: selectedCustomer?.phone,
+        customerEmail: selectedCustomer?.email,
       });
       setCompletedSale({ ...sale, items: [...cart], total, change: Math.max(0, change) });
       setShowReceipt(true);
@@ -213,16 +251,6 @@ function POSInner() {
         const scrollLeft = targetOffset - (containerWidth / 2) + (targetWidth / 2);
         container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
       }
-    }
-  };
-
-  const handleNumpadPress = (value: string) => {
-    if (value === 'C') {
-      setTendered('');
-    } else if (value === '⌫') {
-      setTendered(prev => prev.slice(0, -1));
-    } else {
-      setTendered(prev => prev + value);
     }
   };
 
@@ -328,51 +356,80 @@ function POSInner() {
                 </button>
               )}
             </div>
-            <p className="text-xs mt-2 ml-1 font-medium" style={{ color: c.muted }}>
-              {searchResults.length} products found
-            </p>
+            {searchResults.length > 0 && (
+              <p className="text-xs mt-2 ml-1 font-medium" style={{ color: c.muted }}>
+                {searchResults.length} products found
+              </p>
+            )}
           </div>
 
-            {/* Horizontal Categories with Scroll Controls */}
-            <div className="relative group/cats">
-              <button 
-                onClick={() => scrollCategories('left')}
-                aria-label="Scroll Categories Left"
-                className="absolute left-0 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 transition-transform"
-                style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.95)' : '#fff' }}
+            {/* Categories Navigation - aligned with search */}
+            <div className="flex items-stretch gap-2 overflow-hidden px-6">
+              {/* Fixed All Button */}
+              <button
+                onClick={() => handleCategoryClick('All')}
+                className={`flex-shrink-0 self-center h-9 px-4 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 border flex items-center gap-2 ${
+                  activeCategory === 'All'
+                    ? 'shadow-md'
+                    : 'hover:border-primary/40'
+                }`}
+                style={{
+                  background: activeCategory === 'All' ? c.primary : (isDark ? 'rgba(255,255,255,0.04)' : '#fff'),
+                  borderColor: activeCategory === 'All' ? c.primary : (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'),
+                  color: activeCategory === 'All' ? '#fff' : c.muted
+                }}
               >
-                <ChevronLeft size={16} style={{ color: c.muted }} />
+                <span className={`w-1.5 h-1.5 rounded-full ${activeCategory === 'All' ? 'bg-white' : 'bg-slate-400'}`} />
+                All
               </button>
-              <div ref={categoryScrollRef} className="flex gap-2 overflow-x-auto pb-4 pt-1 no-scrollbar scroll-smooth px-10">
-                {categories.map(cat => (
-                  <button 
-                    key={cat} 
-                    data-category={cat}
-                    onClick={() => handleCategoryClick(cat)}
-                    className={`px-6 py-3 rounded-2xl text-xs font-bold whitespace-nowrap transition-all border-2 flex items-center gap-2 ${
-                      activeCategory === cat 
-                        ? 'scale-105 z-10' 
-                        : 'hover:border-primary/40 hover:bg-primary/5 active:scale-95'
-                    }`}
-                    style={{ 
-                      background: activeCategory === cat ? c.primary : (isDark ? 'rgba(255,255,255,0.03)' : '#fff'),
-                      borderColor: activeCategory === cat ? c.primary : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
-                      color: activeCategory === cat ? '#fff' : c.muted
-                    }}
-                  >
-                    <div className={`w-2 h-2 rounded-full ${activeCategory === cat ? 'bg-white animate-pulse' : 'bg-slate-400'}`} />
-                    {cat}
-                  </button>
-                ))}
+
+              {/* Scrollable Categories with Navigation */}
+              <div className="flex-1 flex items-center gap-1 min-w-0">
+                {/* Left Arrow */}
+                <button
+                  onClick={() => scrollCategories('left')}
+                  className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                  style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
+                >
+                  <ChevronLeft size={16} style={{ color: c.muted }} />
+                </button>
+
+                {/* Scrollable Pills Container */}
+                <div
+                  ref={categoryScrollRef}
+                  className="flex-1 flex gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1"
+                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                >
+                  {categories.filter(cat => cat !== 'All').map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => handleCategoryClick(cat)}
+                      className={`flex-shrink-0 h-9 px-3 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 border flex items-center gap-1.5 ${
+                        activeCategory === cat
+                          ? 'shadow-sm'
+                          : 'hover:border-primary/30'
+                      }`}
+                      style={{
+                        background: activeCategory === cat ? c.primary : (isDark ? 'rgba(255,255,255,0.04)' : '#fff'),
+                        borderColor: activeCategory === cat ? c.primary : (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'),
+                        color: activeCategory === cat ? '#fff' : c.muted
+                      }}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full ${activeCategory === cat ? 'bg-white' : 'bg-slate-400'}`} />
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Right Arrow */}
+                <button
+                  onClick={() => scrollCategories('right')}
+                  className="flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                  style={{ background: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}
+                >
+                  <ChevronRight size={16} style={{ color: c.muted }} />
+                </button>
               </div>
-              <button 
-                onClick={() => scrollCategories('right')}
-                aria-label="Scroll Categories Right"
-                className="absolute right-0 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full flex items-center justify-center border hover:scale-110 transition-transform"
-                style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.95)' : '#fff' }}
-              >
-                <ChevronRight size={16} style={{ color: c.muted }} />
-              </button>
             </div>
 
             {/* Top Search Result */}
@@ -507,15 +564,19 @@ function POSInner() {
             </div>
             
             {selectedCustomer ? (
-              <div className="flex items-center justify-between bg-white border p-3 rounded-lg" style={{ borderColor: c.border }}>
-                <div className="flex items-center gap-2">
-                  <User size={14} className="text-[#059669]" />
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">{selectedCustomer.name}</p>
-                    <p className="text-[10px] text-slate-500">{selectedCustomer.phone || 'No phone'}</p>
+              <div className="bg-white border p-3 rounded-lg space-y-2" style={{ borderColor: c.border }}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-[#059669]/10 flex items-center justify-center">
+                      <User size={14} className="text-[#059669]" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">{selectedCustomer.name}</p>
+                      <p className="text-[10px] text-slate-500">{selectedCustomer.phone || 'No phone'}</p>
+                    </div>
                   </div>
+                  <button onClick={() => setSelectedCustomer(null)} className="text-[10px] text-red-500 font-bold hover:underline">Change</button>
                 </div>
-                <button onClick={() => setSelectedCustomer(null)} className="text-[10px] text-red-500 font-bold hover:underline">Change</button>
               </div>
             ) : (
               <div className="flex gap-2 mb-2">
@@ -596,7 +657,10 @@ function POSInner() {
 
             {paymentMethod === 'Cash' && (
               <button
-                onClick={() => setShowNumpad(true)}
+                onClick={() => {
+                  if (!tendered || tenderedNum < total) setTenderedAmount(total);
+                  setShowNumpad(true);
+                }}
                 className="w-full py-3 rounded-xl border-2 font-mono text-lg font-bold focus:border-primary/50 outline-none transition-all hover:border-primary/30"
                 style={{ background: isDark ? '#0A0F1E' : '#fff', borderColor: c.border, color: c.text }}
               >
@@ -627,7 +691,11 @@ function POSInner() {
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-white/10 text-slate-300">
                       {previewProduct.category || 'OTC'}
                     </span>
-                    <h2 className="font-display font-bold text-lg leading-tight mt-2">{previewProduct.name}</h2>
+                    <h2 className="font-display font-bold text-lg leading-tight mt-2 hover:text-emerald-400 transition-colors">
+                      <Link href={`/dashboard/inventory/${previewProduct.id}`} className="hover:underline">
+                        {previewProduct.name}
+                      </Link>
+                    </h2>
                   </div>
                   <button onClick={() => setPreviewProduct(null)} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
                     <X size={20} />
@@ -681,7 +749,16 @@ function POSInner() {
                   <div className="p-4 rounded-xl bg-white/5 border border-white/10">
                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Supplier Chain</p>
                      <div className="flex items-center justify-between">
-                       <p className="text-sm font-bold text-white">Ernest Chemists Ltd</p>
+                       {previewProduct.supplierId ? (
+                         <Link 
+                           href={`/dashboard/suppliers/${previewProduct.supplierId}`}
+                           className="text-sm font-bold text-white hover:text-emerald-400 hover:underline transition-colors"
+                         >
+                           {suppliers.find(s => s.id === previewProduct.supplierId)?.name || 'Unknown Supplier'}
+                         </Link>
+                       ) : (
+                         <p className="text-sm font-bold text-white">{previewProduct.brand || 'Unknown Supplier'}</p>
+                       )}
                        <span className="text-[10px] text-orange-400 font-bold">Score 75</span>
                      </div>
                   </div>
@@ -703,84 +780,270 @@ function POSInner() {
         </div>
       </main>
 
-      {/* Customer Search Modal */}
+      {/* Customer Search/Create Modal */}
       {showCustomerSearch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xl bg-black/60">
-          <div className="w-full max-w-md rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300" style={{ background: isDark ? '#0F172A' : '#fff' }}>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-display font-bold text-lg" style={{ color: c.text }}>Select Customer</h3>
-                <button onClick={() => setShowCustomerSearch(false)}><X size={20} style={{ color: c.muted }} /></button>
-              </div>
-              <div className="relative mb-4">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2" size={18} style={{ color: c.muted }} />
-                <input
-                  type="text"
-                  placeholder="Search by name or phone..."
-                  className="w-full pl-12 pr-4 py-3 rounded-xl border-2 focus:outline-none"
-                  style={{ background: isDark ? '#0A0F1E' : '#F8FAFC', borderColor: c.border, color: c.text }}
-                />
-              </div>
-              <button
-                onClick={() => { setSelectedCustomer({ name: 'Walk-in Customer', phone: '' }); setShowCustomerSearch(false); }}
-                className="w-full py-3 rounded-xl border-2 border-dashed font-bold text-xs mb-3"
-                style={{ borderColor: c.border, color: c.muted }}
-              >
-                Walk-in Customer
-              </button>
-              <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
-                {/* Sample customers - would use store.customers */}
-                {['Kwame Mensah', 'Ama Serwaa', 'Kojo Asante'].map(name => (
+          <div className="w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300" style={{ background: isDark ? '#0F172A' : '#fff' }}>
+            {!showCreateCustomer ? (
+              // Search/Select View
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-display font-bold text-lg" style={{ color: c.text }}>Select Customer</h3>
+                  <button onClick={() => setShowCustomerSearch(false)}><X size={20} style={{ color: c.muted }} /></button>
+                </div>
+                <div className="relative mb-4">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2" size={18} style={{ color: c.muted }} />
+                  <input
+                    type="text"
+                    placeholder="Search by name or phone..."
+                    value={customerSearchQuery}
+                    onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 rounded-xl border-2 focus:outline-none"
+                    style={{ background: isDark ? '#0A0F1E' : '#F8FAFC', borderColor: c.border, color: c.text }}
+                  />
+                </div>
+                <div className="flex gap-2 mb-4">
                   <button
-                    key={name}
-                    onClick={() => { setSelectedCustomer({ name, phone: '024...' }); setShowCustomerSearch(false); }}
-                    className="w-full p-3 rounded-xl border flex items-center gap-3 transition-all hover:border-primary/30"
-                    style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC' }}
+                    onClick={() => { setSelectedCustomer({ name: 'Walk-in Customer', phone: '', id: null }); setShowCustomerSearch(false); }}
+                    className="flex-1 py-3 rounded-xl border-2 border-dashed font-bold text-xs"
+                    style={{ borderColor: c.border, color: c.muted }}
                   >
-                    <User size={16} style={{ color: c.primary }} />
-                    <span className="text-xs font-bold" style={{ color: c.text }}>{name}</span>
+                    Walk-in Customer
                   </button>
-                ))}
+                  <button
+                    onClick={() => setShowCreateCustomer(true)}
+                    className="flex-1 py-3 rounded-xl bg-[#059669] text-white font-bold text-xs flex items-center justify-center gap-2"
+                  >
+                    <UserPlus size={14} /> New Customer
+                  </button>
+                </div>
+                <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+                  {loadingCustomers ? (
+                    <div className="text-center py-8" style={{ color: c.muted }}>Loading customers...</div>
+                  ) : customers.filter(c => 
+                      c.name?.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
+                      c.phone?.includes(customerSearchQuery)
+                    ).length === 0 ? (
+                    <div className="text-center py-8" style={{ color: c.muted }}>
+                      No customers found. Create a new one!
+                    </div>
+                  ) : customers.filter(c => 
+                      c.name?.toLowerCase().includes(customerSearchQuery.toLowerCase()) ||
+                      c.phone?.includes(customerSearchQuery)
+                    ).map(customer => (
+                    <button
+                      key={customer.id}
+                      onClick={() => { setSelectedCustomer(customer); setShowCustomerSearch(false); setCustomerSearchQuery(''); }}
+                      className="w-full p-3 rounded-xl border flex items-start gap-3 transition-all hover:border-primary/30 text-left"
+                      style={{ borderColor: c.border, background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC' }}
+                    >
+                      <div className="w-10 h-10 rounded-full bg-[#059669]/10 flex items-center justify-center flex-shrink-0">
+                        <User size={18} className="text-[#059669]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold truncate" style={{ color: c.text }}>{customer.name}</p>
+                        <p className="text-[10px]" style={{ color: c.muted }}>{customer.phone || 'No phone'}</p>
+                      </div>
+                      {(customer.totalSpent || 0) > 0 && (
+                        <div className="text-right">
+                          <p className="text-[10px] font-bold text-[#059669]">GH¢{(customer.totalSpent || 0).toFixed(0)}</p>
+                          <p className="text-[9px]" style={{ color: c.muted }}>{customer.loyaltyPoints || 0} pts</p>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : (
+              // Create Customer View
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-display font-bold text-lg" style={{ color: c.text }}>New Customer</h3>
+                  <button onClick={() => setShowCreateCustomer(false)}><X size={20} style={{ color: c.muted }} /></button>
+                </div>
+                <div className="space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar pr-1">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider ml-1 mb-1 block" style={{ color: c.muted }}>Full Name *</label>
+                    <input
+                      type="text"
+                      placeholder="Enter customer name"
+                      value={newCustomer.name}
+                      onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border-2 focus:outline-none focus:border-[#059669]"
+                      style={{ background: isDark ? '#0A0F1E' : '#F8FAFC', borderColor: c.border, color: c.text }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider ml-1 mb-1 block" style={{ color: c.muted }}>Phone</label>
+                      <input
+                        type="tel"
+                        placeholder="024..."
+                        value={newCustomer.phone}
+                        onChange={(e) => setNewCustomer({ ...newCustomer, phone: e.target.value })}
+                        className="w-full px-4 py-3 rounded-xl border-2 focus:outline-none focus:border-[#059669]"
+                        style={{ background: isDark ? '#0A0F1E' : '#F8FAFC', borderColor: c.border, color: c.text }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider ml-1 mb-1 block" style={{ color: c.muted }}>Email</label>
+                      <input
+                        type="email"
+                        placeholder="optional"
+                        value={newCustomer.email}
+                        onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
+                        className="w-full px-4 py-3 rounded-xl border-2 focus:outline-none focus:border-[#059669]"
+                        style={{ background: isDark ? '#0A0F1E' : '#F8FAFC', borderColor: c.border, color: c.text }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider ml-1 mb-1 block" style={{ color: c.muted }}>Address</label>
+                    <input
+                      type="text"
+                      placeholder="Customer address (optional)"
+                      value={newCustomer.address}
+                      onChange={(e) => setNewCustomer({ ...newCustomer, address: e.target.value })}
+                      className="w-full px-4 py-3 rounded-xl border-2 focus:outline-none focus:border-[#059669]"
+                      style={{ background: isDark ? '#0A0F1E' : '#F8FAFC', borderColor: c.border, color: c.text }}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-6 pt-4 border-t" style={{ borderColor: c.border }}>
+                  <button
+                    onClick={() => setShowCreateCustomer(false)}
+                    className="flex-1 py-3 rounded-xl border-2 font-bold text-sm"
+                    style={{ borderColor: c.border, color: c.muted }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!newCustomer.name.trim()) {
+                        alert('Please enter customer name');
+                        return;
+                      }
+                      try {
+                        const customer = await createCustomer({
+                          name: newCustomer.name,
+                          phone: newCustomer.phone,
+                          email: newCustomer.email,
+                          address: newCustomer.address
+                        });
+                        setSelectedCustomer(customer);
+                        setNewCustomer({ name: '', phone: '', email: '', address: '' });
+                        setShowCreateCustomer(false);
+                        setShowCustomerSearch(false);
+                        setCustomerSearchQuery('');
+                      } catch (err: any) {
+                        alert(`Failed to create customer: ${err?.message || 'Unknown error'}`);
+                      }
+                    }}
+                    disabled={!newCustomer.name.trim()}
+                    className="flex-[2] py-3 rounded-xl bg-[#059669] text-white font-bold text-sm disabled:opacity-50"
+                  >
+                    Create & Select Customer
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Numpad Modal */}
+      {/* Cash Payment Modal */}
       {showNumpad && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xl bg-black/60">
-          <div className="w-full max-w-xs rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300" style={{ background: isDark ? '#0F172A' : '#fff' }}>
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-display font-bold text-sm" style={{ color: c.text }}>Cash Tendered</h3>
-                <button onClick={() => setShowNumpad(false)}><X size={18} style={{ color: c.muted }} /></button>
+          <div className="w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 border" style={{ background: isDark ? '#0F172A' : '#F8FAFC', borderColor: c.border }}>
+            <div className="p-6 border-b" style={{ borderColor: c.border }}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest" style={{ color: c.muted }}>Cash Payment</p>
+                  <p className="font-mono text-4xl font-bold mt-1" style={{ color: c.text }}>GH₵ {total.toFixed(2)}</p>
+                </div>
+                <button
+                  onClick={() => setShowNumpad(false)}
+                  className="px-4 py-2 rounded-2xl border text-sm font-semibold transition-colors"
+                  style={{ borderColor: c.border, color: c.muted }}
+                >
+                  Cancel
+                </button>
               </div>
-              <div className="p-4 rounded-xl mb-4 text-center" style={{ background: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.05)', border: `2px solid ${c.border}` }}>
-                <p className="font-mono text-3xl font-bold" style={{ color: c.primary }}>GH₵ {tendered || '0.00'}</p>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Cash Received</p>
+                <div className="rounded-3xl px-6 py-5 border-2" style={{ background: isDark ? '#111827' : '#FFFFFF', borderColor: change >= 0 ? '#16A34A' : c.border }}>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-4xl font-bold" style={{ color: c.muted }}>GH₵</span>
+                    <input
+                      value={tendered}
+                      onChange={(e) => {
+                        const cleaned = e.target.value.replace(/[^\d.]/g, '');
+                        const normalized = cleaned.split('.').length > 2
+                          ? `${cleaned.split('.')[0]}.${cleaned.split('.').slice(1).join('')}`
+                          : cleaned;
+                        setTendered(normalized);
+                      }}
+                      placeholder={total.toFixed(2)}
+                      inputMode="decimal"
+                      className="w-full bg-transparent border-0 outline-none font-mono text-5xl font-bold"
+                      style={{ color: c.text }}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {['7', '8', '9', '4', '5', '6', '1', '2', '3', 'C', '0', '⌫'].map(key => (
-                  <button
-                    key={key}
-                    onClick={() => handleNumpadPress(key)}
-                    className={`py-4 rounded-xl font-bold text-lg transition-all ${
-                      key === 'C' ? 'bg-red-500/10 text-red-500' :
-                      key === '⌫' ? 'bg-orange-500/10 text-orange-500' :
-                      'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700'
-                    }`}
-                    style={{ color: c.text }}
-                  >
-                    {key}
-                  </button>
-                ))}
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: c.muted }}>Quick Amounts</p>
+                <div className="flex flex-wrap gap-2">
+                  {quickAmounts.map((amt, index) => {
+                    const isExact = index === 0;
+                    const isActive = Math.abs(tenderedNum - amt) < 0.0001;
+                    return (
+                      <button
+                        key={amt}
+                        onClick={() => setTenderedAmount(amt)}
+                        className="px-5 py-2.5 rounded-2xl text-sm font-bold border transition-all"
+                        style={{
+                          background: isActive ? (isDark ? 'rgba(22,163,74,0.22)' : 'rgba(22,163,74,0.12)') : (isDark ? 'rgba(255,255,255,0.04)' : '#fff'),
+                          borderColor: isActive ? '#16A34A' : c.border,
+                          color: isActive ? '#16A34A' : c.text,
+                        }}
+                      >
+                        {isExact ? '✓ Exact' : `GH₵ ${amt.toFixed(0)}`}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+
+              <div className="rounded-3xl border px-6 py-5" style={{ background: isDark ? 'rgba(22,163,74,0.10)' : 'rgba(22,163,74,0.08)', borderColor: change >= 0 ? 'rgba(22,163,74,0.45)' : c.border }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: change >= 0 ? '#16A34A' : c.muted }}>
+                      Change To Give Customer
+                    </p>
+                    <p className="font-mono text-5xl font-bold" style={{ color: change >= 0 ? '#16A34A' : c.muted }}>
+                      GH₵ {change >= 0 ? change.toFixed(2) : '0.00'}
+                    </p>
+                  </div>
+                  {change >= 0 && (
+                    <span className="px-4 py-2 rounded-full text-sm font-bold" style={{ background: isDark ? 'rgba(22,163,74,0.22)' : 'rgba(22,163,74,0.14)', color: '#16A34A' }}>
+                      ✓ Ready
+                    </span>
+                  )}
+                </div>
+              </div>
+
               <button
                 onClick={() => setShowNumpad(false)}
-                className="w-full mt-4 py-3 rounded-xl bg-primary text-white font-bold text-sm"
-                style={{ background: c.primary }}
+                disabled={tenderedNum < total}
+                className="w-full mt-2 py-4 rounded-2xl text-white font-bold text-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: isDark ? '#065F46' : '#047857' }}
               >
-                Confirm
+                Confirm Cash · GH₵ {tenderedNum.toFixed(2)}
               </button>
             </div>
           </div>
@@ -790,7 +1053,7 @@ function POSInner() {
       {/* Receipt Modal */}
       {showReceipt && completedSale && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xl bg-black/60 print:p-0 print:bg-white print:backdrop-blur-none">
-          <div className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 print:shadow-none print:max-w-none print:w-[80mm] print:rounded-none" 
+          <div id="receipt-print-area" className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 print:shadow-none print:max-w-none print:w-[80mm] print:rounded-none" 
             style={{ background: isDark ? '#0F172A' : '#fff' }}>
             
             {/* Print Only Header (Logo) */}
@@ -814,10 +1077,13 @@ function POSInner() {
                 <div><span className="opacity-60">Cashier:</span> {me?.name || 'Pharmacist'}</div>
               </div>
 
-              {selectedCustomer && (
-                <div className="p-2 rounded-lg text-[10px]" style={{ background: isDark ? 'rgba(0,217,255,0.05)' : 'rgba(14,165,233,0.05)' }}>
-                  <span className="opacity-60">Customer:</span> {selectedCustomer.name}
-                  {selectedCustomer.phone && <span className="ml-2 opacity-60">{selectedCustomer.phone}</span>}
+              {selectedCustomer && selectedCustomer.id && (
+                <div className="p-3 rounded-xl border text-[10px]" style={{ background: isDark ? 'rgba(0,217,255,0.05)' : 'rgba(14,165,233,0.05)', borderColor: c.border }}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <User size={12} className="text-[#00D9FF]" />
+                    <span className="font-bold">{selectedCustomer.name}</span>
+                    {selectedCustomer.phone && <span className="opacity-60">| {selectedCustomer.phone}</span>}
+                  </div>
                 </div>
               )}
 
@@ -896,12 +1162,87 @@ function POSInner() {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.2); border-radius: 10px; }
         
         @media print {
-          body * { visibility: hidden; }
-          .print\:block, .print\:block * { visibility: visible; }
-          .print\:hidden { display: none !important; }
-          .fixed { position: absolute !important; top: 0 !important; left: 0 !important; margin: 0 !important; padding: 0 !important; }
-          .backdrop-blur-xl { backdrop-filter: none !important; background: white !important; }
-          @page { size: 80mm auto; margin: 0; }
+          /* Hide all page content by default */
+          body * {
+            visibility: hidden !important;
+          }
+          
+          /* Only make our custom receipt print area container and its descendants visible */
+          #receipt-print-area, #receipt-print-area * {
+            visibility: visible !important;
+          }
+          
+          /* Fit the print area perfectly to the thermal paper width */
+          #receipt-print-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 80mm !important;
+            max-width: 80mm !important;
+            margin: 0 !important;
+            padding: 4px !important;
+            background: #fff !important;
+            color: #000 !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            transform: none !important;
+            animation: none !important;
+          }
+          
+          /* Thermal color and background overrides to eliminate standard ink blockages */
+          #receipt-print-area * {
+            background: transparent !important;
+            color: #000 !important;
+            text-shadow: none !important;
+            box-shadow: none !important;
+          }
+          
+          /* Thermal print typography scaling and line spacing */
+          #receipt-print-area h1 {
+            font-size: 16px !important;
+            font-weight: bold !important;
+            line-height: 1.2 !important;
+            margin-bottom: 2px !important;
+          }
+          #receipt-print-area h2 {
+            font-size: 13px !important;
+            font-weight: bold !important;
+            line-height: 1.2 !important;
+            margin-bottom: 2px !important;
+          }
+          #receipt-print-area p, 
+          #receipt-print-area span, 
+          #receipt-print-area div {
+            font-size: 9px !important;
+            font-weight: 500 !important;
+            line-height: 1.3 !important;
+          }
+          #receipt-print-area .font-bold {
+            font-weight: bold !important;
+          }
+          
+          /* Keep items list simple and clear with high contrast dashed lines */
+          #receipt-print-area .border-b,
+          #receipt-print-area .border-t,
+          #receipt-print-area .border-dashed {
+            border-color: #000 !important;
+            border-style: dashed !important;
+            border-width: 1px !important;
+            border-top-width: 1px !important;
+            border-bottom-width: 1px !important;
+          }
+          
+          /* Hide non-printable screen items */
+          .print\:hidden {
+            display: none !important;
+          }
+          
+          /* Configure thermal page size boundaries */
+          @page {
+            size: 80mm auto;
+            margin: 0;
+          }
         }
       `}</style>
     </div>

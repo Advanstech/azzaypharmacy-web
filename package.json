@@ -5,13 +5,13 @@
   "author": "Hanson Peprah, Digital Fortuna Market",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "NODE_OPTIONS='--max-old-space-size=4096' next dev --webpack",
+    "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
     "lint": "eslint",
     "tauri": "tauri",
     "tauri:dev": "TAURI_ENV_PLATFORM=desktop tauri dev",
-    "tauri:build": "TAURI_ENV_PLATFORM=desktop tauri build"
+    "tauri:build": "NODE_OPTIONS='--max-old-space-size=4096' TAURI_ENV_PLATFORM=desktop tauri build"
   },
   "dependencies": {
     "@apollo/client": "^4.1.9",

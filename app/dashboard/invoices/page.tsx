@@ -1,18 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
 import {
   Upload, FileText, DollarSign, Calendar, AlertCircle, CheckCircle,
   Clock, TrendingUp, TrendingDown, Plus, Search, Filter, Download,
   Eye, Edit, Trash2, CreditCard, Building2, ChevronRight, X,
   Save, Loader2, Receipt, BarChart3, PieChart, ArrowUpRight,
-  ArrowDownRight, Bell, Settings, RefreshCw
+  ArrowDownRight, Bell, Settings, RefreshCw, Sparkles
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth-context';
 import { usePagination } from '@/hooks/use-pagination';
+import { gql, M_RECEIVE_INVOICE, Q_INVOICES } from '@/lib/gql';
+import { useToast } from '@/components/pharma-toast';
 
 const INVOICE_STATUS = {
   DRAFT: { label: 'Draft', color: '#64748B', bg: 'rgba(100,116,139,0.1)' },
@@ -31,28 +31,36 @@ const PAYMENT_STATUS = {
 
 export default function InvoicesPage() {
   const { theme } = useTheme();
-  const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const { suppliers, purchases } = useStore();
-  const { user } = useAuth();
+  const { suppliers, products, me, refetchPurchases, createSupplier, createProduct } = useStore();
+  const { addToast } = useToast();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [activeTab, setActiveTab] = useState<'invoices' | 'upload' | 'analytics'>('invoices');
+  const [invoiceRecords, setInvoiceRecords] = useState<any[]>([]);
 
   // Upload Modal
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadData, setUploadData] = useState({
+    file: null as File | null,
+  });
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Manual Ledger
+  const [showManualLedger, setShowManualLedger] = useState(false);
+  const [manualData, setManualData] = useState({
     supplierId: '',
     invoiceNumber: '',
     issueDate: '',
     dueDate: '',
-    totalAmount: 0,
-    file: null as File | null,
   });
-  const [isUploading, setIsUploading] = useState(false);
+  const [manualSupplierDraft, setManualSupplierDraft] = useState('');
+  const [manualCreateSupplierOnSubmit, setManualCreateSupplierOnSubmit] = useState(false);
+  const [manualLineItems, setManualLineItems] = useState<any[]>([]);
+  const [isProcessingManual, setIsProcessingManual] = useState(false);
 
   // Invoice Details Modal
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
@@ -66,6 +74,20 @@ export default function InvoicesPage() {
 
   useEffect(() => setMounted(true), []);
 
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      if (!me?.branchId) return;
+      try {
+        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: me.branchId });
+        setInvoiceRecords(data.invoices ?? []);
+      } catch (error) {
+        console.error('Failed to fetch invoices:', error);
+      }
+    };
+
+    fetchInvoices();
+  }, [me?.branchId]);
+
   const isDark = mounted && theme === 'dark';
 
   const card = {
@@ -78,65 +100,89 @@ export default function InvoicesPage() {
     primary: isDark ? '#00D9FF' : '#0EA5E9',
     primaryBg: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)',
     primaryBorder: isDark ? 'rgba(0,217,255,0.25)' : 'rgba(14,165,233,0.3)',
-    success: '#10B981',
-    warning: '#F59E0B',
-    danger: '#EF4444',
+    success: isDark ? '#10B981' : '#10B981',
+    successBg: isDark ? 'rgba(16,185,129,0.1)' : 'rgba(16,185,129,0.1)',
+    warning: isDark ? '#F59E0B' : '#F59E0B',
+    danger: isDark ? '#EF4444' : '#EF4444',
     inputBg: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC',
   };
 
-  // Mock invoice data with balance tracking
-  const invoices = [
-    {
-      id: 'INV-001',
-      supplier: 'Danadams Pharmaceuticals',
-      invoiceNumber: 'DAN-2026-089',
-      issueDate: '2026-05-01',
-      dueDate: '2026-05-15',
-      totalAmount: 4500.00,
-      paidAmount: 2000.00,
-      balance: 2500.00,
-      status: 'PENDING',
-      paymentStatus: 'PARTIAL',
-      category: 'Inventory',
-      fileUrl: '/invoices/dan-2026-089.pdf',
-      payments: [
-        { date: '2026-05-03', amount: 1000.00, method: 'BANK_TRANSFER', reference: 'TXN-001' },
-        { date: '2026-05-05', amount: 1000.00, method: 'CASH', reference: 'TXN-002' },
-      ],
-    },
-    {
-      id: 'INV-002',
-      supplier: 'Ernest Chemists Ltd',
-      invoiceNumber: 'ERN-2026-056',
-      issueDate: '2026-04-28',
-      dueDate: '2026-05-12',
-      totalAmount: 3200.00,
-      paidAmount: 3200.00,
-      balance: 0.00,
-      status: 'PAID',
-      paymentStatus: 'PAID',
-      category: 'Inventory',
-      fileUrl: '/invoices/ern-2026-056.pdf',
-      payments: [
-        { date: '2026-05-01', amount: 3200.00, method: 'BANK_TRANSFER', reference: 'TXN-003' },
-      ],
-    },
-    {
-      id: 'INV-003',
-      supplier: 'ADD Pharma Limited',
-      invoiceNumber: 'ADD-2026-089',
-      issueDate: '2026-04-25',
-      dueDate: '2026-05-09',
-      totalAmount: 1800.00,
-      paidAmount: 0.00,
-      balance: 1800.00,
-      status: 'OVERDUE',
-      paymentStatus: 'UNPAID',
-      category: 'Equipment',
-      fileUrl: '/invoices/add-2026-089.pdf',
-      payments: [],
-    },
+  const invoiceAnalyzeEndpoints = [
+    'http://127.0.0.1:4000/api/invoice/analyze',
+    'http://localhost:4000/api/invoice/analyze',
   ];
+
+  const toDateText = (value?: string) => {
+    if (!value) return '';
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return '';
+    return dt.toISOString().split('T')[0];
+  };
+
+  const toIsoDateOrFallback = (dateText?: string) => {
+    if (!dateText) return new Date().toISOString();
+    const dt = new Date(dateText);
+    return Number.isNaN(dt.getTime()) ? new Date().toISOString() : dt.toISOString();
+  };
+
+  const getSupplierMatchByName = (supplierName: string) => {
+    const normalized = supplierName.trim().toLowerCase();
+    if (!normalized) return undefined;
+    return suppliers.find(s => {
+      const n = s.name.toLowerCase();
+      return n.includes(normalized) || normalized.includes(n);
+    });
+  };
+
+  const manualQueuedProducts = manualLineItems.filter((item: any) =>
+    !item.productId &&
+    Boolean(item.createProductOnSubmit) &&
+    Boolean((item.productName || '').trim())
+  );
+
+  const manualResolvedSupplierLabel = manualData.supplierId
+    ? suppliers.find(s => s.id === manualData.supplierId)?.name || 'Selected supplier'
+    : (manualSupplierDraft.trim() || 'Not set');
+
+  const manualWillCreateSupplier = !manualData.supplierId && Boolean(manualCreateSupplierOnSubmit && manualSupplierDraft.trim());
+
+  const uploadFileSizeMb = uploadData.file
+    ? `${(uploadData.file.size / (1024 * 1024)).toFixed(2)} MB`
+    : 'N/A';
+
+  const uploadHasBranch = Boolean(me?.branchId);
+
+  const invoices = useMemo(() => {
+    return invoiceRecords.map((invoice: any) => {
+      const totalAmount = Number(invoice.total || 0);
+      const paidAmount = Number(invoice.paidAmount || 0);
+      const balance = Number(invoice.balance ?? Math.max(0, totalAmount - paidAmount));
+      const paymentStatus = (invoice.paymentStatus || 'UNPAID').toUpperCase();
+      const dueDate = toDateText(invoice.dueDate);
+      const isOverdue = Boolean(dueDate) && new Date(dueDate) < new Date() && balance > 0;
+
+      const derivedStatus = paymentStatus === 'PAID'
+        ? 'PAID'
+        : (isOverdue ? 'OVERDUE' : 'PENDING');
+
+      const safeStatus = INVOICE_STATUS[derivedStatus as keyof typeof INVOICE_STATUS] ? derivedStatus : 'PENDING';
+      return {
+        id: invoice.id,
+        supplier: invoice.supplier?.name || 'Unknown Supplier',
+        invoiceNumber: invoice.invoiceNo || `INV-${invoice.id.slice(-6).toUpperCase()}`,
+        issueDate: toDateText(invoice.issueDate),
+        dueDate,
+        totalAmount,
+        paidAmount,
+        balance,
+        status: safeStatus,
+        paymentStatus,
+        category: invoice.type || 'PURCHASE',
+        fileUrl: '',
+        payments: invoice.payments || [],
+      };
+    });
+  }, [invoiceRecords]);
 
   const filteredInvoices = invoices.filter(invoice => {
     const matchSearch = !search || 
@@ -177,34 +223,404 @@ export default function InvoicesPage() {
   };
 
   const handleUploadSubmit = async () => {
-    if (!uploadData.file || !uploadData.supplierId) return;
+    if (!uploadData.file) {
+      addToast({
+        type: 'warning',
+        title: 'File Required',
+        message: 'Please select a file to upload.',
+        duration: 5000,
+      });
+      return;
+    }
+
+    const branchId = me?.branchId || '';
+    if (!branchId) {
+      addToast({
+        type: 'error',
+        title: 'Branch Missing',
+        message: 'No branch is assigned to your account. Please re-login or contact admin.',
+        duration: 6000,
+      });
+      return;
+    }
     
     setIsUploading(true);
     try {
-      // Upload file and create invoice
+      // Analyze the invoice using AI
+      let items: any[] = [];
+      let extractedSupplierId = '';
+      let extractedSupplierName = '';
+      let extractedInvoiceNumber = '';
+      let extractedIssueDate = new Date().toISOString().split('T')[0];
+      let extractedTotal = 0;
+
+      console.log('🚀 [AI_UPLOAD] Starting AI analysis...');
       const formData = new FormData();
       formData.append('file', uploadData.file);
-      formData.append('supplierId', uploadData.supplierId);
-      formData.append('invoiceNumber', uploadData.invoiceNumber);
-      formData.append('issueDate', uploadData.issueDate);
-      formData.append('dueDate', uploadData.dueDate);
-      formData.append('totalAmount', uploadData.totalAmount.toString());
 
-      // await uploadInvoiceFile(formData);
-      console.log('Invoice upload disabled - enhanced modules not yet enabled');
+      let data: any = null;
+      let lastFetchError: unknown = null;
+
+      for (const endpoint of invoiceAnalyzeEndpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            lastFetchError = new Error(`AI analysis failed (${response.status})`);
+            continue;
+          }
+
+          data = await response.json();
+          break;
+        } catch (error) {
+          lastFetchError = error;
+        }
+      }
+
+      if (!data) {
+        throw lastFetchError || new Error('AI analysis failed');
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      console.log('✅ [AI_UPLOAD] AI Analysis result:', data);
+
+      if (data.supplierName) {
+        extractedSupplierName = String(data.supplierName || '').trim();
+        const match = getSupplierMatchByName(extractedSupplierName);
+        if (match) extractedSupplierId = match.id;
+      }
+
+      if (data.invoiceNumber) {
+        extractedInvoiceNumber = data.invoiceNumber;
+      }
+
+      if (data.invoiceDate) {
+        extractedIssueDate = data.invoiceDate;
+      }
+
+      if (data.total) {
+        extractedTotal = Number(data.total) || 0;
+      }
+
+      if (data.items && data.items.length > 0) {
+        items = data.items.map((i: any) => ({
+          productId: products.find((p: any) => p.name.toLowerCase().includes((i.name || '').toLowerCase()))?.id || '',
+          name: (i.name || 'Unnamed Item').trim(),
+          quantity: Math.max(1, Math.round(Number(i.quantity) || 1)),
+          unitCost: Math.max(0, Number(i.unitCost) || 0),
+          batchNo: i.batchNo || '',
+          expiryDate: i.expiryDate || '',
+        }));
+      }
+
+      if (!extractedSupplierId && extractedSupplierName) {
+        const createdSupplier = await createSupplier({
+          name: extractedSupplierName,
+          categories: ['GENERAL'],
+        });
+        extractedSupplierId = createdSupplier.id;
+      }
+
+      // Validate required fields after AI extraction
+      if (!extractedSupplierId) {
+        addToast({
+          type: 'warning',
+          title: 'Supplier Not Detected',
+          message: 'Could not identify supplier from document and could not create one automatically. Please use Manual Entry for this invoice.',
+          duration: 6000,
+        });
+        setShowUploadModal(false);
+        setShowManualLedger(true);
+        return;
+      }
+
+      const normalizedItems: any[] = [];
+
+      for (const item of items) {
+        let resolvedProductId = item.productId;
+        const itemName = (item.name || '').trim();
+
+        if (!resolvedProductId && itemName) {
+          const existingProduct = products.find((p: any) => {
+            const n = (p.name || '').toLowerCase();
+            const d = itemName.toLowerCase();
+            return n.includes(d) || d.includes(n);
+          });
+
+          if (existingProduct?.id) {
+            resolvedProductId = existingProduct.id;
+          } else {
+            const createdProduct = await createProduct({
+              name: itemName,
+              category: 'MISCELLANEOUS',
+              costPrice: Math.max(0, Number(item.unitCost) || 0),
+              sellingPrice: Math.max(0, Number(item.unitCost) || 0) * 1.3,
+              stockQuantity: 0,
+              supplierId: extractedSupplierId,
+              dosageForm: 'OTHER',
+            });
+            resolvedProductId = createdProduct.id;
+          }
+        }
+
+        if (!resolvedProductId) continue;
+
+        normalizedItems.push({
+          productId: resolvedProductId,
+          quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
+          unitCost: Math.max(0, Number(item.unitCost) || 0),
+          batchNo: item.batchNo || `BATCH-${Date.now()}`,
+          expiryDate: item.expiryDate ? toIsoDateOrFallback(item.expiryDate) : new Date(Date.now() + 365 * 86400000).toISOString(),
+        });
+      }
+
+      if (!extractedInvoiceNumber) {
+        extractedInvoiceNumber = `AI-${Date.now()}`;
+      }
+
+      if (normalizedItems.length === 0) {
+        addToast({
+          type: 'warning',
+          title: 'No Usable Line Items',
+          message: 'AI did not produce usable line items and auto-create failed. Please use Manual Entry for this invoice.',
+          duration: 6000,
+        });
+        setShowUploadModal(false);
+        setShowManualLedger(true);
+        return;
+      }
+
+      // Create the invoice using GraphQL mutation
+      const payload = {
+        branchId,
+        supplierId: extractedSupplierId,
+        invoiceNo: extractedInvoiceNumber,
+        invoiceDate: toIsoDateOrFallback(extractedIssueDate),
+        dueDate: undefined,
+        items: normalizedItems,
+        tax: 0,
+        notes: `AI-powered invoice upload${extractedTotal > 0 ? ` · Extracted total: GH₵${extractedTotal.toFixed(2)}` : ''}`,
+      };
+
+      console.log('📤 [AI_UPLOAD] Creating invoice with payload:', payload);
+      
+      // Call the receiveInvoice mutation
+      await gql(M_RECEIVE_INVOICE, payload);
+      
+      console.log('✅ [AI_UPLOAD] Invoice created successfully');
+      addToast({
+        type: 'success',
+        title: 'Invoice Processed',
+        message: 'Invoice uploaded and processed successfully.',
+        duration: 5000,
+      });
+      
+      if (me?.branchId) {
+        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: me.branchId });
+        setInvoiceRecords(data.invoices ?? []);
+      }
+      await refetchPurchases();
       setShowUploadModal(false);
-      setUploadData({
+      setUploadData({ file: null });
+    } catch (error: any) {
+      console.error('❌ [AI_UPLOAD] Upload failed:', error);
+      addToast({
+        type: 'error',
+        title: 'Upload Failed',
+        message: error?.message || 'Unknown error',
+        duration: 6000,
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const addManualLineItem = () => {
+    setManualLineItems([...manualLineItems, {
+      id: Date.now().toString(),
+      productId: '',
+      productName: '',
+      createProductOnSubmit: false,
+      quantity: 1,
+      unitCost: 0,
+      batchNo: '',
+      expiryDate: '',
+    }]);
+  };
+
+  const removeManualLineItem = (id: string) => {
+    setManualLineItems(manualLineItems.filter(item => item.id !== id));
+  };
+
+  const updateManualLineItem = (id: string, field: string, value: any) => {
+    setManualLineItems(manualLineItems.map(item => 
+      item.id === id ? { ...item, [field]: value } : item
+    ));
+  };
+
+  const handleManualSubmit = async () => {
+    if ((!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) || !manualData.invoiceNumber) {
+      addToast({
+        type: 'warning',
+        title: 'Missing Required Fields',
+        message: 'Provide supplier (or new supplier draft) and invoice number.',
+        duration: 5000,
+      });
+      return;
+    }
+
+    const branchId = me?.branchId || '';
+    if (!branchId) {
+      addToast({
+        type: 'error',
+        title: 'Branch Missing',
+        message: 'No branch is assigned to your account. Please re-login or contact admin.',
+        duration: 6000,
+      });
+      return;
+    }
+
+    if (manualLineItems.length === 0) {
+      addToast({
+        type: 'warning',
+        title: 'No Line Items',
+        message: 'Please add at least one line item.',
+        duration: 5000,
+      });
+      return;
+    }
+
+    setIsProcessingManual(true);
+    try {
+      let resolvedSupplierId = manualData.supplierId;
+      const supplierDraft = manualSupplierDraft.trim();
+
+      if (!resolvedSupplierId && supplierDraft) {
+        const existingSupplier = getSupplierMatchByName(supplierDraft);
+        if (existingSupplier) {
+          resolvedSupplierId = existingSupplier.id;
+        } else if (manualCreateSupplierOnSubmit) {
+          const createdSupplier = await createSupplier({
+            name: supplierDraft,
+            categories: ['GENERAL'],
+          });
+          resolvedSupplierId = createdSupplier.id;
+        }
+      }
+
+      if (!resolvedSupplierId) {
+        addToast({
+          type: 'warning',
+          title: 'Supplier Required',
+          message: 'Select an existing supplier or enable new supplier creation.',
+          duration: 5000,
+        });
+        return;
+      }
+
+      const normalizedItems: any[] = [];
+
+      for (const item of manualLineItems) {
+        let resolvedProductId = item.productId;
+        const draftProductName = (item.productName || '').trim();
+
+        if (!resolvedProductId && item.createProductOnSubmit && draftProductName) {
+          const existingProduct = products.find((p: any) => {
+            const n = (p.name || '').toLowerCase();
+            const d = draftProductName.toLowerCase();
+            return n.includes(d) || d.includes(n);
+          });
+          if (existingProduct?.id) {
+            resolvedProductId = existingProduct.id;
+          } else {
+            const createdProduct = await createProduct({
+              name: draftProductName,
+              category: 'MISCELLANEOUS',
+              costPrice: Math.max(0, Number(item.unitCost) || 0),
+              sellingPrice: Math.max(0, Number(item.unitCost) || 0) * 1.3,
+              stockQuantity: 0,
+              supplierId: resolvedSupplierId,
+              dosageForm: 'OTHER',
+            });
+            resolvedProductId = createdProduct.id;
+          }
+        }
+
+        if (!resolvedProductId) continue;
+
+        normalizedItems.push({
+          productId: resolvedProductId,
+          quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
+          unitCost: Math.max(0, Number(item.unitCost) || 0),
+          batchNo: item.batchNo || `BATCH-${Date.now()}`,
+          expiryDate: item.expiryDate ? toIsoDateOrFallback(item.expiryDate) : new Date(Date.now() + 365 * 86400000).toISOString(),
+        });
+      }
+
+      if (normalizedItems.length === 0) {
+        addToast({
+          type: 'warning',
+          title: 'No Usable Items',
+          message: 'Select products or provide new product names with create-on-submit enabled.',
+          duration: 6000,
+        });
+        return;
+      }
+
+      const payload = {
+        branchId,
+        supplierId: resolvedSupplierId,
+        invoiceNo: manualData.invoiceNumber,
+        invoiceDate: toIsoDateOrFallback(manualData.issueDate),
+        dueDate: manualData.dueDate ? toIsoDateOrFallback(manualData.dueDate) : undefined,
+        items: normalizedItems,
+        tax: 0,
+        notes: 'Manual invoice entry',
+      };
+
+      console.log('📤 [MANUAL_ENTRY] Creating invoice with payload:', payload);
+      
+      await gql(M_RECEIVE_INVOICE, payload);
+      
+      console.log('✅ [MANUAL_ENTRY] Invoice created successfully');
+      addToast({
+        type: 'success',
+        title: 'Invoice Created',
+        message: 'Manual invoice has been received and inventory updated.',
+        duration: 5000,
+      });
+      
+      if (me?.branchId) {
+        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: me.branchId });
+        setInvoiceRecords(data.invoices ?? []);
+      }
+      await refetchPurchases();
+      setShowManualLedger(false);
+      setManualData({
         supplierId: '',
         invoiceNumber: '',
         issueDate: '',
         dueDate: '',
-        totalAmount: 0,
-        file: null,
       });
-    } catch (error) {
-      console.error('Upload failed:', error);
+      setManualSupplierDraft('');
+      setManualCreateSupplierOnSubmit(false);
+      setManualLineItems([]);
+    } catch (error: any) {
+      console.error('❌ [MANUAL_ENTRY] Upload failed:', error);
+      addToast({
+        type: 'error',
+        title: 'Manual Entry Failed',
+        message: error?.message || 'Unknown error',
+        duration: 6000,
+      });
     } finally {
-      setIsUploading(false);
+      setIsProcessingManual(false);
     }
   };
 
@@ -320,10 +736,16 @@ export default function InvoicesPage() {
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
             </div>
-            <button className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
-              <Download size={14} />
-              Export
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => setShowManualLedger(true)} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium" style={{ background: card.primary, color: '#fff' }}>
+                <FileText size={14} />
+                Manual Entry
+              </button>
+              <button className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+                <Download size={14} />
+                Export
+              </button>
+            </div>
           </div>
 
           {/* Invoices Table */}
@@ -445,29 +867,13 @@ export default function InvoicesPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Supplier</label>
-                  <select value={uploadData.supplierId} onChange={e => setUploadData({ ...uploadData, supplierId: e.target.value })} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}>
-                    <option value="">Select supplier...</option>
-                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Invoice Number</label>
-                  <input type="text" value={uploadData.invoiceNumber} onChange={e => setUploadData({ ...uploadData, invoiceNumber: e.target.value })} placeholder="INV-2026-001" className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Issue Date</label>
-                  <input type="date" value={uploadData.issueDate} onChange={e => setUploadData({ ...uploadData, issueDate: e.target.value })} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Due Date</label>
-                  <input type="date" value={uploadData.dueDate} onChange={e => setUploadData({ ...uploadData, dueDate: e.target.value })} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Total Amount (GH₵)</label>
-                  <input type="number" value={uploadData.totalAmount} onChange={e => setUploadData({ ...uploadData, totalAmount: parseFloat(e.target.value) })} placeholder="0.00" className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+              <div className="mb-4 p-4 rounded-xl" style={{ background: isDark ? 'rgba(139,92,246,0.1)' : 'rgba(139,92,246,0.05)', borderColor: isDark ? 'rgba(139,92,246,0.3)' : 'rgba(139,92,246,0.2)' }}>
+                <div className="flex items-start gap-3">
+                  <Sparkles size={20} style={{ color: '#8B5CF6' }} />
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: card.text }}>AI-Powered Invoice Processing</p>
+                    <p className="text-xs" style={{ color: card.muted }}>Upload your invoice document. Our AI will automatically extract the supplier, invoice number, dates, and line items from the document.</p>
+                  </div>
                 </div>
               </div>
 
@@ -491,15 +897,249 @@ export default function InvoicesPage() {
                   </label>
                 </div>
               </div>
+
+              <div className="p-4 rounded-xl border" style={{ background: card.inputBg, borderColor: card.border }}>
+                <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: card.primary }}>Processing Preview</p>
+                <div className="space-y-1 text-xs font-medium" style={{ color: card.text }}>
+                  <p>File: {uploadData.file?.name || 'Not selected'}</p>
+                  <p>Size: {uploadFileSizeMb}</p>
+                  <p>Supplier Action: Auto-detect and match existing supplier</p>
+                  <p>Product Action: Auto-detect and map to existing products</p>
+                  <p>{uploadData.file ? 'Mode: AI extraction + auto-submit' : 'Mode: Waiting for file selection'}</p>
+                </div>
+                {!uploadHasBranch && (
+                  <p className="mt-2 text-[11px] font-semibold" style={{ color: card.danger }}>
+                    Branch assignment missing. Upload will be blocked until your account has a branch.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="p-4 border-t flex gap-2" style={{ borderColor: card.border }}>
               <button onClick={() => setShowUploadModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>
                 Cancel
               </button>
-              <button onClick={handleUploadSubmit} disabled={!uploadData.file || !uploadData.supplierId || isUploading} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2" style={{ background: card.primary, opacity: (!uploadData.file || !uploadData.supplierId || isUploading) ? 0.5 : 1 }}>
+              <button 
+                onClick={handleUploadSubmit} 
+                disabled={!uploadData.file || isUploading}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2" 
+                style={{ background: card.primary, opacity: (!uploadData.file || isUploading) ? 0.5 : 1 }}
+              >
                 {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Upload size={18} />}
-                {isUploading ? 'Uploading...' : 'Upload Invoice'}
+                {isUploading ? 'Processing...' : 'Upload & Process'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Ledger Modal */}
+      {showManualLedger && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
+          <div className="w-full max-w-4xl rounded-2xl border overflow-hidden" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+            <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: card.border }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}>
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <h2 className="font-display text-lg font-bold" style={{ color: card.text }}>Manual Invoice Entry</h2>
+                  <p className="text-xs" style={{ color: card.muted }}>Manually enter invoice details</p>
+                </div>
+              </div>
+              <button onClick={() => setShowManualLedger(false)} className="text-slate-400 hover:text-red-500 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Supplier</label>
+                  <select value={manualData.supplierId} onChange={e => setManualData({ ...manualData, supplierId: e.target.value })} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }}>
+                    <option value="">Select supplier...</option>
+                    {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  {!manualData.supplierId && (
+                    <div className="mt-2 space-y-2">
+                      <input
+                        type="text"
+                        value={manualSupplierDraft}
+                        onChange={e => setManualSupplierDraft(e.target.value)}
+                        placeholder="Type new supplier name"
+                        className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none"
+                        style={{ background: card.inputBg, borderColor: card.border, color: card.text }}
+                      />
+                      <label className="flex items-center gap-2 text-xs font-medium" style={{ color: card.muted }}>
+                        <input
+                          type="checkbox"
+                          checked={manualCreateSupplierOnSubmit}
+                          onChange={(e) => setManualCreateSupplierOnSubmit(e.target.checked)}
+                        />
+                        Create supplier on submit if it does not exist
+                      </label>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Invoice Number</label>
+                  <input type="text" value={manualData.invoiceNumber} onChange={e => setManualData({ ...manualData, invoiceNumber: e.target.value })} placeholder="INV-2026-001" className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Issue Date</label>
+                  <input type="date" value={manualData.issueDate} onChange={e => setManualData({ ...manualData, issueDate: e.target.value })} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Due Date</label>
+                  <input type="date" value={manualData.dueDate} onChange={e => setManualData({ ...manualData, dueDate: e.target.value })} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.muted }}>Line Items</label>
+                  <button onClick={addManualLineItem} className="text-xs font-bold px-3 py-1 rounded-lg" style={{ background: card.primary, color: '#fff' }}>
+                    + Add Item
+                  </button>
+                </div>
+                
+                {manualLineItems.length === 0 ? (
+                  <div className="border-2 border-dashed rounded-xl p-6 text-center" style={{ borderColor: card.border }}>
+                    <p className="text-sm" style={{ color: card.subtle }}>No line items added yet</p>
+                    <p className="text-xs" style={{ color: card.muted }}>Click "Add Item" to add products</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {manualLineItems.map((item) => (
+                      <div key={item.id} className="p-3 rounded-xl border" style={{ background: card.inputBg, borderColor: card.border }}>
+                        <div className="grid grid-cols-5 gap-2 mb-2">
+                          <div className="col-span-2">
+                            <select 
+                              value={item.productId} 
+                              onChange={e => updateManualLineItem(item.id, 'productId', e.target.value)}
+                              className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none" 
+                              style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border, color: card.text }}
+                            >
+                              <option value="">Select product...</option>
+                              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                            {!item.productId && (
+                              <div className="mt-2 space-y-2">
+                                <input
+                                  type="text"
+                                  value={item.productName || ''}
+                                  onChange={e => updateManualLineItem(item.id, 'productName', e.target.value)}
+                                  placeholder="Or type new product name"
+                                  className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none"
+                                  style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border, color: card.text }}
+                                />
+                                <label className="flex items-center gap-2 text-[11px]" style={{ color: card.muted }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(item.createProductOnSubmit)}
+                                    onChange={(e) => updateManualLineItem(item.id, 'createProductOnSubmit', e.target.checked)}
+                                  />
+                                  Create this product on submit if missing
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <input 
+                              type="text" 
+                              value={item.batchNo} 
+                              onChange={e => updateManualLineItem(item.id, 'batchNo', e.target.value)}
+                              placeholder="Batch No" 
+                              className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none" 
+                              style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border, color: card.text }} 
+                            />
+                          </div>
+                          <div>
+                            <input 
+                              type="number" 
+                              value={item.quantity} 
+                              onChange={e => updateManualLineItem(item.id, 'quantity', parseFloat(e.target.value))}
+                              placeholder="Qty" 
+                              className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none" 
+                              style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border, color: card.text }} 
+                            />
+                          </div>
+                          <div>
+                            <input 
+                              type="number" 
+                              value={item.unitCost} 
+                              onChange={e => updateManualLineItem(item.id, 'unitCost', parseFloat(e.target.value))}
+                              placeholder="Unit Cost" 
+                              className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none" 
+                              style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border, color: card.text }} 
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-end">
+                          <button 
+                            onClick={() => removeManualLineItem(item.id)}
+                            className="text-xs px-2 py-1 rounded-lg" 
+                            style={{ background: card.danger, color: '#fff' }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 rounded-xl border" style={{ background: card.inputBg, borderColor: card.border }}>
+                <p className="text-[10px] font-black uppercase tracking-wider mb-2" style={{ color: card.primary }}>Submission Preview</p>
+                <div className="space-y-1 text-xs font-medium" style={{ color: card.text }}>
+                  <p>Supplier: {manualResolvedSupplierLabel}</p>
+                  <p>{manualWillCreateSupplier ? 'Supplier Action: Create new supplier on submit' : 'Supplier Action: Use existing supplier'}</p>
+                  <p>Line Items: {manualLineItems.length}</p>
+                  <p>New Products to Create: {manualQueuedProducts.length}</p>
+                </div>
+                {manualQueuedProducts.length > 0 && (
+                  <div className="mt-3 p-3 rounded-lg border max-h-24 overflow-y-auto" style={{ borderColor: card.border }}>
+                    {manualQueuedProducts.slice(0, 6).map((item: any) => (
+                      <p key={item.id} className="text-[11px]" style={{ color: card.muted }}>
+                        • {item.productName}
+                      </p>
+                    ))}
+                    {manualQueuedProducts.length > 6 && (
+                      <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.subtle }}>
+                        +{manualQueuedProducts.length - 6} more
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 border-t flex gap-2" style={{ borderColor: card.border }}>
+              <button onClick={() => setShowManualLedger(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>
+                Cancel
+              </button>
+              <button 
+                onClick={handleManualSubmit} 
+                disabled={
+                  isProcessingManual ||
+                  (!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) ||
+                  !manualData.invoiceNumber ||
+                  manualLineItems.length === 0
+                }
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2" 
+                style={{
+                  background: card.primary,
+                  opacity: (
+                    isProcessingManual ||
+                    (!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) ||
+                    !manualData.invoiceNumber ||
+                    manualLineItems.length === 0
+                  ) ? 0.5 : 1
+                }}
+              >
+                {isProcessingManual ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                {isProcessingManual ? 'Processing...' : 'Create Invoice'}
               </button>
             </div>
           </div>
@@ -543,12 +1183,19 @@ export default function InvoicesPage() {
 
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Payment Amount (GH₵)</label>
-                <input type="number" value={paymentAmount} onChange={e => setPaymentAmount(parseFloat(e.target.value))} max={selectedInvoice.balance} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                <input 
+                  type="number" 
+                  value={paymentAmount} 
+                  onChange={e => setPaymentAmount(parseFloat(e.target.value))} 
+                  max={selectedInvoice.balance} 
+                  className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" 
+                  style={{ background: card.inputBg, borderColor: card.border, color: card.text }} 
+                />
               </div>
 
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Payment Method</label>
-                <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}>
+                <select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }}>
                   <option value="CASH">Cash</option>
                   <option value="BANK_TRANSFER">Bank Transfer</option>
                   <option value="MOBILE_MONEY">Mobile Money</option>
@@ -558,7 +1205,7 @@ export default function InvoicesPage() {
 
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Payment Note (Optional)</label>
-                <textarea value={paymentNote} onChange={e => setPaymentNote(e.target.value)} rows={3} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none resize-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                <textarea value={paymentNote} onChange={e => setPaymentNote(e.target.value)} rows={3} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none resize-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }} />
               </div>
             </div>
 

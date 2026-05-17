@@ -13,12 +13,12 @@ import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_LEDGER,
-  M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF,
+  M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS,
-  M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER,
+  M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
-  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER,
+  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_REFUND_SALE,
 } from './gql';
 import { saveToCache, getFromCache } from './offline';
 
@@ -38,6 +38,7 @@ export interface Product {
   strength?: string;
   dosageForm?: string;
   requiresRx?: boolean;
+  isControlled?: boolean;
 }
 
 export interface Supplier {
@@ -94,9 +95,9 @@ export interface Customer {
   email?: string;
   phone?: string;
   address?: string;
-  loyaltyPoints: number;
-  totalSpent: number;
-  createdAt: string;
+  loyaltyPoints?: number;
+  totalSpent?: number;
+  createdAt?: string;
 }
 
 export interface TerminalReport {
@@ -272,6 +273,15 @@ interface StoreState {
     branchId: string;
   }) => Promise<boolean>;
 
+  createStaffAccount: (args: {
+    email: string;
+    password: string;
+    name: string;
+    role: string;
+    branchId: string;
+    position?: string;
+  }) => Promise<boolean>;
+
   updateStaffProfile: (args: {
     userId: string;
     role?: string;
@@ -285,6 +295,7 @@ interface StoreState {
   updateProductPrices: (productId: string, costPrice: number, sellingPrice: number) => Promise<Product>;
   updateProductFull: (productData: any) => Promise<Product>;
   updateProductSupplier: (productId: string, supplierId: string) => Promise<void>;
+  bulkUpdateProductSupplier: (productIds: string[], supplierId: string) => Promise<void>;
 
   createCustomer: (args: {
     name: string;
@@ -300,6 +311,8 @@ interface StoreState {
     phone?: string;
     address?: string;
   }) => Promise<Customer>;
+
+  refundSale: (saleId: string, reason: string) => Promise<void>;
 
   getProductsBySupplier: (supplierId: string) => Promise<Product[]>;
 
@@ -321,6 +334,7 @@ interface StoreState {
     barcode?: string;
     nafdacNo?: string;
     requiresRx?: boolean;
+    isControlled?: boolean;
     imageUrl?: string;
   }) => Promise<Product>;
 
@@ -679,8 +693,23 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     email: string; name: string; role: string; branchId: string;
   }): Promise<boolean> => {
     const data = await gql<{ inviteStaff: boolean }>(M_INVITE_STAFF, args);
-    return data.inviteStaff;
-  }, []);
+    const result = data.inviteStaff;
+    if (result) {
+      await refetchStaff();
+    }
+    return result;
+  }, [refetchStaff]);
+
+  const createStaffAccount = useCallback(async (args: {
+    email: string; password: string; name: string; role: string; branchId: string; position?: string;
+  }): Promise<boolean> => {
+    const data = await gql<{ createStaffAccount: boolean }>(M_CREATE_STAFF_ACCOUNT, args);
+    const result = data.createStaffAccount;
+    if (result) {
+      await refetchStaff();
+    }
+    return result;
+  }, [refetchStaff]);
 
   const updateStaffProfile = useCallback(async (args: {
     userId: string; role?: string; branchId?: string; position?: string; isActive?: boolean;
@@ -694,6 +723,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const updateDutyStatus = useCallback(async (userId: string, isOnDuty: boolean) => {
     await gql(M_UPDATE_DUTY_STATUS, { userId, isOnDuty });
     setStaff(prev => prev.map(s => s.id === userId ? { ...s, isOnDuty } : s));
+    setMe(prev => prev && prev.id === userId ? { ...prev, isOnDuty } : prev);
   }, []);
 
   const updateProductPrices = useCallback(async (
@@ -708,9 +738,24 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, []);
 
   const updateProductSupplier = useCallback(async (productId: string, supplierId: string) => {
-    await gql(M_UPDATE_PRODUCT_SUPPLIER, { productId, supplierId });
-    setProducts(prev => prev.map(p => p.id === productId ? { ...p, supplierId } : p));
-  }, []);
+    try {
+      await gql(M_UPDATE_PRODUCT_SUPPLIER, { productId, supplierId });
+      await refetchProducts();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update supplier');
+      throw err;
+    }
+  }, [refetchProducts]);
+
+  const bulkUpdateProductSupplier = useCallback(async (productIds: string[], supplierId: string) => {
+    try {
+      await gql(M_BULK_UPDATE_PRODUCT_SUPPLIER, { productIds, supplierId });
+      await refetchProducts();
+    } catch (err: any) {
+      setError(err.message || 'Failed to bulk update supplier');
+      throw err;
+    }
+  }, [refetchProducts]);
 
   const createCustomer = useCallback(async (args: {
     name: string; email?: string; phone?: string; address?: string;
@@ -730,11 +775,21 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     return updated;
   }, []);
 
+  const refundSale = useCallback(async (saleId: string, reason: string) => {
+    try {
+      await gql(M_REFUND_SALE, { saleId, reason });
+      await Promise.all([refetchSales(), refetchProducts()]);
+    } catch (err: any) {
+      setError(err.message || 'Failed to refund sale');
+      throw err;
+    }
+  }, [refetchSales, refetchProducts]);
+
   const createProduct = useCallback(async (args: {
     name: string; genericName?: string; brand?: string; category: string;
     costPrice: number; sellingPrice: number; stockQuantity: number;
     supplierId?: string; strength?: string; dosageForm?: string;
-    barcode?: string; nafdacNo?: string; requiresRx?: boolean; imageUrl?: string;
+    barcode?: string; nafdacNo?: string; requiresRx?: boolean; isControlled?: boolean; imageUrl?: string;
   }): Promise<Product> => {
     const data = await gql<{ createProduct: Product }>(M_CREATE_PRODUCT, args);
     const newProduct = data.createProduct;
@@ -786,7 +841,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     name: string; contact?: string; phone?: string; email?: string;
     address?: string; tin?: string; categories?: string[];
   }): Promise<Supplier> => {
-    const data = await gql<{ createSupplier: Supplier }>(M_CREATE_SUPPLIER, args);
+    const data = await gql<{ createSupplier: Supplier }>(M_CREATE_SUPPLIER, { input: args });
     const newSupplier = data.createSupplier;
     setSuppliers(prev => [newSupplier, ...prev]);
     return newSupplier;
@@ -796,7 +851,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     id: string; name?: string; contact?: string; phone?: string;
     email?: string; address?: string; tin?: string; categories?: string[];
   }): Promise<Supplier> => {
-    const data = await gql<{ updateSupplier: Supplier }>(M_UPDATE_SUPPLIER, args);
+    const { id, ...rest } = args;
+    const data = await gql<{ updateSupplier: Supplier }>(M_UPDATE_SUPPLIER, { id, input: rest });
     const updated = data.updateSupplier;
     setSuppliers(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
     return updated;
@@ -825,9 +881,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       stockMovements,
       refetchProducts, refetchSales, refetchStaff, refetchCustomers,
       refetchPrescriptions, refetchPurchases, refetchExpenses, refetchLedger, refetchAll,
-      createSale, closeTerminal, inviteStaff, updateStaffProfile, updateDutyStatus,
-      updateProductPrices, updateProductSupplier, updateProductFull,
+      createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus,
+      updateProductPrices, updateProductFull,
+      updateProductSupplier,
+      bulkUpdateProductSupplier,
       createCustomer, updateCustomer, getProductsBySupplier,
+      refundSale,
       createProduct, deleteProduct, adjustProductStock,
       createSupplier, updateSupplier, deleteSupplier,
     }}>

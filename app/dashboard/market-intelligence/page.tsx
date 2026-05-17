@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { mockIntelligenceData } from '@/lib/intelligence-data';
 import { useStore } from '@/lib/store';
+import { gql, M_ASK_NEXUS_AI } from '@/lib/gql';
 
 export default function MarketIntelligencePage() {
   const { theme } = useTheme();
@@ -21,6 +22,39 @@ export default function MarketIntelligencePage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const { products } = useStore();
+  const [isSearchingAi, setIsSearchingAi] = useState(false);
+  const [aiMonographs, setAiMonographs] = useState<any[]>([]);
+
+  const handleSearchAi = async (query: string) => {
+    if (!query || query.trim().length < 2) return;
+    setIsSearchingAi(true);
+    try {
+      const prompt = `Generate a highly professional, clinical-grade drug monograph for the drug query: "${query.trim()}". 
+The output MUST be a valid JSON object matching this structure EXACTLY. Return ONLY the raw JSON string without markdown wrap, backticks, or other text:
+{
+  "product": "${query.trim().toUpperCase()}",
+  "indications": "Clinical indications and uses",
+  "dosage": "Standard adult and pediatric dosing instructions",
+  "counseling": "Patient counseling points and warnings",
+  "contraindications": "Major contraindications and clinical restrictions"
+}`;
+      
+      const result = await gql<{ askNexusAi: string }>(M_ASK_NEXUS_AI, { prompt });
+      const rawText = result.askNexusAi;
+      
+      const jsonStart = rawText.indexOf('{');
+      const jsonEnd = rawText.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        const cleanedJson = rawText.slice(jsonStart, jsonEnd + 1);
+        const parsed = JSON.parse(cleanedJson);
+        setAiMonographs(prev => [parsed, ...prev]);
+      }
+    } catch (err) {
+      console.error('Failed to generate monograph via AI:', err);
+    } finally {
+      setIsSearchingAi(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -344,24 +378,49 @@ export default function MarketIntelligencePage() {
                     placeholder="Search any drug name, active ingredient, or indication..." 
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSearchAi(searchQuery);
+                      }
+                    }}
                     className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-100 dark:bg-slate-900 border-none outline-none text-sm font-bold shadow-inner"
                     style={{ color: c.text }}
                   />
-                  <button className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-[#00D9FF] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#00D9FF]/90 transition-colors">
-                    Search AI
+                  <button 
+                    onClick={() => handleSearchAi(searchQuery)}
+                    disabled={isSearchingAi}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-[#00D9FF] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#00D9FF]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    {isSearchingAi ? (
+                      <>
+                        <RefreshCw size={12} className="animate-spin" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      'Search AI'
+                    )}
                   </button>
                 </div>
               </div>
 
-              {searchQuery.length > 2 ? (
+              {isSearchingAi && (
+                <div className="p-12 rounded-[32px] border border-[#00D9FF]/30 text-center flex flex-col items-center justify-center relative overflow-hidden" style={{ background: 'rgba(0,217,255,0.05)' }}>
+                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-transparent to-blue-500/10 animate-pulse" />
+                  <BrainCircuit size={48} className="text-[#00D9FF] animate-bounce mb-4" />
+                  <h4 className="font-bold text-lg mb-2 text-[#00D9FF] animate-pulse">Compiling AI Monograph...</h4>
+                  <p className="text-xs text-slate-400 max-w-sm">NEXUS AI is parsing chemical properties, clinical studies, and prescribing monographs to generate your custom drug monograph.</p>
+                </div>
+              )}
+
+              {searchQuery.length > 2 || aiMonographs.length > 0 ? (
                 <div className="space-y-4">
-                  {data?.drugIntelligence?.filter((d: any) => d.product.toLowerCase().includes(searchQuery.toLowerCase()) || d.indications.toLowerCase().includes(searchQuery.toLowerCase())).map((drug: any, i: number) => (
-                    <div key={i} className="p-6 rounded-[32px] border flex flex-col gap-4 relative overflow-hidden" style={{ background: 'rgba(0,217,255,0.03)', borderColor: 'rgba(0,217,255,0.1)' }}>
-                      <div className="absolute -right-10 -top-10 opacity-5"><BrainCircuit size={200} /></div>
+                  {/* Dynamic Custom AI Monographs */}
+                  {aiMonographs.map((drug: any, i: number) => (
+                    <div key={`custom-${i}`} className="p-6 rounded-[32px] border flex flex-col gap-4 relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500" style={{ background: 'rgba(16,185,129,0.04)', borderColor: 'rgba(16,185,129,0.2)' }}>
+                      <div className="absolute -right-10 -top-10 opacity-5 text-emerald-500"><BrainCircuit size={200} /></div>
                       
                       <div className="flex items-center justify-between relative z-10">
                         <button onClick={() => {
-                          // Find matching product in inventory
                           const matchingProduct = products.find(p =>
                             p.name.toLowerCase().includes(drug.product.toLowerCase()) ||
                             p.genericName?.toLowerCase().includes(drug.product.toLowerCase()) ||
@@ -371,7 +430,51 @@ export default function MarketIntelligencePage() {
                           if (matchingProduct) {
                             router.push(`/dashboard/inventory/${matchingProduct.id}`);
                           } else {
-                            // If no exact match, navigate to inventory with search query
+                            router.push(`/dashboard/inventory?search=${encodeURIComponent(drug.product)}`);
+                          }
+                        }} className="text-xl font-display font-bold text-emerald-400 hover:underline transition-colors text-left">
+                          {drug.product}
+                        </button>
+                        <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 animate-pulse">Live Custom Monograph</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+                         <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/5">
+                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Indications</p>
+                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.indications}</p>
+                         </div>
+                         <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/5">
+                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Standard Dosage</p>
+                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.dosage}</p>
+                         </div>
+                         <div className="space-y-1 bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10">
+                           <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Patient Counseling</p>
+                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.counseling}</p>
+                         </div>
+                         <div className="space-y-1 bg-red-500/5 p-4 rounded-2xl border border-red-500/10">
+                           <p className="text-[10px] font-bold uppercase tracking-wider text-red-400">Contraindications</p>
+                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.contraindications}</p>
+                         </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Filtered Static Monographs */}
+                  {data?.drugIntelligence?.filter((d: any) => d.product.toLowerCase().includes(searchQuery.toLowerCase()) || d.indications.toLowerCase().includes(searchQuery.toLowerCase())).map((drug: any, i: number) => (
+                    <div key={`static-${i}`} className="p-6 rounded-[32px] border flex flex-col gap-4 relative overflow-hidden" style={{ background: 'rgba(0,217,255,0.03)', borderColor: 'rgba(0,217,255,0.1)' }}>
+                      <div className="absolute -right-10 -top-10 opacity-5"><BrainCircuit size={200} /></div>
+                      
+                      <div className="flex items-center justify-between relative z-10">
+                        <button onClick={() => {
+                          const matchingProduct = products.find(p =>
+                            p.name.toLowerCase().includes(drug.product.toLowerCase()) ||
+                            p.genericName?.toLowerCase().includes(drug.product.toLowerCase()) ||
+                            drug.product.toLowerCase().includes(p.name.toLowerCase())
+                          );
+
+                          if (matchingProduct) {
+                            router.push(`/dashboard/inventory/${matchingProduct.id}`);
+                          } else {
                             router.push(`/dashboard/inventory?search=${encodeURIComponent(drug.product)}`);
                           }
                         }} className="text-xl font-display font-bold text-[#00D9FF] hover:underline transition-colors text-left">
@@ -400,18 +503,26 @@ export default function MarketIntelligencePage() {
                       </div>
                     </div>
                   ))}
-                  {data?.drugIntelligence?.filter((d: any) => d.product.toLowerCase().includes(searchQuery.toLowerCase()) || d.indications.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
+
+                  {/* Empty state fallback */}
+                  {!isSearchingAi && aiMonographs.length === 0 && data?.drugIntelligence?.filter((d: any) => d.product.toLowerCase().includes(searchQuery.toLowerCase()) || d.indications.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
                      <div className="p-12 rounded-[32px] border text-center" style={{ background: c.cardBg, borderColor: c.border }}>
-                       <p className="text-sm font-bold text-slate-400">No AI monographs found matching "{searchQuery}"</p>
+                       <p className="text-sm font-bold text-slate-400 mb-2">No pre-loaded monographs found matching "{searchQuery}"</p>
+                       <p className="text-xs text-slate-500 mb-4">Click "Search AI" to let NEXUS AI build one for you instantly!</p>
+                       <button onClick={() => handleSearchAi(searchQuery)} className="px-4 py-2 bg-[#00D9FF] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#00D9FF]/90 transition-colors">
+                          Generate AI Monograph
+                       </button>
                      </div>
                   )}
                 </div>
               ) : (
-                <div className="p-12 rounded-[32px] border text-center flex flex-col items-center justify-center opacity-60" style={{ background: c.cardBg, borderColor: c.border }}>
-                   <BrainCircuit size={48} className="text-[#00D9FF] mb-4" />
-                   <h4 className="font-bold text-lg mb-2" style={{ color: c.text }}>AI Copilot Ready</h4>
-                   <p className="text-sm text-slate-500 max-w-sm">Type at least 3 characters to search our deep pharmaceutical intelligence database.</p>
-                </div>
+                !isSearchingAi && (
+                  <div className="p-12 rounded-[32px] border text-center flex flex-col items-center justify-center opacity-60" style={{ background: c.cardBg, borderColor: c.border }}>
+                     <BrainCircuit size={48} className="text-[#00D9FF] mb-4 animate-pulse" />
+                     <h4 className="font-bold text-lg mb-2" style={{ color: c.text }}>AI Copilot Ready</h4>
+                     <p className="text-sm text-slate-500 max-w-sm">Search any drug name (e.g. "Ibuprofen") or tap "Search AI" to dynamically compile a clinical monograph using Gemini.</p>
+                  </div>
+                )
               )}
             </div>
           )}

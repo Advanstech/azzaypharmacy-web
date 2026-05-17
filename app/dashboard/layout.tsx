@@ -43,16 +43,17 @@ const navItems = [
   { label: 'Refunds', href: '/dashboard/refund', icon: RefreshCw, color: '#F59E0B' },
   { label: 'End of Day', href: '/dashboard/end-of-day', icon: Clock, color: '#10B981' },
   { label: 'AI Assistant', href: '/dashboard/ai', icon: Sparkles, color: '#EC4899' },
-  { label: 'Staff', href: '/dashboard/staff', icon: Users, color: '#6366F1' },
 ];
 
 const adminItems = [
   { label: 'Organization', href: '/dashboard/admin/organization', icon: Building2, color: '#F97316' },
   { label: 'Branches', href: '/dashboard/admin/branches', icon: Activity, color: '#14B8A6' },
+  { label: 'Supplier Payments', href: '/dashboard/suppliers/payments', icon: CreditCard, color: '#10B981' },
   { label: 'Financials', href: '/dashboard/admin/financials', icon: CreditCard, color: '#A855F7' },
   { label: 'Reports', href: '/dashboard/admin/reports', icon: FileText, color: '#3B82F6' },
   { label: 'System', href: '/dashboard/admin/system', icon: Database, color: '#EF4444' },
   { label: 'Security', href: '/dashboard/admin/security', icon: Shield, color: '#F59E0B' },
+  { label: 'Staff', href: '/dashboard/staff', icon: Users, color: '#6366F1' },
   { label: 'Super Terminal', href: '/dashboard/admin/terminal', icon: Activity, color: '#00D9FF' },
 ];
 
@@ -244,12 +245,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Main Navigation */}
           {!collapsed && (
-            <p
-              className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider"
-              style={{ color: isDark ? '#64748B' : '#94A3B8' }}
-            >
-              Main
-            </p>
+            <div className="sticky top-[84px] z-10 backdrop-blur-xl pt-2 pb-1 -mx-3 px-6 mb-1"
+                 style={{ background: isDark ? 'rgba(15, 23, 42, 0.4)' : 'rgba(255, 255, 255, 0.4)' }}>
+              <p
+                className="text-[10px] font-black uppercase tracking-[0.2em]"
+                style={{ color: isDark ? '#64748B' : '#94A3B8' }}
+              >
+                Core Modules
+              </p>
+            </div>
           )}
           {filteredNavItems.map((item) => {
             const isActive = pathname === item.href;
@@ -291,19 +295,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
           {/* Admin Section */}
           {canSeeAdmin && (
-            <>
-              <div className="pt-4">
+            <div className={`mt-4 transition-all duration-300 ${showAdmin && !collapsed ? 'bg-red-500/5 rounded-[24px] border border-red-500/10 p-1 mb-4' : ''}`}>
+              <div 
+                className={`sticky z-10 backdrop-blur-xl transition-all ${showAdmin && !collapsed ? 'top-[84px] mb-2' : ''}`}
+                style={{ 
+                  margin: showAdmin && !collapsed ? '0' : (collapsed ? '0' : '0 -4px'),
+                  padding: showAdmin && !collapsed ? '4px 0' : '0',
+                  background: showAdmin && !collapsed ? (isDark ? 'rgba(15, 23, 42, 0.4)' : 'rgba(255, 255, 255, 0.4)') : 'transparent',
+                }}
+              >
                 {!collapsed ? (
                   <button
                     onClick={() => setShowAdmin(!showAdmin)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-black uppercase tracking-[0.15em] transition-colors hover:text-red-500 group"
                     style={{ color: isDark ? '#64748B' : '#94A3B8' }}
                   >
-                    <span>Administration</span>
+                    <div className="flex items-center gap-2">
+                      <Shield size={12} className={showAdmin ? 'text-red-500' : ''} />
+                      <span>Administration</span>
+                    </div>
                     <ChevronRight
                       size={12}
-                      className="transition-transform"
-                      style={{ transform: showAdmin ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                      className="transition-transform duration-300"
+                      style={{ transform: showAdmin ? 'rotate(90deg)' : 'rotate(0deg)', color: showAdmin ? '#EF4444' : undefined }}
                     />
                   </button>
                 ) : (
@@ -313,41 +327,57 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   />
                 )}
               </div>
-              {(showAdmin || collapsed) &&
-                filteredAdminItems.map((item) => {
-                  const isActive = pathname === item.href;
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-ui text-sm transition-all group"
-                      style={{
-                        background: isActive
-                          ? isDark
-                            ? 'rgba(239, 68, 68, 0.1)'
-                            : 'rgba(239, 68, 68, 0.1)'
-                          : 'transparent',
-                        color: isActive
-                          ? '#EF4444'
-                          : isDark
-                          ? '#94A3B8'
-                          : '#64748B',
-                        border: isActive ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid transparent',
-                      }}
-                    >
-                      <Icon
-                        size={18}
+              
+              {(showAdmin || collapsed) && (
+                <div className={`${!collapsed ? 'pl-2 space-y-1 relative' : 'space-y-1'}`}>
+                  {/* Hierarchy Line */}
+                  {showAdmin && !collapsed && (
+                    <div className="absolute left-[15px] top-0 bottom-4 w-px bg-gradient-to-b from-red-500/40 to-transparent" />
+                  )}
+                  
+                  {filteredAdminItems.map((item) => {
+                    const isActive = pathname === item.href;
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-ui text-sm transition-all group relative overflow-hidden"
                         style={{
-                          color: isActive ? item.color : undefined,
-                          filter: isActive ? 'drop-shadow(0 0 8px currentColor)' : undefined,
+                          background: isActive
+                            ? isDark
+                              ? 'rgba(239, 68, 68, 0.15)'
+                              : 'rgba(239, 68, 68, 0.1)'
+                            : 'transparent',
+                          color: isActive
+                            ? '#EF4444'
+                            : isDark
+                            ? '#94A3B8'
+                            : '#64748B',
+                          border: isActive ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid transparent',
                         }}
-                      />
-                      {!collapsed && <span className="font-medium">{item.label}</span>}
-                    </Link>
-                  );
-                })}
-            </>
+                      >
+                        {isActive && (
+                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500" />
+                        )}
+                        <Icon
+                          size={18}
+                          style={{
+                            color: isActive ? item.color : undefined,
+                            filter: isActive ? 'drop-shadow(0 0 8px currentColor)' : undefined,
+                          }}
+                        />
+                        {!collapsed && (
+                          <span className={`font-medium transition-transform group-hover:translate-x-1 ${isActive ? 'font-bold' : ''}`}>
+                            {item.label}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Settings */}

@@ -5,7 +5,47 @@
 
 import { supabase } from '@/lib/supabase';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000/graphql';
+const RAW_API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000/graphql';
+const API = typeof window !== 'undefined'
+  ? RAW_API.replace('://localhost:', '://127.0.0.1:')
+  : RAW_API;
+
+function buildApiCandidates(apiUrl: string): string[] {
+  const candidates = new Set<string>([apiUrl]);
+  if (apiUrl.includes('://localhost:')) {
+    candidates.add(apiUrl.replace('://localhost:', '://127.0.0.1:'));
+  }
+  if (apiUrl.includes('://127.0.0.1:')) {
+    candidates.add(apiUrl.replace('://127.0.0.1:', '://localhost:'));
+  }
+  return Array.from(candidates);
+}
+
+function getApiRootUrl(apiUrl: string): string | null {
+  try {
+    const url = new URL(apiUrl);
+    url.pathname = '/';
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function diagnoseApiReachability(apiUrl: string): Promise<string> {
+  const rootUrl = getApiRootUrl(apiUrl);
+  if (!rootUrl) return 'invalid API URL';
+
+  try {
+    const res = await fetch(rootUrl, { method: 'GET' });
+    return `API root reachable (${res.status}) but GraphQL request failed`;
+  } catch {
+    return `API root unreachable (${rootUrl})`;
+  }
+}
+
+const API_CANDIDATES = buildApiCandidates(API);
 
 // Token can be set externally by the StoreProvider once auth is ready
 let _token: string | null = null;
@@ -36,6 +76,7 @@ export async function gql<T = unknown>(
   console.log(`[gql] [${queryName}] Requesting...`, {
     token: token ? `YES (${token.substring(0, 10)}...)` : 'MISSING',
     apiUrl: API,
+    apiCandidates: API_CANDIDATES,
   });
 
   try {
@@ -46,20 +87,40 @@ export async function gql<T = unknown>(
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const res = await fetch(API, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ query, variables }),
-    });
+    let res: Response | null = null;
+    let usedApi = API;
+
+    for (const candidate of API_CANDIDATES) {
+      try {
+        const maybeRes = await fetch(candidate, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query, variables }),
+        });
+        res = maybeRes;
+        usedApi = candidate;
+        break;
+      } catch (error) {
+        console.warn(`[gql] [${queryName}] Network failed on ${candidate}, trying next candidate...`);
+      }
+    }
+
+    if (!res) {
+      const diagnostics = await Promise.all(API_CANDIDATES.map(diagnoseApiReachability));
+      const diagnosticMessage = diagnostics.join(' | ');
+      throw new Error(
+        `NetworkError when attempting to fetch resource. ${diagnosticMessage}`
+      );
+    }
 
     if (res.status === 401) {
-      console.error(`[gql] [${queryName}] Unauthorized! Status: 401`);
+      console.error(`[gql] [${queryName}] Unauthorized! Status: 401 (${usedApi})`);
       _token = null; // Clear stale token so next call forces a fresh session lookup
     }
 
     if (!res.ok) {
       const text = await res.text();
-      console.error(`[gql] [${queryName}] HTTP Error: ${res.status}`, text);
+      console.error(`[gql] [${queryName}] HTTP Error: ${res.status} (${usedApi})`, text);
       throw new Error(`HTTP Error ${res.status}: ${text}`);
     }
 
@@ -82,7 +143,7 @@ export const Q_PRODUCTS = `
   query GetProducts {
     products {
       id name genericName brand category sellingPrice costPrice
-      stockQuantity supplierId imageUrl strength dosageForm requiresRx
+      stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
     }
   }
 `;
@@ -91,7 +152,7 @@ export const Q_PRODUCTS_BY_SUPPLIER = `
   query GetProductsBySupplier($supplierId: String!) {
     productsBySupplier(supplierId: $supplierId) {
       id name genericName brand category sellingPrice costPrice
-      stockQuantity supplierId imageUrl strength dosageForm requiresRx
+      stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
     }
   }
 `;
@@ -233,6 +294,12 @@ export const M_CLOSE_TERMINAL = `
   }
 `;
 
+export const M_GENERATE_TEMP_PASSWORD = `
+  mutation GenerateTempPassword($userId: ID!) {
+    generateTempPassword(userId: $userId)
+  }
+`;
+
 export const M_INVITE_STAFF = `
   mutation InviteStaff($email: String!, $name: String!, $role: UserRole!, $branchId: String!) {
     inviteStaff(email: $email, name: $name, role: $role, branchId: $branchId)
@@ -279,6 +346,22 @@ export const M_UPDATE_PRODUCT_SUPPLIER = `
   mutation UpdateProductSupplier($productId: ID!, $supplierId: ID!) {
     updateProductSupplier(productId: $productId, supplierId: $supplierId) {
       id name supplierId
+    }
+  }
+`;
+
+export const M_BULK_UPDATE_PRODUCT_SUPPLIER = `
+  mutation BulkUpdateProductSupplier($productIds: [ID!]!, $supplierId: ID!) {
+    bulkUpdateProductSupplier(productIds: $productIds, supplierId: $supplierId) {
+      id name supplierId
+    }
+  }
+`;
+
+export const M_REFUND_SALE = `
+  mutation RefundSale($saleId: ID!, $reason: String!) {
+    refundSale(saleId: $saleId, reason: $reason) {
+      id status isRefunded refundReason totalAmount paymentMethod
     }
   }
 `;
@@ -380,16 +463,17 @@ export const M_CREATE_PRODUCT = `
     $name: String!
     $genericName: String
     $brand: String
-    $category: String!
+    $category: DrugCategory!
     $costPrice: Float!
     $sellingPrice: Float!
     $stockQuantity: Int!
     $supplierId: String
     $strength: String
-    $dosageForm: String
+    $dosageForm: DosageForm
     $barcode: String
     $nafdacNo: String
     $requiresRx: Boolean
+    $isControlled: Boolean
     $imageUrl: String
   ) {
     createProduct(
@@ -406,10 +490,11 @@ export const M_CREATE_PRODUCT = `
       barcode: $barcode
       nafdacNo: $nafdacNo
       requiresRx: $requiresRx
+      isControlled: $isControlled
       imageUrl: $imageUrl
     ) {
       id name brand category sellingPrice costPrice
-      stockQuantity supplierId imageUrl strength dosageForm
+      stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
     }
   }
 `;
@@ -434,11 +519,17 @@ export const M_UPDATE_PRODUCT = `
     $name: String
     $genericName: String
     $brand: String
-    $category: String
+    $category: DrugCategory
     $costPrice: Float
     $sellingPrice: Float
     $supplierId: String
     $requiresRx: Boolean
+    $isControlled: Boolean
+    $imageUrl: String
+    $dosageForm: DosageForm
+    $strength: String
+    $barcode: String
+    $nafdacNo: String
   ) {
     updateProduct(
       id: $id
@@ -450,59 +541,31 @@ export const M_UPDATE_PRODUCT = `
       sellingPrice: $sellingPrice
       supplierId: $supplierId
       requiresRx: $requiresRx
+      isControlled: $isControlled
+      imageUrl: $imageUrl
+      dosageForm: $dosageForm
+      strength: $strength
+      barcode: $barcode
+      nafdacNo: $nafdacNo
     ) {
       id name genericName brand category sellingPrice costPrice
-      stockQuantity supplierId imageUrl strength dosageForm requiresRx
+      stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled barcode nafdacNo
     }
   }
 `;
 
 export const M_CREATE_SUPPLIER = `
-  mutation CreateSupplier(
-    $name: String!
-    $contact: String
-    $phone: String
-    $email: String
-    $address: String
-    $tin: String
-    $categories: [String!]
-  ) {
-    createSupplier(
-      name: $name
-      contact: $contact
-      phone: $phone
-      email: $email
-      address: $address
-      tin: $tin
-      categories: $categories
-    ) {
-      id name contact phone email address tin aiScore categories
+  mutation CreateSupplier($input: CreateSupplierInput!) {
+    createSupplier(input: $input) {
+      id name contact phone email address tin aiScore
     }
   }
 `;
 
 export const M_UPDATE_SUPPLIER = `
-  mutation UpdateSupplier(
-    $id: ID!
-    $name: String
-    $contact: String
-    $phone: String
-    $email: String
-    $address: String
-    $tin: String
-    $categories: [String!]
-  ) {
-    updateSupplier(
-      id: $id
-      name: $name
-      contact: $contact
-      phone: $phone
-      email: $email
-      address: $address
-      tin: $tin
-      categories: $categories
-    ) {
-      id name contact phone email address tin aiScore categories
+  mutation UpdateSupplier($id: ID!, $input: CreateSupplierInput!) {
+    updateSupplier(id: $id, input: $input) {
+      id name contact phone email address tin aiScore
     }
   }
 `;
@@ -510,5 +573,96 @@ export const M_UPDATE_SUPPLIER = `
 export const M_DELETE_SUPPLIER = `
   mutation DeleteSupplier($id: ID!) {
     deleteSupplier(id: $id)
+  }
+`;
+
+export const M_RECEIVE_INVOICE = `
+  mutation ReceiveInvoice(
+    $branchId: String!
+    $supplierId: String!
+    $invoiceNo: String!
+    $invoiceDate: String!
+    $dueDate: String
+    $items: [PurchaseItemInput!]!
+    $tax: Float
+    $notes: String
+  ) {
+    receiveInvoice(
+      branchId: $branchId
+      supplierId: $supplierId
+      invoiceNo: $invoiceNo
+      invoiceDate: $invoiceDate
+      dueDate: $dueDate
+      items: $items
+      tax: $tax
+      notes: $notes
+    ) {
+      id invoiceNo total status createdAt
+    }
+  }
+`;
+
+export const Q_INVOICES = `
+  query GetInvoices($branchId: String!, $supplierId: String) {
+    invoices(branchId: $branchId, supplierId: $supplierId) {
+      id invoiceNo type total paidAmount balance paymentStatus issueDate dueDate createdAt
+      supplier { id name }
+      payments { id amount method reference notes paidAt }
+    }
+  }
+`;
+
+export const M_RECORD_SUPPLIER_PAYMENT = `
+  mutation RecordSupplierPayment($invoiceId: ID!, $amount: Float!, $method: String!, $reference: String, $notes: String) {
+    recordSupplierPayment(invoiceId: $invoiceId, amount: $amount, method: $method, reference: $reference, notes: $notes) {
+      id paidAmount balance paymentStatus
+      payments { id amount method paidAt }
+    }
+  }
+`;
+
+export const M_ASK_NEXUS_AI = `
+  mutation AskNexusAi($prompt: String!) {
+    askNexusAi(prompt: $prompt)
+  }
+`;
+
+export const M_CREATE_PRESCRIPTION = `
+  mutation CreatePrescription(
+    $branchId: String!
+    $rxNumber: String!
+    $patientName: String!
+    $patientAge: Int
+    $patientPhone: String
+    $doctorName: String
+    $notes: String
+    $items: [PrescriptionItemInput!]
+  ) {
+    createPrescription(
+      branchId: $branchId
+      rxNumber: $rxNumber
+      patientName: $patientName
+      patientAge: $patientAge
+      patientPhone: $patientPhone
+      doctorName: $doctorName
+      notes: $notes
+      items: $items
+    ) {
+      id
+      rxNumber
+      patientName
+      patientAge
+      status
+    }
+  }
+`;
+
+export const M_DISPENSE_PRESCRIPTION = `
+  mutation DispensePrescription($id: ID!, $dispensedById: String!) {
+    dispensePrescription(id: $id, dispensedById: $dispensedById) {
+      id
+      status
+      dispensedAt
+    }
   }
 `;

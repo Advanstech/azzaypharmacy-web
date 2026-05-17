@@ -958,9 +958,21 @@ export default function LoginPage() {
               <div className="p-5 rounded-3xl" style={{ background: isDark ? 'rgba(0,217,255,0.2)' : 'rgba(14,165,233,0.1)' }}>
                 <Sparkles className="w-12 h-12" style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }} />
               </div>
-              <h2 className="text-3xl md:text-4xl font-bold font-display tracking-tight text-center">
-                Welcome to NEXUS
-              </h2>
+              <div className="text-center">
+                <p className="text-sm font-medium uppercase tracking-widest mb-1 opacity-60">
+                  {new Date().getHours() < 12 ? 'Good Morning' : new Date().getHours() < 17 ? 'Good Afternoon' : 'Good Evening'}
+                </p>
+                <h2 className="text-3xl md:text-4xl font-bold font-display tracking-tight">
+                  {staff.find(s => s.email === email)?.name
+                    ? `Welcome, ${staff.find(s => s.email === email)!.name.split(' ')[0]}!`
+                    : 'Welcome to NEXUS'}
+                </h2>
+                <p className="text-sm opacity-50 mt-2">
+                  {staff.find(s => s.email === email)?.role
+                    ? staff.find(s => s.email === email)!.role.replace(/_/g, ' ')
+                    : 'Azzay Pharmacy NEXUS'}
+                </p>
+              </div>
               <div className="w-48 h-1 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>
                 <motion.div 
                   initial={{ width: 0 }}

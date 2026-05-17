@@ -37,7 +37,7 @@ export default function AnalyticsPage() {
   const isDark = mounted && theme === 'dark';
   const [period, setPeriod] = useState('7 Days');
 
-  const { sales, products, staff, customers } = useStore();
+  const { sales, products, staff, customers, loadingSales } = useStore();
   const { user } = useAuth();
   const role = (user?.user_metadata?.role as string) || '';
   const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role);
@@ -368,7 +368,7 @@ export default function AnalyticsPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { label: 'Total Customers', value: customers.length, color: s.primary },
-            { label: 'Loyalty Members', value: customers.filter(c => c.loyaltyPoints > 0).length, color: s.success },
+            { label: 'Loyalty Members', value: customers.filter(c => (c.loyaltyPoints ?? 0) > 0).length, color: s.success },
             { label: 'Walk-ins', value: periodSales.filter(s => !s.customerName || s.customerName === 'Walk-in').length, color: s.warning },
             { label: 'Avg Spend', value: customers.length > 0 ? `GH₵${(customers.reduce((s, c) => s + Number(c.totalSpent), 0) / customers.length).toFixed(2)}` : 'GH₵0.00', color: '#8B5CF6' },
           ].map(stat => (

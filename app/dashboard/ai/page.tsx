@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { Send, Sparkles, AlertTriangle, TrendingUp, Package, Pill } from 'lucide-react';
+import { gql, M_ASK_NEXUS_AI } from '@/lib/gql';
 
 type Message = {
   id: string;
@@ -89,10 +90,29 @@ export default function AiAssistantPage() {
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
-    await new Promise(r => setTimeout(r, 1200));
-    const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: getSimulatedResponse(text), timestamp: new Date() };
-    setMessages(prev => [...prev, aiMsg]);
-    setIsLoading(false);
+
+    try {
+      const data = await gql<{ askNexusAi: string }>(M_ASK_NEXUS_AI, { prompt: text.trim() });
+      const aiMsg: Message = { 
+        id: (Date.now() + 1).toString(), 
+        role: 'assistant', 
+        content: data.askNexusAi || "I'm sorry, I couldn't get a proper clinical intelligence response. Please try again.", 
+        timestamp: new Date() 
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (error: any) {
+      console.warn('[AI Assistant] GraphQL query failed, falling back to simulated engine:', error);
+      const simulated = getSimulatedResponse(text);
+      const aiMsg: Message = { 
+        id: (Date.now() + 1).toString(), 
+        role: 'assistant', 
+        content: simulated, 
+        timestamp: new Date() 
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

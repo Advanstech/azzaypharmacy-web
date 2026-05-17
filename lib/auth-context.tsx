@@ -16,7 +16,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Bump this when auth config changes (e.g. key format change) to force all clients to re-login
-const SESSION_VERSION = '2';
+const SESSION_VERSION = '3';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
+      setAuthToken(session?.access_token ?? null);
       setLoading(false);
     });
 
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
+        setAuthToken(session?.access_token ?? null);
         setLoading(false);
         // Stale refresh token — clear everything
         if (!session && _event === 'SIGNED_OUT') {
