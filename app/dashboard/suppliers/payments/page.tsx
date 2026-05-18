@@ -359,110 +359,145 @@ export default function SupplierPaymentsPage() {
       {/* Payment Modal */}
       <AnimatePresence>
         {selectedInvoice && (
-          <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 overflow-hidden" style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(20px)' }}>
-             <motion.div 
-               initial={{ y: 50, opacity: 0 }}
-               animate={{ y: 0, opacity: 1 }}
-               exit={{ y: 50, opacity: 0 }}
-               className="w-full max-w-xl rounded-[40px] border shadow-2xl p-10 flex flex-col gap-8"
-               style={{ background: isDark ? '#0A0E1A' : '#fff', borderColor: card.border }}
-             >
-                <div className="flex items-center justify-between">
-                   <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                         <CreditCard size={28} />
-                      </div>
-                      <div>
-                         <h2 className="text-2xl font-black tracking-tight" style={{ color: card.text }}>Settle Liability</h2>
-                         <p className="text-xs opacity-50 font-bold uppercase tracking-widest" style={{ color: card.text }}>INV: {selectedInvoice.invoiceNo}</p>
-                      </div>
-                   </div>
-                   <button onClick={() => setSelectedInvoice(null)} className="w-10 h-10 rounded-full hover:bg-red-500/10 text-red-500 flex items-center justify-center transition-colors">
-                      <X size={24} />
-                   </button>
+          <div
+            className="fixed inset-0 z-[150] flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(16px)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) setSelectedInvoice(null); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-md rounded-3xl border shadow-2xl flex flex-col"
+              style={{
+                background: isDark ? '#0D1424' : '#ffffff',
+                borderColor: card.border,
+                maxHeight: 'calc(100vh - 2rem)',
+              }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b shrink-0" style={{ borderColor: card.border }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                    <CreditCard size={18} />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black tracking-tight leading-tight" style={{ color: card.text }}>Settle Liability</h2>
+                    <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest" style={{ color: card.text }}>INV: {selectedInvoice.invoiceNo}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setSelectedInvoice(null)}
+                  className="w-8 h-8 rounded-full hover:bg-red-500/10 text-red-400 flex items-center justify-center transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+
+                {/* Balance & Supplier row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-2xl border" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', borderColor: card.border }}>
+                    <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5" style={{ color: card.text }}>Outstanding</p>
+                    <p className="text-lg font-display font-black text-red-500 leading-tight">GH₵ {Number(selectedInvoice.balance).toLocaleString()}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl border" style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', borderColor: card.border }}>
+                    <p className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-0.5" style={{ color: card.text }}>Supplier</p>
+                    <p className="text-sm font-black leading-tight line-clamp-2" style={{ color: card.text }}>{selectedInvoice.supplier?.name || '—'}</p>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="p-6 rounded-[24px] border bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: card.border }}>
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Outstanding Balance</p>
-                      <p className="text-xl font-display font-black text-red-500">GH₵ {selectedInvoice.balance.toLocaleString()}</p>
-                   </div>
-                   <div className="p-6 rounded-[24px] border bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: card.border }}>
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-1">Supplier</p>
-                      <p className="text-xl font-display font-black" style={{ color: card.text }}>{selectedInvoice.supplier?.name}</p>
-                   </div>
+                {/* Amount input */}
+                <div>
+                  <label className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1.5 block" style={{ color: card.text }}>
+                    Settlement Amount (GH₵)
+                  </label>
+                  <div className="relative">
+                    <DollarSign size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" />
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      className="w-full pl-10 pr-24 py-3 rounded-2xl text-xl font-black focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                      style={{
+                        background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC',
+                        color: card.text,
+                        border: `1.5px solid ${card.border}`,
+                      }}
+                      value={payAmount}
+                      onChange={e => setPayAmount(e.target.value)}
+                    />
+                    <button
+                      onClick={() => setPayAmount(String(selectedInvoice.balance))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-xl bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest whitespace-nowrap"
+                    >
+                      Pay Full
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-6">
-                   <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest mb-3 block opacity-40" style={{ color: card.text }}>Settlement Amount (GH₵)</label>
-                      <div className="relative">
-                         <DollarSign size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-emerald-500" />
-                         <input 
-                           type="number" 
-                           placeholder="0.00" 
-                           className="w-full pl-14 pr-6 py-6 rounded-[28px] text-2xl font-black focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
-                           style={{ background: card.inputBg || (isDark ? 'rgba(0,0,0,0.3)' : '#F8FAFC'), color: card.text, border: `2px solid ${card.border}` }}
-                           value={payAmount}
-                           onChange={e => setPayAmount(e.target.value)}
-                         />
-                         <button 
-                           onClick={() => setPayAmount(selectedInvoice.balance.toString())}
-                           className="absolute right-6 top-1/2 -translate-y-1/2 px-4 py-2 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest"
-                         >
-                           Pay Full
-                         </button>
-                      </div>
-                   </div>
-
-                   <div className="grid grid-cols-2 gap-6">
-                      <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest mb-3 block opacity-40" style={{ color: card.text }}>Payment Method</label>
-                        <select 
-                          className="w-full px-6 py-4 rounded-2xl text-sm font-bold"
-                          style={{ background: isDark ? 'rgba(0,0,0,0.3)' : '#F8FAFC', border: `2px solid ${card.border}`, color: card.text }}
-                          value={payMethod}
-                          onChange={e => setPayMethod(e.target.value)}
-                        >
-                           <option value="CASH">Cash</option>
-                           <option value="MOMO">Mobile Money</option>
-                           <option value="CARD">Bank Transfer / Card</option>
-                           <option value="CREDIT">Supplier Credit</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest mb-3 block opacity-40" style={{ color: card.text }}>Reference / Cheque No.</label>
-                        <input 
-                          type="text" 
-                          placeholder="TXN-XXXX" 
-                          className="w-full px-6 py-4 rounded-2xl text-sm font-bold"
-                          style={{ background: isDark ? 'rgba(0,0,0,0.3)' : '#F8FAFC', border: `2px solid ${card.border}`, color: card.text }}
-                          value={payRef}
-                          onChange={e => setPayRef(e.target.value)}
-                        />
-                      </div>
-                   </div>
+                {/* Method & Reference */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1.5 block" style={{ color: card.text }}>Method</label>
+                    <select
+                      className="w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none"
+                      style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                      value={payMethod}
+                      onChange={e => setPayMethod(e.target.value)}
+                    >
+                      <option value="CASH">Cash</option>
+                      <option value="MOMO">Mobile Money</option>
+                      <option value="CARD">Bank Transfer</option>
+                      <option value="CREDIT">Supplier Credit</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-black uppercase tracking-widest opacity-40 mb-1.5 block" style={{ color: card.text }}>Reference</label>
+                    <input
+                      type="text"
+                      placeholder="TXN-XXXX"
+                      className="w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none"
+                      style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                      value={payRef}
+                      onChange={e => setPayRef(e.target.value)}
+                    />
+                  </div>
                 </div>
 
-                <div className="flex gap-4">
-                   <button 
-                     onClick={() => setSelectedInvoice(null)}
-                     className="flex-1 py-5 rounded-[28px] text-sm font-black uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                     style={{ color: card.text }}
-                   >
-                     Cancel
-                   </button>
-                   <button 
-                     onClick={handleRecordPayment}
-                     disabled={isPaying || !payAmount}
-                     className="flex-[2] py-5 rounded-[28px] text-sm font-black uppercase tracking-widest shadow-2xl shadow-emerald-500/30 flex items-center justify-center gap-3 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-                     style={{ background: '#10B981', color: '#fff' }}
-                   >
-                     {isPaying ? <Loader2 size={24} className="animate-spin" /> : <CheckCircle2 size={24} />}
-                     {isPaying ? 'Processing...' : 'Confirm Settlement'}
-                   </button>
-                </div>
-             </motion.div>
+                {/* Payment type hint */}
+                {payAmount && Number(payAmount) > 0 && (
+                  <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 ${Number(payAmount) >= Number(selectedInvoice.balance) ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>
+                    {Number(payAmount) >= Number(selectedInvoice.balance)
+                      ? <><CheckCircle2 size={14} /> Full settlement — invoice will be marked PAID</>
+                      : <><Clock size={14} /> Partial payment — GH₵ {(Number(selectedInvoice.balance) - Number(payAmount)).toLocaleString()} will remain</>
+                    }
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 pb-5 pt-3 border-t flex gap-3 shrink-0" style={{ borderColor: card.border }}>
+                <button
+                  onClick={() => setSelectedInvoice(null)}
+                  className="flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all hover:opacity-70"
+                  style={{ color: card.muted, border: `1.5px solid ${card.border}` }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRecordPayment}
+                  disabled={isPaying || !payAmount || Number(payAmount) <= 0}
+                  className="flex-[2] py-3 rounded-2xl text-sm font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-95 disabled:opacity-40 shadow-lg shadow-emerald-500/20"
+                  style={{ background: '#10B981', color: '#fff' }}
+                >
+                  {isPaying ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle2 size={18} />}
+                  {isPaying ? 'Processing…' : 'Confirm Settlement'}
+                </button>
+              </div>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
