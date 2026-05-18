@@ -4,11 +4,14 @@ import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/store';
+import { useToast } from '@/components/pharma-toast';
 import { 
   ArrowLeft, Mail, Phone, MapPin, Calendar, Award, Briefcase, Shield,
   Clock, Activity, Package, ShoppingCart, DollarSign, UserCheck,
-  FileText, BarChart3, CalendarDays, Edit2, CheckCircle2, AlertCircle
+  FileText, BarChart3, CalendarDays, Edit2, CheckCircle2, AlertCircle,
+  X, Save, Loader2, Building, ToggleLeft, ToggleRight
 } from 'lucide-react';
 
 interface StaffMember {
@@ -168,12 +171,19 @@ function getFullName(staff: StaffDetail) {
   return getNameParts(staff).fullName;
 }
 
+const ROLES = ['OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'PHARMACIST', 'TECHNICIAN', 'CASHIER', 'INTERN', 'SE_ADMIN'];
+
 export default function StaffDetailPage() {
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const params = useParams();
   const staffId = params.id as string;
-  const { staff: liveStaff, loadingStaff } = useStore();
+  const { staff: liveStaff, loadingStaff, updateStaffProfile } = useStore();
+  const { addToast } = useToast();
+
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({ role: '', position: '', branchId: '', isActive: true });
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setMounted(true));
@@ -333,8 +343,19 @@ export default function StaffDetailPage() {
 
           {/* Actions */}
           <div className="flex flex-col gap-2 shrink-0">
-            <button className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all"
-              style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}>
+            <button
+              onClick={() => {
+                setEditForm({
+                  role: staff.role || '',
+                  position: (staff as any).position || '',
+                  branchId: (staff as any).branchId || (typeof staff.branch === 'object' ? staff.branch?.id : '') || '',
+                  isActive: (staff as any).isActive !== false,
+                });
+                setShowEditModal(true);
+              }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
+              style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}
+            >
               <Edit2 size={14} />
               Edit Profile
             </button>
@@ -564,6 +585,154 @@ export default function StaffDetailPage() {
           </div>
         </div>
       </div>
+      {/* Edit Profile Modal */}
+      <AnimatePresence>
+        {showEditModal && (
+          <div
+            className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(16px)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowEditModal(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              className="w-full max-w-md rounded-3xl border shadow-2xl flex flex-col"
+              style={{ background: isDark ? '#0D1424' : '#ffffff', borderColor: card.border, maxHeight: 'calc(100vh - 2rem)' }}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b shrink-0" style={{ borderColor: card.border }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: card.primaryBg }}>
+                    <Edit2 size={16} style={{ color: card.primary }} />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-black tracking-tight" style={{ color: card.text }}>Edit Profile</h2>
+                    <p className="text-[10px] opacity-40 font-bold uppercase tracking-widest" style={{ color: card.text }}>{getFullName(staff)}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="w-8 h-8 rounded-full hover:bg-red-500/10 text-red-400 flex items-center justify-center transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+
+                {/* Role */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
+                    <Shield size={11} /> Role
+                  </label>
+                  <select
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                    value={editForm.role}
+                    onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
+                  >
+                    {ROLES.map(r => (
+                      <option key={r} value={r}>{r.replace('_', ' ')}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Position */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
+                    <Briefcase size={11} /> Position / Title
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Senior Pharmacist"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                    value={editForm.position}
+                    onChange={e => setEditForm(f => ({ ...f, position: e.target.value }))}
+                  />
+                </div>
+
+                {/* Branch ID */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
+                    <Building size={11} /> Branch ID
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Branch UUID"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 font-mono"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                    value={editForm.branchId}
+                    onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
+                  />
+                </div>
+
+                {/* Active Status */}
+                <div
+                  className="flex items-center justify-between p-3 rounded-2xl cursor-pointer transition-all"
+                  style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', border: `1.5px solid ${card.border}` }}
+                  onClick={() => setEditForm(f => ({ ...f, isActive: !f.isActive }))}
+                >
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: card.text }}>Account Active</p>
+                    <p className="text-xs opacity-50" style={{ color: card.text }}>Toggle to deactivate or reactivate this staff account</p>
+                  </div>
+                  {editForm.isActive
+                    ? <ToggleRight size={28} className="text-emerald-500 shrink-0" />
+                    : <ToggleLeft size={28} className="shrink-0" style={{ color: card.muted }} />
+                  }
+                </div>
+
+                {/* Info note */}
+                <div className="px-4 py-2.5 rounded-xl text-xs font-medium flex items-start gap-2" style={{ background: card.primaryBg, color: card.primary }}>
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <span>Email and name changes must be done through Supabase Auth. This form updates role, position, branch, and account status.</span>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 pb-5 pt-3 border-t flex gap-3 shrink-0" style={{ borderColor: card.border }}>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all hover:opacity-70"
+                  style={{ color: card.muted, border: `1.5px solid ${card.border}` }}
+                >
+                  Cancel
+                </button>
+                <button
+                  disabled={isSaving}
+                  onClick={async () => {
+                    setIsSaving(true);
+                    try {
+                      await updateStaffProfile({
+                        userId: staffId,
+                        role: editForm.role || undefined,
+                        position: editForm.position || undefined,
+                        branchId: editForm.branchId || undefined,
+                        isActive: editForm.isActive,
+                      });
+                      addToast({ type: 'success', title: 'Profile Updated', message: `${getFullName(staff)} profile has been saved.`, duration: 5000 });
+                      setShowEditModal(false);
+                    } catch (err: any) {
+                      addToast({ type: 'error', title: 'Update Failed', message: err.message || 'Could not save changes.', duration: 6000 });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  className="flex-[2] py-3 rounded-2xl text-sm font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-95 disabled:opacity-40"
+                  style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}
+                >
+                  {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  {isSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
