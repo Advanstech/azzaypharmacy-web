@@ -31,7 +31,7 @@ export default function SupplierProductsPage() {
   const router = useRouter();
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { products: allProducts, suppliers: storeSuppliers, getProductsBySupplier, updateProductPrices, updateProductSupplier, updateProductFull, deleteProduct, refetchProducts, loadingProducts } = useStore();
+  const { products: allProducts, suppliers: storeSuppliers, getProductsBySupplier, updateProductPrices, updateProductSupplier, updateProductFull, deleteProduct, refetchProducts, loadingProducts, createProduct } = useStore();
   
   const supplierId = params.id as string;
   const supplier = storeSuppliers.find(s => s.id === supplierId) || FALLBACK_SUPPLIERS.find(s => s.id === supplierId) || FALLBACK_SUPPLIERS[0];
@@ -44,6 +44,10 @@ export default function SupplierProductsPage() {
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [editForm, setEditForm] = useState<any>({
     name: '', genericName: '', brand: '', category: '', cost: 0, sell: 0, qty: 0, supplierId: '', requiresRx: false
+  });
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState<any>({
+    name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', cost: 0, sell: 0, qty: 0, supplierId: supplierId, requiresRx: false
   });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [moveProduct, setMoveProduct] = useState<any>(null);
@@ -116,6 +120,19 @@ export default function SupplierProductsPage() {
     return ['All', ...Array.from(cats)];
   }, [products]);
 
+  const categoryOptions = useMemo(() => {
+    const list = new Set([
+      'ANTIBIOTICS',
+      'ANALGESICS_NSAIDS',
+      'CARDIOVASCULAR',
+      'VITAMINS_SUPPLEMENTS',
+      'ANTIMALARIALS',
+      'MISCELLANEOUS',
+      ...products.map(p => p.category)
+    ]);
+    return Array.from(list).filter(Boolean);
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase());
@@ -165,6 +182,38 @@ export default function SupplierProductsPage() {
       loadProducts();
     } catch (err) {
       console.error('Failed to update product:', err);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const openAddModal = () => {
+    setAddForm({
+      name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', cost: 0, sell: 0, qty: 0, supplierId: supplierId, requiresRx: false
+    });
+    setShowAddModal(true);
+  };
+
+  const saveAdd = async () => {
+    setIsUpdating(true);
+    try {
+      await createProduct({
+        name: addForm.name,
+        genericName: addForm.genericName || undefined,
+        brand: addForm.brand || undefined,
+        category: addForm.category,
+        costPrice: addForm.cost,
+        sellingPrice: addForm.sell,
+        stockQuantity: addForm.qty,
+        supplierId: addForm.supplierId || undefined,
+        requiresRx: addForm.requiresRx,
+        dosageForm: 'TABLET',
+      });
+      setShowAddModal(false);
+      refetchProducts();
+      loadProducts();
+    } catch (err) {
+      console.error('Failed to create product:', err);
     } finally {
       setIsUpdating(false);
     }
@@ -230,11 +279,14 @@ export default function SupplierProductsPage() {
               </div>
             </div>
           </div>
-          <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm"
+          <button 
+            onClick={openAddModal}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm hover:scale-[1.02] active:scale-[0.98] transition-all"
             style={{ 
               background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)',
               color: isDark ? '#0A0E1A' : '#fff'
-            }}>
+            }}
+          >
             <Plus size={18} /> Add Product
           </button>
         </div>
@@ -472,7 +524,7 @@ export default function SupplierProductsPage() {
                 <div>
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category</label>
                   <select value={editForm.category} onChange={e => setEditForm({...editForm, category: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
-                    {categories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                    {categoryOptions.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                   </select>
                 </div>
                 <div>
@@ -507,6 +559,82 @@ export default function SupplierProductsPage() {
               <button onClick={saveEdit} disabled={isUpdating} className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center justify-center gap-2" style={{ background: c.primary, color: '#fff' }}>
                 {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                 {isUpdating ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Product Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
+          <div className="w-full max-w-lg rounded-2xl border" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: c.border }}>
+            <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: c.border }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-emerald-500/10 text-emerald-500"><Plus size={20} /></div>
+                <div>
+                  <h2 className="font-display text-lg font-bold" style={{ color: c.text }}>Add New Product</h2>
+                  <p className="text-xs" style={{ color: c.muted }}>Create a new product for this supplier</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-red-500 transition-colors"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Product Name</label>
+                  <input type="text" value={addForm.name} onChange={e => setAddForm({...addForm, name: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} placeholder="e.g. Amoxicillin 500mg" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Generic Name</label>
+                  <input type="text" value={addForm.genericName} onChange={e => setAddForm({...addForm, genericName: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} placeholder="e.g. Amoxicillin Trihydrate" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Brand / Manufacturer</label>
+                  <input type="text" value={addForm.brand} onChange={e => setAddForm({...addForm, brand: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} placeholder="e.g. GSK" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category</label>
+                  <select value={addForm.category} onChange={e => setAddForm({...addForm, category: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                    {categoryOptions.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Supplier</label>
+                  <select value={addForm.supplierId} onChange={e => setAddForm({...addForm, supplierId: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                    <option value="">Direct / Unknown</option>
+                    {storeSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cost Price (GH₵)</label>
+                  <input type="number" step="0.01" value={addForm.cost || ''} onChange={e => setAddForm({...addForm, cost: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selling Price (GH₵)</label>
+                  <input type="number" step="0.01" value={addForm.sell || ''} onChange={e => setAddForm({...addForm, sell: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Initial Stock Quantity</label>
+                  <input type="number" value={addForm.qty || ''} onChange={e => setAddForm({...addForm, qty: parseInt(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                </div>
+                <div className="col-span-2 pt-2 border-t flex items-center justify-between" style={{ borderColor: c.border }}>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: c.text }}>Prescription Required</p>
+                    <p className="text-[10px]" style={{ color: c.muted }}>Classifies this drug as POM (Prescription-Only)</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={addForm.requiresRx} onChange={e => setAddForm({...addForm, requiresRx: e.target.checked})} />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary" style={{ background: addForm.requiresRx ? c.primary : (isDark ? 'rgba(255,255,255,0.1)' : '#cbd5e1') }}></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t flex gap-2" style={{ borderColor: c.border }}>
+              <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: c.muted }}>Cancel</button>
+              <button onClick={saveAdd} disabled={isUpdating || !addForm.name || addForm.cost <= 0 || addForm.sell <= 0} className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center justify-center gap-2" style={{ background: c.primary, color: '#fff' }}>
+                {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                {isUpdating ? 'Creating...' : 'Add Product'}
               </button>
             </div>
           </div>

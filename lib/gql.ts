@@ -370,6 +370,24 @@ export const M_REJECT_EXPENSE = `
   }
 `;
 
+export const M_CREATE_EXPENSE = `
+  mutation CreateExpense($branchId: String!, $categoryId: String!, $amount: Float!, $description: String!, $date: String!, $receiptUrl: String) {
+    createExpense(branchId: $branchId, categoryId: $categoryId, amount: $amount, description: $description, date: $date, receiptUrl: $receiptUrl) {
+      id amount description date status
+      category { id name }
+      createdAt
+    }
+  }
+`;
+
+export const Q_EXPENSE_CATEGORIES = `
+  query GetExpenseCategories {
+    expenseCategories {
+      id name
+    }
+  }
+`;
+
 export const M_GENERATE_TEMP_PASSWORD = `
   mutation GenerateTempPassword($userId: ID!) {
     generateTempPassword(userId: $userId)
@@ -684,6 +702,7 @@ export const Q_INVOICES = `
       id invoiceNo type total paidAmount balance paymentStatus issueDate dueDate createdAt
       supplier { id name }
       payments { id amount method reference notes paidAt }
+      uploadedBy { id name role }
     }
   }
 `;

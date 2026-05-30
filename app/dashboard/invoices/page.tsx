@@ -7,7 +7,7 @@ import {
   Clock, TrendingUp, TrendingDown, Plus, Search, Filter, Download,
   Eye, Edit, Trash2, CreditCard, Building2, ChevronRight, X,
   Save, Loader2, Receipt, BarChart3, PieChart, ArrowUpRight,
-  ArrowDownRight, Bell, Settings, RefreshCw, Sparkles
+  ArrowDownRight, Bell, Settings, RefreshCw, Sparkles, User
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
@@ -180,6 +180,7 @@ export default function InvoicesPage() {
         category: invoice.type || 'PURCHASE',
         fileUrl: '',
         payments: invoice.payments || [],
+        uploadedBy: invoice.uploadedBy,
       };
     });
   }, [invoiceRecords]);
@@ -778,7 +779,17 @@ export default function InvoicesPage() {
                         </div>
                       </td>
                       <td className="px-5 py-4">
-                        <p className="font-mono text-sm font-medium" style={{ color: card.primary }}>{invoice.invoiceNumber}</p>
+                        <div className="flex flex-col gap-1">
+                          <p className="font-mono text-sm font-medium" style={{ color: card.primary }}>{invoice.invoiceNumber}</p>
+                          {invoice.uploadedBy?.name && (
+                            <div className="flex items-center gap-1">
+                              <User size={10} style={{ color: card.subtle }} />
+                              <p className="text-[9px] uppercase tracking-wider font-bold" style={{ color: card.subtle }}>
+                                By {invoice.uploadedBy.name}
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-5 py-4">
                         <p className="text-sm" style={{ color: card.text }}>{invoice.issueDate}</p>

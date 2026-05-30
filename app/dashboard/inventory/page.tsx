@@ -115,6 +115,7 @@ export default function InventoryPage() {
   const [invoiceStep, setInvoiceStep] = useState<'type' | 'upload' | 'verify' | 'terms'>('type');
   const [isAiMode, setIsAiMode] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
   const [invoiceSupplier, setInvoiceSupplier] = useState<string>('');
   const [invoiceSupplierDraft, setInvoiceSupplierDraft] = useState<string>('');
@@ -576,6 +577,39 @@ export default function InventoryPage() {
       setInvoiceStep('upload');
       // Pass file directly to avoid React async state race condition
       console.log('⚡ [UI] Triggering AI Neural Scan...');
+      handleAiScanWithFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      console.log('📂 [UI] File dropped:', file.name);
+      setInvoiceFile(file);
+      if (file.type.startsWith('image/')) {
+        setFilePreview(URL.createObjectURL(file));
+      } else {
+        setFilePreview(null);
+      }
+      setIsAiMode(true);
+      setInvoiceStep('upload');
+      console.log('⚡ [UI] Triggering AI Neural Scan from drop event...');
       handleAiScanWithFile(file);
     }
   };
@@ -1655,7 +1689,13 @@ export default function InventoryPage() {
               {/* STEP 2 (AI): Upload */}
               {invoiceStep === 'upload' && (
                 <div className="flex flex-col items-center justify-center py-12 gap-8 animate-in fade-in slide-in-from-bottom-4">
-                   <div className={`relative w-[450px] h-[350px] rounded-[40px] border-4 border-dashed flex flex-col items-center justify-center transition-all ${isScanning ? 'border-primary shadow-2xl scale-105' : 'hover:border-primary/50'}`} style={{ borderColor: card.border }}>
+                   <div 
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={`relative w-[450px] h-[350px] rounded-[40px] border-4 border-dashed flex flex-col items-center justify-center transition-all ${isScanning ? 'border-primary shadow-2xl scale-105' : isDragging ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg' : 'hover:border-primary/50'}`} 
+                      style={{ borderColor: isDragging ? card.primary : card.border }}
+                    >
                       {isScanning ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 overflow-hidden rounded-[36px] bg-slate-900/10 backdrop-blur-md">
                            {filePreview ? (
@@ -1687,13 +1727,15 @@ export default function InventoryPage() {
                            <div className="w-24 h-24 rounded-[32px] bg-slate-500/5 flex items-center justify-center mx-auto mb-8 border border-dashed border-slate-500/20">
                               <Upload size={40} className="opacity-20" style={{ color: card.text }} />
                            </div>
-                           <h3 className="text-lg font-black mb-2" style={{ color: card.text }}>Ready for Intelligent Ingestion</h3>
+                           <h3 className="text-lg font-black mb-2" style={{ color: card.text }}>
+                             {isDragging ? 'Drop Invoice Here' : 'Ready for Intelligent Ingestion'}
+                           </h3>
                            <p className="text-xs font-bold opacity-40 mb-8 max-w-[280px] mx-auto uppercase tracking-wider" style={{ color: card.text }}>Supports PDF, PNG, JPG, JPEG & Batch Scans</p>
                            
                            <label className="cursor-pointer group/btn relative overflow-hidden">
                              <input type="file" className="hidden" accept=".pdf,image/*" onChange={handleFileChange} />
                              <div 
-                               className="px-12 py-5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
+                               className="px-12 py-5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3 animate-pulse"
                                style={{ backgroundColor: card.primary, boxShadow: `0 20px 40px -10px ${card.primary}40` }}
                              >
                                <Sparkles size={16} /> 

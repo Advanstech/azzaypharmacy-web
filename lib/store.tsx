@@ -12,13 +12,13 @@ import {
 import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_STAFF, Q_ME, Q_CUSTOMERS,
-  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_LEDGER, Q_INVOICES,
+  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES,
   M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD,
   M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
-  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_REFUND_SALE,
+  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_REFUND_SALE, M_CREATE_EXPENSE,
 } from './gql';
 import { saveToCache, getFromCache } from './offline';
 
@@ -282,6 +282,8 @@ interface StoreState {
   loadingInvoices: boolean;
   loadingExpenses: boolean;
   loadingLedger: boolean;
+  expenseCategories: ExpenseCategory[];
+  loadingExpenseCategories: boolean;
 
   // Errors
   error: string | null;
@@ -303,6 +305,7 @@ interface StoreState {
   refetchInvoices: () => Promise<void>;
   refetchExpenses: () => Promise<void>;
   refetchLedger: () => Promise<void>;
+  refetchExpenseCategories: () => Promise<void>;
   refetchAll: () => Promise<void>;
 
   // Mutations
@@ -423,6 +426,15 @@ interface StoreState {
   // Invoice Management
   recordSupplierPayment: (invoiceId: string, amount: number, method: string, reference?: string, notes?: string) => Promise<Invoice>;
   deleteInvoice: (invoiceId: string) => Promise<void>;
+
+  // Financials
+  createExpense: (args: {
+    categoryId: string;
+    amount: number;
+    description: string;
+    date: string;
+    receiptUrl?: string;
+  }) => Promise<Expense>;
 }
 
 const StoreContext = createContext<StoreState | null>(null);
@@ -452,6 +464,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
   const [loadingLedger, setLoadingLedger] = useState(false);
+  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
+  const [loadingExpenseCategories, setLoadingExpenseCategories] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
@@ -593,6 +607,18 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
+  const refetchExpenseCategories = useCallback(async () => {
+    setLoadingExpenseCategories(true);
+    try {
+      const data = await gql<{ expenseCategories: ExpenseCategory[] }>(Q_EXPENSE_CATEGORIES);
+      setExpenseCategories(data.expenseCategories ?? []);
+    } catch (e: any) {
+      console.warn('[store] expense categories fetch failed:', e.message);
+    } finally {
+      setLoadingExpenseCategories(false);
+    }
+  }, []);
+
   const refetchLedger = useCallback(async () => {
     if (!me?.branchId) return;
     setLoadingLedger(true);
@@ -623,6 +649,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         refetchPurchases(),
         refetchInvoices(),
         refetchExpenses(),
+        refetchExpenseCategories(),
         refetchLedger(),
       ]);
       setSyncStatus('idle');
@@ -630,7 +657,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       console.error('[store] Sync failed:', err);
       setSyncStatus('error');
     }
-  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchLedger]);
+  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger]);
 
   // Set token and fetch when it becomes available
   useEffect(() => {
@@ -955,6 +982,17 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     return updatedInvoice;
   }, [refetchLedger]);
 
+  const createExpense = useCallback(async (args: {
+    categoryId: string; amount: number; description: string; date: string; receiptUrl?: string;
+  }): Promise<Expense> => {
+    if (!me?.branchId) throw new Error('No branch assigned');
+    const data = await gql<{ createExpense: Expense }>(M_CREATE_EXPENSE, { ...args, branchId: me.branchId });
+    const newExpense = data.createExpense;
+    setExpenses(prev => [newExpense, ...prev]);
+    refetchLedger();
+    return newExpense;
+  }, [me?.branchId, refetchLedger]);
+
   const deleteInvoice = useCallback(async (invoiceId: string): Promise<void> => {
     await gql(M_DELETE_INVOICE, { invoiceId });
     setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
@@ -971,14 +1009,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   return (
     <StoreContext.Provider value={{
       products, suppliers, sales, staff, customers, me,
-      prescriptions, purchases, invoices, expenses, ledger,
+      prescriptions, purchases, invoices, expenses, expenseCategories, ledger,
       loadingProducts, loadingSuppliers, loadingSales, loadingStaff, loadingCustomers,
-      loadingPrescriptions, loadingPurchases, loadingInvoices, loadingExpenses, loadingLedger,
+      loadingPrescriptions, loadingPurchases, loadingInvoices, loadingExpenses, loadingExpenseCategories, loadingLedger,
       error, syncStatus,
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
       refetchProducts, refetchSales, refetchStaff, refetchCustomers,
-      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchLedger, refetchAll,
+      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchAll,
       createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, generateTempPassword,
       updateProductPrices, updateProductFull,
       updateProductSupplier,
@@ -988,6 +1026,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       createProduct, deleteProduct, adjustProductStock,
       createSupplier, updateSupplier, deleteSupplier,
       recordSupplierPayment, deleteInvoice,
+      createExpense,
     }}>
       {children}
     </StoreContext.Provider>

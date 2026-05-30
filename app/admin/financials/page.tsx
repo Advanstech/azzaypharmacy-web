@@ -69,7 +69,7 @@ export default function FinancialsPage() {
   const isDark = mounted && theme === 'dark';
 
   const { user } = useAuth();
-  const { sales, products, ledger, purchases, refetchLedger, me } = useStore();
+  const { sales, products, ledger, purchases, expenses, expenseCategories, createExpense, refetchLedger, me } = useStore();
 
   useEffect(() => {
     refetchLedger();
@@ -79,10 +79,35 @@ export default function FinancialsPage() {
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'ACCOUNTANT'].includes(role || '');
 
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'payables' | 'analytics'>('overview');
+  const [showRecordModal, setShowRecordModal] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [expenseForm, setExpenseForm] = useState({ categoryId: '', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
 
   const liveLedger = useMemo(() => {
-    return ledger.length > 0 ? ledger : LEDGER;
-  }, [ledger]);
+    const baseLedger = ledger.length > 0 ? ledger : LEDGER;
+    const combined = [...baseLedger];
+    
+    // Inject real expenses from the API if they exist
+    if (expenses && expenses.length > 0) {
+      expenses.forEach(exp => {
+        // Only add if not already present by reference
+        if (!combined.some(l => l.ref === exp.id || l.id === exp.id)) {
+          combined.push({
+            id: exp.id,
+            date: exp.date ? new Date(exp.date).toISOString().split('T')[0] : new Date(exp.createdAt || Date.now()).toISOString().split('T')[0],
+            type: 'DEBIT',
+            account: 'EXPENSE', // Or appropriate mapping
+            category: exp.category?.name || 'Operating Expense',
+            amount: exp.amount,
+            description: exp.description,
+            ref: exp.id,
+          });
+        }
+      });
+    }
+
+    return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [ledger, expenses]);
 
   const livePayables = useMemo(() => {
     return purchases.length > 0 ? purchases.map(p => ({
@@ -114,6 +139,50 @@ export default function FinancialsPage() {
     );
   }
 
+  const handleExport = () => {
+    let csvContent = 'data:text/csv;charset=utf-8,';
+    
+    if (activeTab === 'payables') {
+      csvContent += 'Supplier,Invoice,Amount,Status,Due Date\n';
+      livePayables.forEach(p => {
+        csvContent += `"${p.supplier}","${p.invoice}",${p.amount},${p.status},"${p.dueDate}"\n`;
+      });
+    } else {
+      csvContent += 'Date,Reference,Description,Category,Type,Amount\n';
+      liveLedger.forEach(l => {
+        csvContent += `"${l.date}","${l.ref || l.id}","${l.description}","${l.category}","${l.type}",${l.amount}\n`;
+      });
+    }
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `financial_report_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleCreateExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expenseForm.categoryId || !expenseForm.amount) return;
+    setIsSubmitting(true);
+    try {
+      await createExpense({
+        categoryId: expenseForm.categoryId,
+        amount: parseFloat(expenseForm.amount),
+        description: expenseForm.description,
+        date: expenseForm.date,
+      });
+      setShowRecordModal(false);
+      setExpenseForm({ categoryId: '', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
     border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)',
@@ -136,12 +205,12 @@ export default function FinancialsPage() {
           <p className="text-sm" style={{ color: card.muted }}>Accounting, supplier payables, and profit analytics</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm"
+          <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm"
             style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
             <Download size={16} />
             Export Report
           </button>
-          <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all"
+          <button onClick={() => setShowRecordModal(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all"
             style={{
               background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)',
               color: isDark ? '#0A0E1A' : '#fff',
@@ -502,6 +571,67 @@ export default function FinancialsPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Record Transaction Modal */}
+      {showRecordModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.4)' }}>
+          <div className="rounded-2xl w-full max-w-md p-6 shadow-2xl relative" style={{ background: card.bg, border: `1px solid ${card.border}` }}>
+            <h2 className="text-lg font-bold mb-4" style={{ color: card.text }}>Record New Transaction</h2>
+            <form onSubmit={handleCreateExpense} className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Category</label>
+                <select required value={expenseForm.categoryId} onChange={e => setExpenseForm({ ...expenseForm, categoryId: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
+                  <option value="">Select a category</option>
+                  {expenseCategories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                  {expenseCategories.length === 0 && (
+                    <option value="default_cat">Operating Expense (Fallback)</option>
+                  )}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Amount (GH₵)</label>
+                <input required type="number" step="0.01" min="0" value={expenseForm.amount} onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}
+                  placeholder="0.00" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Description</label>
+                <input required type="text" value={expenseForm.description} onChange={e => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}
+                  placeholder="e.g. Monthly rent, staff salary" />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Date</label>
+                <input required type="date" value={expenseForm.date} onChange={e => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                  className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }} />
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t mt-6" style={{ borderColor: card.divider }}>
+                <button type="button" onClick={() => setShowRecordModal(false)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors"
+                  style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)', color: card.text }}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={isSubmitting}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-opacity disabled:opacity-50"
+                  style={{ background: card.primary }}>
+                  {isSubmitting ? 'Recording...' : 'Record'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

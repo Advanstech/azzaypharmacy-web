@@ -133,18 +133,17 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       </div>
       <div className="flex-1 min-w-0">
         {toast.title && (
-          <p className="font-bold text-sm mb-1" style={{ color: '#fff' }}>
+          <p className="font-bold text-sm mb-1 text-slate-900 dark:text-white">
             {toast.title}
           </p>
         )}
-        <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.9)' }}>
+        <p className="text-sm leading-relaxed text-slate-700 dark:text-white/90">
           {toast.message}
         </p>
       </div>
       <button
         onClick={handleClose}
-        className="flex-shrink-0 p-1 rounded-lg transition-colors hover:bg-white/10"
-        style={{ color: 'rgba(255,255,255,0.6)' }}
+        className="flex-shrink-0 p-1 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-white/60"
       >
         <X size={16} />
       </button>
