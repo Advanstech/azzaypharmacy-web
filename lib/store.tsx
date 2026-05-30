@@ -221,6 +221,20 @@ export interface Invoice {
   createdAt: string;
   supplier?: { id: string; name: string; contact?: string; phone?: string; email?: string };
   payments?: InvoicePayment[];
+  purchase?: {
+    id: string;
+    items: {
+      id: string;
+      quantity: number;
+      unitCost: number;
+      total: number;
+      product: {
+        id: string;
+        name: string;
+        basePrice: number;
+      }
+    }[];
+  };
 }
 
 export interface LedgerEntry {

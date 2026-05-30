@@ -54,13 +54,22 @@ export default function SuppliersPage() {
   const { theme } = useTheme();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const { suppliers: storeSuppliers, loadingSuppliers, products, createSupplier, updateSupplier, deleteSupplier } = useStore();
+  const { 
+    suppliers: storeSuppliers, 
+    loadingSuppliers, 
+    products, 
+    createSupplier, 
+    updateSupplier, 
+    deleteSupplier,
+    me
+  } = useStore();
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   const isDark = mounted && theme === 'dark';
+  const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
 
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'score' | 'spend' | 'name'>('score');
@@ -200,16 +209,18 @@ export default function SuppliersPage() {
             {suppliers.length} pharmaceutical suppliers · AI-scored performance tracking
           </p>
         </div>
-        <button onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
-          style={{
-            background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)',
-            color: isDark ? '#060B14' : '#fff',
-            boxShadow: isDark ? '0 8px 25px rgba(0,217,255,0.3)' : '0 8px 25px rgba(14,165,233,0.3)',
-          }}>
-          <Plus size={18} />
-          Add Supplier
-        </button>
+        {isManager && (
+          <button onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+            style={{
+              background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)',
+              color: isDark ? '#060B14' : '#fff',
+              boxShadow: isDark ? '0 8px 25px rgba(0,217,255,0.3)' : '0 8px 25px rgba(14,165,233,0.3)',
+            }}>
+            <Plus size={18} />
+            Add Supplier
+          </button>
+        )}
       </div>
 
       {/* KPI Row */}
@@ -316,14 +327,16 @@ export default function SuppliersPage() {
                   </td>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center justify-end gap-2">
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                        <button onClick={(e) => openEditModal(e, s)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-blue-500">
-                          <Edit2 size={14} />
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500">
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+                      {isManager && (
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                          <button onClick={(e) => openEditModal(e, s)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-blue-500">
+                            <Edit2 size={14} />
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(s.id); }} className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )}
                       <ChevronRight size={16} style={{ color: c.subtle }} />
                     </div>
                   </td>

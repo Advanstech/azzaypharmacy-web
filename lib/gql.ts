@@ -703,6 +703,13 @@ export const Q_INVOICES = `
       supplier { id name }
       payments { id amount method reference notes paidAt }
       uploadedBy { id name role }
+      purchase {
+        id
+        items {
+          id quantity unitCost total
+          product { id name basePrice }
+        }
+      }
     }
   }
 `;

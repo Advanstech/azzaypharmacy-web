@@ -26,7 +26,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const addToast = useCallback((toast: Omit<Toast, 'id'>) => {
     const id = Math.random().toString(36).substring(2, 9);
-    const newToast: Toast = { ...toast, id, duration: toast.duration || 5000 };
+    const newToast: Toast = { ...toast, id, duration: toast.duration || 8000 };
     setToasts((prev) => [...prev, newToast]);
 
     // Auto-dismiss
@@ -64,28 +64,28 @@ const toastIcons = {
 
 const toastStyles = {
   success: {
-    bg: 'rgba(16,185,129,0.15)',
-    border: 'rgba(16,185,129,0.3)',
+    bg: 'var(--background)',
+    border: '#10B981',
     icon: '#10B981',
-    glow: '0 0 20px rgba(16,185,129,0.2)',
+    glow: '0 8px 30px rgba(16,185,129,0.2)',
   },
   error: {
-    bg: 'rgba(239,68,68,0.15)',
-    border: 'rgba(239,68,68,0.3)',
+    bg: 'var(--background)',
+    border: '#EF4444',
     icon: '#EF4444',
-    glow: '0 0 20px rgba(239,68,68,0.2)',
+    glow: '0 8px 30px rgba(239,68,68,0.2)',
   },
   warning: {
-    bg: 'rgba(245,158,11,0.15)',
-    border: 'rgba(245,158,11,0.3)',
+    bg: 'var(--background)',
+    border: '#F59E0B',
     icon: '#F59E0B',
-    glow: '0 0 20px rgba(245,158,11,0.2)',
+    glow: '0 8px 30px rgba(245,158,11,0.2)',
   },
   info: {
-    bg: 'rgba(14,165,233,0.15)',
-    border: 'rgba(14,165,233,0.3)',
+    bg: 'var(--background)',
+    border: '#0EA5E9',
     icon: '#0EA5E9',
-    glow: '0 0 20px rgba(14,165,233,0.2)',
+    glow: '0 8px 30px rgba(14,165,233,0.2)',
   },
 };
 
@@ -133,11 +133,11 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
       </div>
       <div className="flex-1 min-w-0">
         {toast.title && (
-          <p className="font-bold text-sm mb-1 text-slate-900 dark:text-white">
+          <p className="font-bold text-sm mb-1" style={{ color: 'var(--foreground)' }}>
             {toast.title}
           </p>
         )}
-        <p className="text-sm leading-relaxed text-slate-700 dark:text-white/90">
+        <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
           {toast.message}
         </p>
       </div>

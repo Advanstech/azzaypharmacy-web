@@ -49,6 +49,8 @@ export default function InventoryPage() {
 
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('All');
+  
+  const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
   const [activeTab, setActiveTab] = useState<'products' | 'movements' | 'orders' | 'valuation' | 'suppliers'>('products');
 
   // Add Product Modal
@@ -503,16 +505,25 @@ export default function InventoryPage() {
 
       if (data && data.items && data.items.length > 0) {
         console.log(`📦 [AI_SCAN] Mapping ${data.items.length} items to verification table...`);
-        setInvoiceItems(data.items.map((i: any) => ({
-          id: Math.random().toString(36).substring(7),
-          productId: products.find(p => p.name.toLowerCase().includes(i.name.toLowerCase()))?.id,
-          name: (i.name || 'Unnamed Item').trim(),
-          quantity: Math.max(1, Number(i.quantity) || 1),
-          unitCost: Math.max(0, Number(i.unitCost) || 0),
-          batchNo: i.batchNo || '',
-          expiryDate: i.expiryDate || '',
-          exists: products.some(p => p.name.toLowerCase().includes(i.name.toLowerCase()))
-        })));
+        setInvoiceItems(data.items.map((i: any) => {
+          const iName = (i.name || '').toLowerCase().trim();
+          // Find matching product (bidirectional includes)
+          const matchedProduct = products.find(p => {
+            const pName = p.name.toLowerCase();
+            return pName === iName || pName.includes(iName) || iName.includes(pName);
+          });
+          
+          return {
+            id: Math.random().toString(36).substring(7),
+            productId: matchedProduct?.id,
+            name: (i.name || 'Unnamed Item').trim(),
+            quantity: Math.max(1, Number(i.quantity) || 1),
+            unitCost: Math.max(0, Number(i.unitCost) || 0),
+            batchNo: i.batchNo || '',
+            expiryDate: i.expiryDate || '',
+            exists: !!matchedProduct
+          };
+        }));
         
         if (data.invoiceNumber) setInvoiceNumber(data.invoiceNumber);
         if (data.invoiceDate) setInvoiceDate(data.invoiceDate);
@@ -844,17 +855,19 @@ export default function InventoryPage() {
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Inventory & Stock Management</h1>
           <p className="text-sm" style={{ color: card.muted }}>Real-time tracking, purchase orders, and financial valuation</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
-            <Upload size={16} />
-            Upload Invoice
-          </button>
-          <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
-            style={{ background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)', color: isDark ? '#060B14' : '#fff', boxShadow: isDark ? '0 8px 25px rgba(0,217,255,0.3)' : '0 8px 25px rgba(14,165,233,0.3)' }}>
-            <Plus size={18} />
-            Add Product
-          </button>
-        </div>
+        {isManager && (
+          <div className="flex gap-2">
+            <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+              <Upload size={16} />
+              Upload Invoice
+            </button>
+            <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+              style={{ background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)', color: isDark ? '#060B14' : '#fff', boxShadow: isDark ? '0 8px 25px rgba(0,217,255,0.3)' : '0 8px 25px rgba(14,165,233,0.3)' }}>
+              <Plus size={18} />
+              Add Product
+            </button>
+          </div>
+        )}
       </div>
 
       {storeError && (

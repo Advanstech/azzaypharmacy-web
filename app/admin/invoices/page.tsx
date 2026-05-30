@@ -1,10 +1,11 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Truck, FileText, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Plus } from 'lucide-react';
+import { Truck, FileText, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Plus, Eye } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useState, useMemo } from 'react';
 import { useTheme } from 'next-themes';
+import Link from 'next/link';
 
 export default function SupplierInvoicesPage() {
   const { invoices, suppliers, recordSupplierPayment, deleteInvoice } = useStore();
@@ -158,6 +159,13 @@ export default function SupplierInvoicesPage() {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-2">
+                      <Link 
+                        href={`/admin/invoices/${invoice.id}`}
+                        className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                        title="View Details"
+                      >
+                        <Eye size={16} />
+                      </Link>
                       {invoice.balance > 0 && (
                         <button 
                           onClick={() => {
