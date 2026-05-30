@@ -13,6 +13,8 @@ import { gql, Q_LOGIN_STAFF, M_CHANGE_PASSWORD, M_FORGOT_PASSWORD } from '@/lib/
 import { saveToCache, getFromCache } from '@/lib/offline';
 import { StaffMember } from '@/lib/store';
 
+const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === 'true';
+
 // ── Staff Selector Modal ───────────────────────────────────────────────────
 function StaffSelectorModal({ 
   show, 
@@ -299,7 +301,7 @@ function Scene({ isDark }: { isDark: boolean }) {
   );
 }
 
-import { Search, X, ChevronRight, Eye, EyeOff, Lock, AlertTriangle, Sparkles } from 'lucide-react';
+import { Search, X, ChevronRight, Eye, EyeOff, Lock, AlertTriangle, Sparkles, KeyRound } from 'lucide-react';
 
 // ── Password Change Modal ─────────────────────────────────────────────────────
 function PasswordChangeModal({ 
@@ -630,6 +632,12 @@ function ForgotPasswordModal({
 export default function LoginPage() {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
+  const [token, setToken]       = useState('');
+  const [loginMode, setLoginMode] = useState<'token' | 'password'>('token');
+  const [tokenStepVisible, setTokenStepVisible] = useState(false);
+  const [tokenSent, setTokenSent] = useState(false);
+  const [tokenSending, setTokenSending] = useState(false);
+  const [tokenCooldown, setTokenCooldown] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
@@ -642,16 +650,52 @@ export default function LoginPage() {
   const [isFirstTimeLogin, setIsFirstTimeLogin] = useState(false);
   const [isSuccessTransition, setIsSuccessTransition] = useState(false);
   
-  const { signIn, signOut }      = useAuth();
+  const { signIn, requestLoginToken, verifyLoginToken, signOut } = useAuth();
   const router                  = useRouter();
   const { resolvedTheme }       = useTheme();
   const passwordRef             = useRef<HTMLInputElement>(null);
+  const tokenRef                = useRef<HTMLInputElement>(null);
   const isFetchingRef           = useRef(false);
 
   useEffect(() => {
     setMounted(true);
     fetchStaff();
   }, []);
+
+  useEffect(() => {
+    if (loginMode !== 'token') {
+      setTokenStepVisible(false);
+      setTokenSent(false);
+      setToken('');
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setTokenStepVisible(false);
+      setTokenSent(false);
+      setToken('');
+      return;
+    }
+
+    setTokenStepVisible(true);
+    setTokenSent(false);
+    setToken('');
+  }, [email, loginMode]);
+
+  useEffect(() => {
+    if (tokenCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setTokenCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [tokenCooldown]);
+
+  useEffect(() => {
+    if (loginMode === 'token' && tokenStepVisible) {
+      setTimeout(() => tokenRef.current?.focus(), 180);
+    }
+  }, [loginMode, tokenStepVisible]);
 
   const fetchStaff = async () => {
     if (isFetchingRef.current) return;
@@ -674,41 +718,131 @@ export default function LoginPage() {
   };
 
   const isDark = !mounted || resolvedTheme === 'dark';
+  const selectedStaff = staff.find((member: any) => member.email?.toLowerCase() === email.trim().toLowerCase());
+  const selectedPhone = selectedStaff?.phone?.trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error: err } = await signIn(email, password);
-    if (err) { 
-      // Check if it's a first-time login error
-      if (err.includes('Invalid login credentials')) {
-        setError('Invalid credentials. If you are a new staff member, please ask your manager to set up your account at /dashboard/setup-staff');
-      } else if (err.includes('refresh token')) {
-        setError('Session expired. Please refresh the page and try again.');
-      } else {
-        setError(err);
+    if (loginMode === 'token') {
+      const cleanToken = token.trim();
+      if (DEBUG_AUTH) {
+        console.log('[AUTH][UI] Verify attempt', {
+          email,
+          hasPhone: !!selectedPhone,
+          tokenLength: cleanToken.length,
+        });
       }
-      setLoading(false); 
-    } else {
-      // Check if this is a temporary password (starts with "Azzay@")
-      if (password.startsWith('Azzay@')) {
-        setIsFirstTimeLogin(true);
-        setShowPasswordChangeModal(true);
+      if (!/^\d{6}$/.test(cleanToken)) {
+        setError('Enter the 6-digit login token sent to you.');
+        setLoading(false);
+        return;
+      }
+
+      const { error: err } = await verifyLoginToken({
+        email,
+        token: cleanToken,
+        phone: selectedPhone,
+      });
+
+      if (err) {
+        if (DEBUG_AUTH) {
+          console.error('[AUTH][UI] Verify failed', { error: err });
+        }
+        setError(err);
         setLoading(false);
       } else {
+        if (DEBUG_AUTH) {
+          console.log('[AUTH][UI] Verify succeeded');
+        }
         setIsSuccessTransition(true);
         setTimeout(() => {
           router.push('/dashboard');
         }, 800);
       }
+    } else {
+      const { error: err } = await signIn(email, password);
+      if (err) {
+        if (err.includes('Invalid login credentials')) {
+          setError('Invalid credentials. If you are a new staff member, please ask your manager to set up your account at /dashboard/setup-staff');
+        } else if (err.includes('refresh token')) {
+          setError('Session expired. Please refresh the page and try again.');
+        } else {
+          setError(err);
+        }
+        setLoading(false);
+      } else {
+        // Check if this is a temporary password (starts with "Azzay@")
+        if (password.startsWith('Azzay@')) {
+          setIsFirstTimeLogin(true);
+          setShowPasswordChangeModal(true);
+          setLoading(false);
+        } else {
+          setIsSuccessTransition(true);
+          setTimeout(() => {
+            router.push('/dashboard');
+          }, 800);
+        }
+      }
     }
+  };
+
+  const handleSendToken = async (emailOverride?: string, silent = false) => {
+    if (!silent) setError(null);
+    const targetEmail = (emailOverride ?? email).trim();
+
+    if (!targetEmail) {
+      setError('Please select or enter your email first.');
+      return;
+    }
+
+    if (tokenCooldown > 0) {
+      setError(`Please wait ${tokenCooldown}s before requesting another code.`);
+      return;
+    }
+
+    if (DEBUG_AUTH) {
+      console.log('[AUTH][UI] Request token', {
+        email: targetEmail,
+        hasPhone: !!selectedPhone,
+        silent,
+      });
+    }
+
+    setTokenSending(true);
+    const { error: err } = await requestLoginToken({
+      email: targetEmail,
+      phone: selectedPhone,
+    });
+    setTokenSending(false);
+
+    if (err) {
+      if (DEBUG_AUTH) {
+        console.error('[AUTH][UI] Request token failed', { error: err });
+      }
+      if (err.toLowerCase().includes('rate limit')) {
+        setTokenCooldown(60);
+        setError('Email rate limit exceeded. Please wait about 60 seconds, then resend. You can use password login immediately.');
+        return;
+      }
+      setError(err);
+      return;
+    }
+
+    if (DEBUG_AUTH) {
+      console.log('[AUTH][UI] Request token succeeded');
+    }
+    setTokenSent(true);
+    setTokenCooldown(60);
   };
 
   const handleStaffSelect = (selectedEmail: string) => {
     setEmail(selectedEmail);
     setShowStaffModal(false);
-    setTimeout(() => passwordRef.current?.focus(), 100);
+    if (loginMode === 'password') {
+      setTimeout(() => passwordRef.current?.focus(), 100);
+    }
   };
 
   const inputStyle = (field: string) => ({
@@ -838,28 +972,88 @@ export default function LoginPage() {
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                  style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Password</label>
-                <div className="relative group">
-                  <input ref={passwordRef} type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
-                    placeholder="••••••••"
-                    className="w-full px-4 py-3 rounded-xl text-sm font-medium focus:outline-none"
-                    style={inputStyle('password')}
-                    onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} />
-                  
-                  <button 
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 hover:opacity-100 transition-opacity"
-                    style={{ color: isDark ? '#94A3B8' : '#64748B' }}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
+              {loginMode === 'token' ? (
+                <AnimatePresence initial={false}>
+                  {tokenStepVisible && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, height: 0 }}
+                      animate={{ opacity: 1, y: 0, height: 'auto' }}
+                      exit={{ opacity: 0, y: -6, height: 0 }}
+                      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                      className="overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-semibold uppercase tracking-wider"
+                          style={{ color: isDark ? '#94A3B8' : '#64748B' }}>6-Digit Login Token</label>
+                        <button
+                          type="button"
+                          onClick={() => handleSendToken()}
+                          disabled={tokenSending || tokenCooldown > 0}
+                          className="text-[11px] font-semibold"
+                          style={{ color: tokenSending || tokenCooldown > 0 ? (isDark ? '#64748B' : '#94A3B8') : (isDark ? '#00D9FF' : '#0EA5E9') }}
+                        >
+                          {tokenSending ? 'Sending...' : tokenCooldown > 0 ? `Resend in ${tokenCooldown}s` : tokenSent ? 'Resend code' : 'Send code'}
+                        </button>
+                      </div>
+                      <p className="text-[11px] mb-2" style={{ color: isDark ? '#64748B' : '#94A3B8' }}>
+                        We send your code to email and SMS (if your phone is on file).
+                      </p>
+                      <input
+                        ref={tokenRef}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={token}
+                        onChange={(e) => setToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        required={tokenStepVisible}
+                        placeholder="000000"
+                        className="w-full px-4 py-3 rounded-xl text-sm font-medium tracking-[0.35em] text-center focus:outline-none"
+                        style={inputStyle('token')}
+                        onFocus={() => setFocused('token')}
+                        onBlur={() => setFocused(null)}
+                      />
 
-              <motion.button type="submit" disabled={loading}
+                      <div className="pt-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError(null);
+                            setLoginMode('password');
+                          }}
+                          className="text-xs font-medium inline-flex items-center gap-1.5"
+                          style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }}
+                        >
+                          <KeyRound size={12} />
+                          Prefer password? Click here
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
+                    style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Password</label>
+                  <div className="relative group">
+                    <input ref={passwordRef} type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
+                      placeholder="••••••••"
+                      className="w-full px-4 py-3 rounded-xl text-sm font-medium focus:outline-none"
+                      style={inputStyle('password')}
+                      onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} />
+
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 hover:opacity-100 transition-opacity"
+                      style={{ color: isDark ? '#94A3B8' : '#64748B' }}
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <motion.button type="submit" disabled={loading || tokenSending || (loginMode === 'token' && !tokenStepVisible)}
                 className="w-full py-3.5 rounded-xl font-bold text-sm relative overflow-hidden"
                 whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
                 style={{
@@ -876,10 +1070,29 @@ export default function LoginPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Authenticating...
+                    {loginMode === 'token' ? 'Verifying Token...' : 'Authenticating...'}
                   </span>
-                ) : 'Access NEXUS Terminal'}
+                ) : tokenSending ? (
+                  'Preparing token...'
+                ) : (loginMode === 'token' ? 'Verify & Access NEXUS' : 'Access NEXUS Terminal')}
               </motion.button>
+
+              {loginMode === 'password' && (
+                <div className="pt-1 text-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setLoginMode('token');
+                    }}
+                    className="text-xs font-medium inline-flex items-center gap-1.5"
+                    style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }}
+                  >
+                    <KeyRound size={12} />
+                    Prefer token login? Click here
+                  </button>
+                </div>
+              )}
             </motion.form>
 
             {/* Footer */}

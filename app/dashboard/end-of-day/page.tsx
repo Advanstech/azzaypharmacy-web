@@ -5,10 +5,11 @@ import { useTheme } from 'next-themes';
 import { 
   Calendar, Clock, CheckCircle, AlertCircle, FileText, 
   Download, Printer, ArrowRight, UserCheck, BarChart3, TrendingUp,
-  XCircle, Search, Filter, ShieldCheck
+  XCircle, Search, Filter, ShieldCheck, CheckSquare, ListTodo, ClipboardCheck, History
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
+import { gql, Q_MY_SHIFT_RECONCILIATIONS } from '@/lib/gql';
 
 export default function EndOfDayDashboardPage() {
   const { theme } = useTheme();
@@ -18,6 +19,21 @@ export default function EndOfDayDashboardPage() {
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  
+  const [declaredCash, setDeclaredCash] = useState<string>('');
+  const [declaredDigital, setDeclaredDigital] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
+  
+  // Past reconciliations states
+  const [pastShifts, setPastShifts] = useState<any[]>([]);
+  const [loadingPastShifts, setLoadingPastShifts] = useState(false);
+
+  const suggestedNotes = [
+    "All balanced perfectly",
+    "Shortage due to change issue",
+    "Overage in physical cash",
+    "Network issue with MoMo"
+  ];
 
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
@@ -27,14 +43,49 @@ export default function EndOfDayDashboardPage() {
   const myRevenue = mySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
   const myTransactions = mySales.length;
 
-  useEffect(() => { setMounted(true); }, []);
+  const myCashSales = mySales.filter(s => s.paymentMethod === 'CASH').reduce((sum, s) => sum + Number(s.totalAmount), 0);
+  const myDigitalSales = mySales.filter(s => ['MOMO','CARD'].includes(s.paymentMethod)).reduce((sum, s) => sum + Number(s.totalAmount), 0);
+
+  useEffect(() => { 
+    setMounted(true); 
+  }, []);
+
+  const fetchPastShifts = async () => {
+    if (!me?.id) return;
+    setLoadingPastShifts(true);
+    try {
+      const data = await gql<{ myShiftReconciliations: any[] }>(Q_MY_SHIFT_RECONCILIATIONS, { userId: me.id });
+      setPastShifts(data.myShiftReconciliations || []);
+    } catch (e) {
+      console.error("Failed to fetch past shifts", e);
+    } finally {
+      setLoadingPastShifts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (mounted && me?.id) {
+      fetchPastShifts();
+    }
+  }, [mounted, me?.id]);
+
+  // Pre-populate inputs when sales load
+  useEffect(() => {
+    if (mounted && mySales.length > 0) {
+      if (declaredCash === '') setDeclaredCash(myCashSales.toFixed(2));
+      if (declaredDigital === '') setDeclaredDigital(myDigitalSales.toFixed(2));
+    }
+  }, [mounted, mySales.length, myCashSales, myDigitalSales]);
 
   const handleCloseTerminal = async () => {
     setLoading(true);
     try {
-      const result = await closeTerminal();
+      const pCash = declaredCash ? parseFloat(declaredCash) : undefined;
+      const dCash = declaredDigital ? parseFloat(declaredDigital) : undefined;
+      const result = await closeTerminal(pCash, dCash, notes);
       setReport(result);
       setSubmitted(true);
+      await fetchPastShifts();
     } catch (e: any) {
       setReport({
         cashierName: me?.name || user?.email || 'Staff',
@@ -49,6 +100,7 @@ export default function EndOfDayDashboardPage() {
         closingTime: new Date().toISOString(),
       });
       setSubmitted(true);
+      await fetchPastShifts();
     } finally {
       setLoading(false);
     }
@@ -92,7 +144,7 @@ export default function EndOfDayDashboardPage() {
   if (!mounted) return null;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>
@@ -104,8 +156,10 @@ export default function EndOfDayDashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
+      <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Stats overview and history */}
+        <div className="lg:col-span-8 space-y-6 order-2 lg:order-1">
+          
           {/* Supervision Dashboard for Managers */}
           {isManager && (
             <div className="rounded-[32px] border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
@@ -168,11 +222,11 @@ export default function EndOfDayDashboardPage() {
           )}
 
           {/* Current Session Summary */}
-          <div className="rounded-[32px] border p-8 backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
-            <h3 className="font-display text-sm font-bold uppercase tracking-widest mb-8" style={{ color: c.muted }}>
+          <div className="rounded-[32px] border p-6 backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
+            <h3 className="font-display text-xs font-bold uppercase tracking-widest mb-6" style={{ color: c.muted }}>
               {isManager ? 'Global Daily Totals' : 'Your Personal Session'}
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {[
                 { 
                   label: 'Total Revenue', 
@@ -190,16 +244,17 @@ export default function EndOfDayDashboardPage() {
                   icon: BarChart3, color: '#8B5CF6' 
                 },
               ].map(k => (
-                <div key={k.label} className="p-6 rounded-[24px] border" style={{ borderColor: c.border, background: isDark ? 'rgba(0,0,0,0.1)' : '#fff' }}>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">{k.label}</p>
-                  <p className="text-2xl font-black font-mono" style={{ color: c.text }}>GH₵ {Number(k.value).toFixed(2)}</p>
+                <div key={k.label} className="p-4 rounded-2xl border" style={{ borderColor: c.border, background: isDark ? 'rgba(0,0,0,0.1)' : '#fff' }}>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-1">{k.label}</p>
+                  <p className="text-xl font-black font-mono" style={{ color: c.text }}>GH₵ {Number(k.value).toFixed(2)}</p>
                 </div>
               ))}
             </div>
+            
             <div className="mt-4 pt-4 border-t flex items-center justify-between" style={{ borderColor: c.border }}>
               <div>
                 <p className="text-xs" style={{ color: c.muted }}>Total Transactions</p>
-                <p className="font-display text-2xl font-bold" style={{ color: c.primary }}>{report?.transactionCount ?? (isManager ? todayTransactions : myTransactions)}</p>
+                <p className="font-display text-xl font-bold" style={{ color: c.primary }}>{report?.transactionCount ?? (isManager ? todayTransactions : myTransactions)}</p>
               </div>
               {submitted && (
                 <div className="flex items-center gap-2 px-4 py-2 rounded-xl" style={{ background: 'rgba(16,185,129,0.1)', color: c.success }}>
@@ -209,39 +264,172 @@ export default function EndOfDayDashboardPage() {
               )}
             </div>
           </div>
-        </div>
 
-        <div className="space-y-6">
-          <div className="rounded-[32px] border p-8 backdrop-blur-xl bg-blue-500/5 border-dashed" style={{ borderColor: c.primary + '40' }}>
-            <h3 className="font-display text-sm font-bold mb-6" style={{ color: c.text }}>Reconciliation Checklist</h3>
-            <div className="space-y-4">
-              {[
-                { task: 'Verify Physical Cash Drawer', done: true },
-                { task: 'Check MoMo/Card Statements', done: true },
-                { task: 'Account for All Credit Sales', done: false },
-                { task: 'Print Session Summary', done: false },
-              ].map((t, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${t.done ? 'bg-blue-500 border-blue-500 text-white' : 'border-slate-500/30'}`}>
-                    {t.done && <CheckCircle size={12} />}
-                  </div>
-                  <span className="text-xs font-medium" style={{ color: t.done ? c.text : c.muted }}>{t.task}</span>
-                </div>
-              ))}
+          {/* Shift Reconciliation History */}
+          <div className="rounded-[32px] border overflow-hidden backdrop-blur-xl shadow-sm" style={{ background: c.bg, borderColor: c.border }}>
+            <div className="px-6 py-5 border-b flex items-center gap-3" style={{ borderColor: c.border, background: isDark ? '#0F172A' : '#F8FAFC' }}>
+              <History size={18} className="text-blue-500" />
+              <h2 className="font-display font-bold text-sm uppercase tracking-widest" style={{ color: c.text }}>Shift Reconciliation History</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr style={{ background: isDark ? '#0F172A' : '#F8FAFC', borderBottom: `1px solid ${c.border}` }}>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>Submitted Date</th>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>Expected / Declared</th>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>Discrepancy</th>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>Status</th>
+                    <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>Approver</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingPastShifts ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-6 text-center text-xs" style={{ color: c.muted }}>
+                        Loading past shift reports...
+                      </td>
+                    </tr>
+                  ) : pastShifts.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-8 text-center text-xs" style={{ color: c.muted }}>
+                        No past shift reconciliations recorded.
+                      </td>
+                    </tr>
+                  ) : (
+                    pastShifts.map((shift, idx) => {
+                      const dateText = new Date(shift.createdAt).toLocaleDateString();
+                      const timeText = new Date(shift.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      const totalDeclared = Number(shift.physicalCash) + Number(shift.digitalPayments);
+                      const diff = Number(shift.discrepancy);
+                      
+                      return (
+                        <tr key={shift.id} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/30" style={{ borderBottom: idx < pastShifts.length - 1 ? `1px solid ${c.border}` : 'none' }}>
+                          <td className="px-5 py-4">
+                            <p className="text-xs font-bold" style={{ color: c.text }}>{dateText}</p>
+                            <p className="text-[10px]" style={{ color: c.muted }}>{timeText} · {shift.branch?.name}</p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <p className="text-xs" style={{ color: c.text }}>
+                              Exp: <span className="font-mono font-medium">GH₵ {Number(shift.totalRevenue).toFixed(2)}</span>
+                            </p>
+                            <p className="text-xs" style={{ color: c.muted }}>
+                              Dec: <span className="font-mono font-medium">GH₵ {totalDeclared.toFixed(2)}</span>
+                            </p>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className={`font-mono text-xs font-bold ${diff === 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                              GH₵ {diff.toFixed(2)}
+                            </span>
+                            {shift.notes && (
+                              <p className="text-[10px] italic mt-0.5 truncate max-w-[150px]" title={shift.notes} style={{ color: c.muted }}>
+                                "{shift.notes}"
+                              </p>
+                            )}
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className={`text-[10px] font-black tracking-wider uppercase px-2 py-0.5 rounded ${
+                              shift.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-500' :
+                              shift.status === 'REJECTED' ? 'bg-red-500/10 text-red-500' :
+                              'bg-amber-500/10 text-amber-500'
+                            }`}>
+                              {shift.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-xs font-medium" style={{ color: c.text }}>
+                            {shift.approvedBy?.name || <span className="text-[10px]" style={{ color: c.muted }}>Pending manager review</span>}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
+        </div>
+
+        {/* Right Column: Submission Form (top) & checklist */}
+        <div className="lg:col-span-4 space-y-6 order-1 lg:order-2 w-full">
+          
+          {/* Finalize Shift Form */}
           {!isManager && (
-            <div className="rounded-[32px] border p-8 backdrop-blur-xl bg-emerald-500/5" style={{ borderColor: c.success + '30' }}>
+            <div className="rounded-[32px] border p-6 backdrop-blur-xl bg-emerald-500/5" style={{ borderColor: c.success + '30' }}>
               <div className="flex items-center gap-3 mb-4">
-                 <AlertCircle size={20} className="text-emerald-500" />
+                 <ClipboardCheck size={20} className="text-emerald-500" />
                  <h3 className="text-sm font-bold" style={{ color: c.text }}>Finalize Shift</h3>
               </div>
               <p className="text-xs leading-relaxed mb-6" style={{ color: c.muted }}>Submitting your report will log your final totals and notify management for approval.</p>
+              
+              {!submitted ? (
+                <div className="space-y-4 mb-6">
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider mb-2 block" style={{ color: c.muted }}>Declared Physical Cash (GH₵)</label>
+                      <input 
+                        type="number"
+                        value={declaredCash}
+                        onChange={e => setDeclaredCash(e.target.value)}
+                        placeholder={`e.g. ${myCashSales.toFixed(2)}`}
+                        className="w-full bg-white/50 dark:bg-black/20 border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        style={{ borderColor: c.border, color: c.text }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-wider mb-2 block" style={{ color: c.muted }}>Declared Digital (MoMo/Card) (GH₵)</label>
+                      <input 
+                        type="number"
+                        value={declaredDigital}
+                        onChange={e => setDeclaredDigital(e.target.value)}
+                        placeholder={`e.g. ${myDigitalSales.toFixed(2)}`}
+                        className="w-full bg-white/50 dark:bg-black/20 border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        style={{ borderColor: c.border, color: c.text }}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-wider mb-2 block" style={{ color: c.muted }}>Notes / Discrepancy Reason</label>
+                    <textarea 
+                      value={notes}
+                      onChange={e => setNotes(e.target.value)}
+                      placeholder="Any issues or reasons for discrepancy?"
+                      className="w-full bg-white/50 dark:bg-black/20 border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500 mb-2 resize-none"
+                      style={{ borderColor: c.border, color: c.text }}
+                      rows={2}
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      {suggestedNotes.map(note => (
+                        <button
+                          key={note}
+                          onClick={() => setNotes(note)}
+                          className="px-2.5 py-1.5 rounded-lg text-[9px] font-bold tracking-wide transition-colors border"
+                          style={{
+                            background: notes === note ? c.primary : isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9',
+                            color: notes === note ? '#fff' : c.muted,
+                            borderColor: notes === note ? c.primary : c.border
+                          }}
+                        >
+                          {note}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mb-6 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-semibold flex items-start gap-2">
+                  <CheckCircle size={16} className="shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Shift report logged successfully!</p>
+                    <p className="mt-0.5 opacity-80">Your manager will review and verify your declared totals. You can track status in the history log on the left.</p>
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={handleCloseTerminal}
                 disabled={loading || submitted}
-                className="w-full py-4 rounded-2xl text-xs font-black shadow-lg shadow-emerald-500/30 transition-all uppercase tracking-widest"
+                className="w-full py-4 rounded-2xl text-xs font-black shadow-lg shadow-emerald-500/20 transition-all uppercase tracking-widest active:scale-[0.98]"
                 style={{
                   background: submitted ? 'rgba(16,185,129,0.3)' : '#10B981',
                   color: '#fff',
@@ -251,6 +439,30 @@ export default function EndOfDayDashboardPage() {
               </button>
             </div>
           )}
+
+          {/* Reconciliation Checklist */}
+          <div className="rounded-[32px] border p-6 backdrop-blur-xl bg-blue-500/5 border-dashed" style={{ borderColor: c.primary + '40' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <ListTodo size={16} className="text-blue-500" />
+              <h3 className="font-display text-xs font-bold uppercase tracking-wider" style={{ color: c.text }}>Reconciliation Checklist</h3>
+            </div>
+            <div className="space-y-3.5">
+              {[
+                { task: 'Verify Physical Cash Drawer', done: true },
+                { task: 'Check MoMo/Card Statements', done: true },
+                { task: 'Account for All Credit Sales', done: false },
+                { task: 'Print Session Summary', done: false },
+              ].map((t, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${t.done ? 'bg-blue-500 border-blue-500 text-white' : 'border-slate-500/30'}`}>
+                    {t.done && <CheckSquare size={12} />}
+                  </div>
+                  <span className="text-xs font-medium" style={{ color: t.done ? c.text : c.muted }}>{t.task}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

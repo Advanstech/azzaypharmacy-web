@@ -9,11 +9,11 @@ import {
   Monitor, LayoutGrid, Wifi, AlertCircle, ChevronLeft, ChevronRight,
   Receipt, Trash2, UserPlus, BarChart2, RefreshCw, FlaskConical,
   ArrowRight, BadgeCheck, Pill, Home, ShoppingCart, Store,
-  BrainCircuit, Sparkles
+  BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe
 } from 'lucide-react';
 import { StoreProvider, useStore } from '@/lib/store';
-import { supabase } from '@/lib/supabase';
-import { gql, Q_SEARCH_PRODUCTS } from '@/lib/gql';
+import { supabase, getSessionSafe } from '@/lib/supabase';
+import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -98,6 +98,88 @@ function POSInner() {
   const [previewProduct, setPreviewProduct] = useState<any>(null);
   const [previewSupplier, setPreviewSupplier] = useState<string | null>(null);
   const categoryScrollRef = useRef<HTMLDivElement>(null);
+
+  // AI Drug Intelligence State
+  const [aiDrugTab, setAiDrugTab] = useState<'dosage' | 'safety' | 'counselling' | 'ghana'>('dosage');
+  const [aiDrugData, setAiDrugData] = useState<any>(null);
+  const [aiDrugLoading, setAiDrugLoading] = useState(false);
+  const [aiDrugError, setAiDrugError] = useState<string | null>(null);
+
+  // AI Drug Intelligence Fetch
+  useEffect(() => {
+    if (!previewProduct) {
+      setAiDrugData(null);
+      setAiDrugError(null);
+      return;
+    }
+
+    const fetchAiDrugData = async () => {
+      setAiDrugLoading(true);
+      setAiDrugError(null);
+      
+      try {
+        const prompt = `Generate a comprehensive clinical drug monograph for "${previewProduct.name}" (${previewProduct.genericName || 'N/A'}, ${previewProduct.dosageForm || 'Unknown dosage form'}). 
+
+Return ONLY a valid JSON object with this exact structure:
+{
+  "indications": "Brief clinical indications and therapeutic uses",
+  "dosage": {
+    "adults": "Standard adult dosing regimen",
+    "pediatric": "Pediatric dosing if applicable",
+    "elderly": "Elderly considerations if any"
+  },
+  "safety": {
+    "contraindications": "Major contraindications",
+    "warnings": "Key warnings and precautions",
+    "sideEffects": "Common and serious side effects",
+    "interactions": "Major drug interactions"
+  },
+  "counselling": {
+    "points": "Key patient counselling points",
+    "storage": "Storage instructions",
+    "administration": "How to take/administer"
+  },
+  "ghana": {
+    "availability": "Availability status in Ghana",
+    "regulatory": "Ghana FDA status if known",
+    "nhis": "NHIS coverage status (yes/no/partial)",
+    "localGuidelines": "Relevant Ghana Health Service guidelines"
+  }
+}
+
+Provide clinically accurate information. If specific data is unknown, use "Consult standard references" as placeholder.`;
+
+        const result = await gql<{ askNexusAi: string }>(M_ASK_NEXUS_AI, { prompt });
+        const rawText = result.askNexusAi;
+        
+        // Extract JSON from response
+        const jsonStart = rawText.indexOf('{');
+        const jsonEnd = rawText.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const cleanedJson = rawText.slice(jsonStart, jsonEnd + 1);
+          const parsed = JSON.parse(cleanedJson);
+          setAiDrugData(parsed);
+        } else {
+          throw new Error('Invalid AI response format');
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch AI drug data:', err);
+        setAiDrugError(err.message || 'Failed to load AI drug intelligence');
+        // Set fallback data
+        setAiDrugData({
+          indications: 'Clinical indications data loading... Please check back in a moment.',
+          dosage: { adults: 'Standard dosing information loading...', pediatric: '', elderly: '' },
+          safety: { contraindications: '', warnings: '', sideEffects: '', interactions: '' },
+          counselling: { points: '', storage: '', administration: '' },
+          ghana: { availability: '', regulatory: '', nhis: '', localGuidelines: '' }
+        });
+      } finally {
+        setAiDrugLoading(false);
+      }
+    };
+
+    fetchAiDrugData();
+  }, [previewProduct?.id]);
 
   const categories = useMemo(() => {
     if (!liveProducts.length) return ['All'];
@@ -612,7 +694,12 @@ function POSInner() {
                 <div key={item.product.id} className="p-3 rounded-xl border flex flex-col gap-2 transition-all hover:border-primary/30"
                   style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#F8FAFC', borderColor: c.border }}>
                   <div className="flex justify-between items-start">
-                    <p className="text-xs font-bold leading-tight flex-1 pr-2" style={{ color: c.text }}>{item.product.name}</p>
+                    <div className="flex-1 pr-2 flex flex-col">
+                      <p className="text-xs font-bold leading-tight" style={{ color: c.text }}>{item.product.name}</p>
+                      <p className="text-[10px] font-medium mt-0.5" style={{ color: c.muted }}>
+                        {item.product.stockQuantity - item.quantity} in stock
+                      </p>
+                    </div>
                     <button onClick={() => updateQty(item.product.id, -item.quantity)} className="text-red-500 opacity-50 hover:opacity-100"><X size={14} /></button>
                   </div>
                   <div className="flex items-center justify-between">
@@ -636,7 +723,7 @@ function POSInner() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm font-bold" style={{ color: c.text }}>Total Due</span>
-                <span className="text-2xl font-display font-bold text-primary">GH₵ {total.toFixed(2)}</span>
+                <span className="text-2xl font-display font-black" style={{ color: '#059669' }}>GH₵ {total.toFixed(2)}</span>
               </div>
             </div>
 
@@ -646,9 +733,10 @@ function POSInner() {
                   key={m} onClick={() => setPaymentMethod(m)}
                   className={`py-2 rounded-xl text-[10px] font-bold border transition-all ${
                     paymentMethod === m 
-                      ? 'bg-primary text-white border-primary' 
+                      ? 'text-white border-[#059669]' 
                       : 'bg-white text-slate-800 border-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:border-slate-700 opacity-60'
                   }`}
+                  style={paymentMethod === m ? { background: '#059669', borderColor: '#059669' } : {}}
                 >
                   {m}
                 </button>
@@ -661,10 +749,14 @@ function POSInner() {
                   if (!tendered || tenderedNum < total) setTenderedAmount(total);
                   setShowNumpad(true);
                 }}
-                className="w-full py-3 rounded-xl border-2 font-mono text-lg font-bold focus:border-primary/50 outline-none transition-all hover:border-primary/30"
-                style={{ background: isDark ? '#0A0F1E' : '#fff', borderColor: c.border, color: c.text }}
+                className="w-full py-3 flex items-center justify-center gap-2 rounded-xl border-2 font-mono text-lg font-black transition-all hover:border-[#059669]/50"
+                style={{ 
+                  background: isDark ? '#0F172A' : '#F0FDF4', 
+                  borderColor: tenderedNum >= total && total > 0 ? '#059669' : c.border, 
+                  color: tenderedNum >= total && total > 0 ? '#059669' : c.text 
+                }}
               >
-                {tendered || 'Tap to Enter Amount'}
+                {tendered ? `GH₵ ${tendered}` : 'Tap to Enter Cash'}
               </button>
             )}
 
@@ -703,34 +795,184 @@ function POSInner() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4">
-                  {/* AI Block */}
+                  {/* AI Drug Intelligence Block */}
                   <div className="p-4 rounded-2xl border flex flex-col gap-3 relative overflow-hidden" style={{ background: 'rgba(0,217,255,0.05)', borderColor: 'rgba(0,217,255,0.2)' }}>
                     <div className="absolute top-0 right-0 p-4 opacity-5"><BrainCircuit size={100} /></div>
+                    
+                    {/* Header */}
                     <div className="flex items-center justify-between relative z-10">
                       <div className="flex items-center gap-2 text-[#00D9FF]">
                         <Sparkles size={16} />
                         <span className="text-xs font-bold uppercase tracking-widest">AI Drug Intelligence</span>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#00D9FF]/20 text-[#00D9FF]">GPT-4o</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#00D9FF]/20 text-[#00D9FF]">Gemini</span>
                     </div>
 
+                    {/* Product Image */}
                     <div className="relative z-10 w-full h-32 rounded-xl overflow-hidden mt-2 bg-slate-900 border border-white/10">
                       <img src={getProductImage(previewProduct)} alt={previewProduct.name} className="w-full h-full object-cover opacity-80" />
                     </div>
 
-                    <div className="space-y-4 relative z-10 mt-2 text-slate-300 text-xs">
-                      <div>
-                        <p className="font-bold text-[#00D9FF] mb-1 text-[10px] uppercase">Indications</p>
-                        <p className="leading-relaxed">Relief of mild to moderate pain, reduction of fever, and relief of symptoms of colds.</p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-[#00D9FF] mb-1 text-[10px] uppercase">Standard Dosage</p>
-                        <p className="leading-relaxed">Adults: 1-2 tablets every 6-8 hours. Max 4 doses/24h.</p>
-                      </div>
-                      <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                        <p className="font-bold text-orange-400 mb-1 text-[10px] uppercase">Counseling Points</p>
-                        <p className="leading-relaxed">Take with food to minimize GI irritation. Do not exceed recommended dose.</p>
-                      </div>
+                    {/* Indications (Always visible) */}
+                    <div className="relative z-10">
+                      <p className="font-bold text-[#00D9FF] mb-1 text-[10px] uppercase">Indications</p>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {aiDrugLoading ? (
+                          <span className="flex items-center gap-2">
+                            <RefreshCw size={12} className="animate-spin" />
+                            Analyzing drug data...
+                          </span>
+                        ) : aiDrugData?.indications || 'Clinical indications loading...'}
+                      </p>
+                    </div>
+
+                    {/* Tabs Navigation */}
+                    <div className="flex gap-1 relative z-10 mt-2">
+                      {[
+                        { id: 'dosage', label: 'Dosage', icon: Thermometer },
+                        { id: 'safety', label: 'Safety', icon: Heart },
+                        { id: 'counselling', label: 'Counselling', icon: MessageSquare },
+                        { id: 'ghana', label: 'Ghana', icon: Globe },
+                      ].map((tab) => {
+                        const isActive = aiDrugTab === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            onClick={() => setAiDrugTab(tab.id as any)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-1 rounded-lg text-[10px] font-bold transition-all ${
+                              isActive 
+                                ? 'bg-[#00D9FF]/20 text-[#00D9FF] border border-[#00D9FF]/30' 
+                                : 'bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10'
+                            }`}
+                          >
+                            <tab.icon size={12} />
+                            <span className="hidden sm:inline">{tab.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Tab Content */}
+                    <div className="relative z-10 min-h-[180px]">
+                      {aiDrugLoading ? (
+                        <div className="h-full flex flex-col items-center justify-center py-8 text-slate-500">
+                          <RefreshCw size={24} className="animate-spin mb-2 text-[#00D9FF]" />
+                          <p className="text-xs">Compiling clinical data...</p>
+                        </div>
+                      ) : aiDrugError ? (
+                        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                          <p className="font-bold mb-1">Error loading drug data</p>
+                          <p>{aiDrugError}</p>
+                        </div>
+                      ) : (
+                        <>
+                          {/* Dosage Tab */}
+                          {aiDrugTab === 'dosage' && (
+                            <div className="space-y-3 text-xs">
+                              <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                <p className="font-bold text-[#00D9FF] mb-1 text-[10px] uppercase">Adults</p>
+                                <p className="text-slate-300 leading-relaxed">{aiDrugData?.dosage?.adults || 'Standard adult dosing information loading...'}</p>
+                              </div>
+                              {aiDrugData?.dosage?.pediatric && (
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                  <p className="font-bold text-emerald-400 mb-1 text-[10px] uppercase">Pediatric</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.dosage.pediatric}</p>
+                                </div>
+                              )}
+                              {aiDrugData?.dosage?.elderly && (
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                  <p className="font-bold text-amber-400 mb-1 text-[10px] uppercase">Elderly</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.dosage.elderly}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Safety Tab */}
+                          {aiDrugTab === 'safety' && (
+                            <div className="space-y-3 text-xs">
+                              {aiDrugData?.safety?.contraindications && (
+                                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                                  <p className="font-bold text-red-400 mb-1 text-[10px] uppercase">Contraindications</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.safety.contraindications}</p>
+                                </div>
+                              )}
+                              {aiDrugData?.safety?.warnings && (
+                                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                                  <p className="font-bold text-amber-400 mb-1 text-[10px] uppercase">Warnings</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.safety.warnings}</p>
+                                </div>
+                              )}
+                              {aiDrugData?.safety?.sideEffects && (
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                  <p className="font-bold text-slate-400 mb-1 text-[10px] uppercase">Side Effects</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.safety.sideEffects}</p>
+                                </div>
+                              )}
+                              {aiDrugData?.safety?.interactions && (
+                                <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                                  <p className="font-bold text-purple-400 mb-1 text-[10px] uppercase">Drug Interactions</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.safety.interactions}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Counselling Tab */}
+                          {aiDrugTab === 'counselling' && (
+                            <div className="space-y-3 text-xs">
+                              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                <p className="font-bold text-emerald-400 mb-1 text-[10px] uppercase flex items-center gap-1">
+                                  <MessageSquare size={10} /> Patient Counselling
+                                </p>
+                                <p className="text-slate-300 leading-relaxed">{aiDrugData?.counselling?.points || 'Counselling points loading...'}</p>
+                              </div>
+                              {aiDrugData?.counselling?.administration && (
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                  <p className="font-bold text-[#00D9FF] mb-1 text-[10px] uppercase">Administration</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.counselling.administration}</p>
+                                </div>
+                              )}
+                              {aiDrugData?.counselling?.storage && (
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                  <p className="font-bold text-slate-400 mb-1 text-[10px] uppercase">Storage</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.counselling.storage}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Ghana Tab */}
+                          {aiDrugTab === 'ghana' && (
+                            <div className="space-y-3 text-xs">
+                              <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                <p className="font-bold text-yellow-400 mb-1 text-[10px] uppercase flex items-center gap-1">
+                                  <Globe size={10} /> Ghana Availability
+                                </p>
+                                <p className="text-slate-300 leading-relaxed">{aiDrugData?.ghana?.availability || 'Availability information loading...'}</p>
+                              </div>
+                              {aiDrugData?.ghana?.regulatory && (
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                  <p className="font-bold text-slate-400 mb-1 text-[10px] uppercase">Ghana FDA Status</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.ghana.regulatory}</p>
+                                </div>
+                              )}
+                              {aiDrugData?.ghana?.nhis && (
+                                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                                  <p className="font-bold text-emerald-400 mb-1 text-[10px] uppercase">NHIS Coverage</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.ghana.nhis}</p>
+                                </div>
+                              )}
+                              {aiDrugData?.ghana?.localGuidelines && (
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                  <p className="font-bold text-slate-400 mb-1 text-[10px] uppercase">Ghana Health Service Guidelines</p>
+                                  <p className="text-slate-300 leading-relaxed">{aiDrugData.ghana.localGuidelines}</p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -1252,7 +1494,7 @@ function POSInner() {
 export default function POSPage() {
   const [token, setToken] = useState<string | null>(null);
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setToken(data.session?.access_token ?? null));
+    getSessionSafe().then(({ session }) => setToken(session?.access_token ?? null));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setToken(s?.access_token ?? null));
     return () => subscription.unsubscribe();
   }, []);

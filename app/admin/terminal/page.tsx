@@ -18,6 +18,7 @@ export default function AdminTerminalPage() {
   const [messages, setMessages] = useState<TerminalMessage[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const messageSeqRef = useRef(0);
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -46,8 +47,9 @@ export default function AdminTerminalPage() {
   };
 
   const addMessage = (type: TerminalMessage['type'], content: string) => {
+    messageSeqRef.current += 1;
     setMessages(prev => [...prev, {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${messageSeqRef.current}`,
       type,
       content,
       timestamp: new Date()

@@ -63,17 +63,78 @@ export default function AnalyticsPage() {
   const prevAvg = prevTxns > 0 ? prevRevenue / prevTxns : 0;
   const avgChange = prevAvg > 0 ? ((avgSaleValue - prevAvg) / prevAvg) * 100 : 0;
 
-  // Revenue by day
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  // Revenue trajectory data (period-aware)
   const revenueByDay = useMemo(() => {
-    const map: Record<string, number> = {};
-    const weekAgo = new Date(now.getTime() - 7 * 86400000);
-    sales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => {
-      const d = new Date(s.createdAt).toLocaleDateString('en-GB', { weekday: 'short' });
-      map[d] = (map[d] || 0) + s.totalAmount;
+    if (periodDays <= 30) {
+      const labels: string[] = [];
+      const values: number[] = [];
+
+      for (let i = periodDays - 1; i >= 0; i--) {
+        const dayDate = new Date(now.getTime() - i * 86400000);
+        labels.push(
+          periodDays <= 7
+            ? dayDate.toLocaleDateString('en-GB', { weekday: 'short' })
+            : dayDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+        );
+        values.push(0);
+      }
+
+      periodSales.forEach((sale) => {
+        const saleDate = new Date(sale.createdAt);
+        const dayStart = new Date(saleDate.getFullYear(), saleDate.getMonth(), saleDate.getDate());
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const diffDays = Math.floor((todayStart.getTime() - dayStart.getTime()) / 86400000);
+        if (diffDays >= 0 && diffDays < periodDays) {
+          const idx = periodDays - 1 - diffDays;
+          values[idx] += sale.totalAmount;
+        }
+      });
+
+      return labels.map((label, idx) => ({ day: label, amount: values[idx] }));
+    }
+
+    // Weekly buckets for longer periods (90 days / year)
+    const weekCount = periodDays === 90 ? 13 : periodDays >= 365 ? 52 : 12;
+    const labels: string[] = [];
+    const values = Array.from({ length: weekCount }, () => 0);
+
+    // Generate readable labels based on period
+    if (periodDays === 30) {
+      // 30 days: show date every 5 days
+      for (let i = 0; i < weekCount; i++) {
+        const dayDate = new Date(now.getTime() - (weekCount - 1 - i) * 7 * 86400000);
+        labels.push(dayDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }));
+      }
+    } else if (periodDays >= 365) {
+      // Year: show month names (sample every 4 weeks)
+      for (let i = 0; i < weekCount; i += 4) {
+        const weekDate = new Date(now.getTime() - (weekCount - 1 - i) * 7 * 86400000);
+        labels.push(weekDate.toLocaleDateString('en-GB', { month: 'short' }));
+        // Fill gaps with empty strings to maintain alignment
+        for (let j = 1; j < 4 && i + j < weekCount; j++) {
+          labels.push('');
+        }
+      }
+      // Trim to exact weekCount
+      labels.splice(weekCount);
+    } else {
+      // 90 days: use week numbers
+      for (let i = 0; i < weekCount; i++) {
+        labels.push(`W${i + 1}`);
+      }
+    }
+
+    periodSales.forEach((sale) => {
+      const saleTime = new Date(sale.createdAt).getTime();
+      const diffDays = Math.floor((now.getTime() - saleTime) / 86400000);
+      if (diffDays >= 0 && diffDays <= periodDays) {
+        const idx = weekCount - 1 - Math.min(weekCount - 1, Math.floor(diffDays / 7));
+        values[idx] += sale.totalAmount;
+      }
     });
-    return days.map(d => ({ day: d, amount: map[d] || 0 }));
-  }, [sales]);
+
+    return labels.map((label, idx) => ({ day: label, amount: values[idx] }));
+  }, [periodDays, periodSales, now]);
 
   // Top products
   const topProducts = useMemo(() => {
@@ -208,7 +269,11 @@ export default function AnalyticsPage() {
         <div className="relative z-10 flex items-center justify-between mb-2">
           <div>
             <h3 className="font-display text-sm font-bold" style={{ color: s.text }}>Revenue Trajectory</h3>
-            <p className="text-[11px]" style={{ color: s.subtle }}>7-day pharmacokinetic curve</p>
+            <p className="text-[11px]" style={{ color: s.subtle }}>
+              {periodDays <= 7 ? 'Daily pharmacokinetic curve' : 
+               periodDays <= 30 ? `${periodDays}-day pharmacokinetic curve` : 
+               periodDays <= 90 ? 'Weekly pharmacokinetic curve' : 'Yearly pharmacokinetic curve'}
+            </p>
           </div>
           <div className="text-right">
             <span className="font-display text-2xl font-bold" style={{ color: s.primary }}>

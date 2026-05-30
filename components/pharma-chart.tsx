@@ -37,13 +37,15 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
     return () => timers.forEach(clearTimeout);
   }, [data]);
 
-  const maxVal = Math.max(...data.map(d => d.amount), 1);
+  // Guard against empty data
+  const safeData = data && data.length > 0 ? data : [{ day: 'N/A', amount: 0 }];
+  const maxVal = Math.max(...safeData.map(d => d.amount), 1);
   const width = 600;
   const padding = { top: 30, right: 20, bottom: 40, left: 10 };
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
-  const n = data.length;
-  const step = chartW / (n - 1);
+  const n = safeData.length;
+  const step = n > 1 ? chartW / (n - 1) : chartW;
 
   // Smooth cubic bezier points
   const points = useMemo(() => {
@@ -51,9 +53,9 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
       x: padding.left + i * step,
       y: padding.top + chartH - (val / maxVal) * chartH,
       val,
-      day: data[i].day,
+      day: safeData[i]?.day ?? '',
     }));
-  }, [animatedValues, maxVal, step, chartH, data]);
+  }, [animatedValues, maxVal, step, chartH, safeData]);
 
   // Build smooth path (cubic bezier spline)
   const pathD = useMemo(() => {
@@ -91,7 +93,8 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
 
   const now = new Date();
   const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const todayIndex = now.getDay();
+  const todayStrShort = dayNames[now.getDay()];
+  const todayStrDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
   return (
     <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height, overflow: 'visible' }}>
@@ -157,7 +160,7 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
 
       {/* Data points */}
       {points.map((p, i) => {
-        const isToday = i === todayIndex;
+        const isToday = p.day === todayStrShort || p.day === todayStrDate || (points.length > 7 && p.day.startsWith('W') && i === points.length - 1);
         const isHovered = hoveredIndex === i;
         const radius = isToday ? 6 : isHovered ? 5 : 3.5;
         return (
@@ -197,14 +200,32 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
       })}
 
       {/* X-axis labels */}
-      {points.map((p, i) => (
-        <text key={`label-${i}`} x={p.x} y={height - 12} textAnchor="middle"
-          fill={i === todayIndex ? accent : isDark ? '#64748B' : '#94A3B8'}
-          fontSize="10" fontWeight={i === todayIndex ? 600 : 500}
-          style={{ transition: 'all 0.3s ease' }}>
-          {p.day}
-        </text>
-      ))}
+      {points.map((p, i) => {
+        const isToday = p.day === todayStrShort || p.day === todayStrDate || (points.length > 7 && p.day.startsWith('W') && i === points.length - 1);
+        
+        const tooMany = points.length > 10;
+        const interval = Math.ceil(points.length / 7);
+        
+        let show = !tooMany;
+        if (tooMany) {
+          if (i === points.length - 1 || i === 0) {
+            show = true;
+          } else if (i % interval === 0 && (points.length - 1 - i) >= (interval * 0.7)) {
+            show = true;
+          }
+        }
+
+        if (!show) return null;
+
+        return (
+          <text key={`label-${i}`} x={p.x} y={height - 12} textAnchor="middle"
+            fill={isToday ? accent : isDark ? '#64748B' : '#94A3B8'}
+            fontSize="10" fontWeight={isToday ? 600 : 500}
+            style={{ transition: 'all 0.3s ease' }}>
+            {p.day}
+          </text>
+        );
+      })}
     </svg>
   );
 }

@@ -76,7 +76,31 @@ export default function FinancialsPage() {
   }, [refetchLedger]);
 
   const role = user?.user_metadata?.role || me?.role;
-  const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'ACCOUNTANT'].includes(role || '');
+
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'payables' | 'analytics'>('overview');
+
+  const liveLedger = useMemo(() => {
+    return ledger.length > 0 ? ledger : LEDGER;
+  }, [ledger]);
+
+  const livePayables = useMemo(() => {
+    return purchases.length > 0 ? purchases.map(p => ({
+      supplier: p.supplier?.name || 'Unknown',
+      invoice: p.invoiceNo || p.id.slice(-8),
+      amount: p.total,
+      status: p.status === 'RECEIVED' ? 'paid' : (new Date(p.createdAt || Date.now()).getTime() + 14 * 86400000 < Date.now() ? 'overdue' : 'pending'),
+      dueDate: new Date(new Date(p.createdAt || Date.now()).getTime() + 14 * 86400000).toLocaleDateString(),
+    })) : SUPPLIER_PAYABLES;
+  }, [purchases]);
+
+  const totalRevenue = useMemo(() => liveLedger.filter(l => l.type === 'CREDIT').reduce((a, l) => a + l.amount, 0), [liveLedger]);
+  const totalExpenses = useMemo(() => liveLedger.filter(l => l.type === 'DEBIT').reduce((a, l) => a + l.amount, 0), [liveLedger]);
+  const netProfit = totalRevenue - totalExpenses;
+  const cogsTotal = useMemo(() => liveLedger.filter(l => l.account === 'COGS').reduce((a, l) => a + l.amount, 0), [liveLedger]);
+  const supplierPayments = LEDGER.filter(l => l.account === 'ACCOUNTS_PAYABLE').reduce((a, l) => a + l.amount, 0);
+  const inventoryValue = useMemo(() => products.reduce((sum, p) => sum + (p.costPrice || 0) * (p.stockQuantity || 0), 0), [products]);
+  const outstandingPayables = useMemo(() => livePayables.filter(p => p.status !== 'paid').reduce((a, p) => a + p.amount, 0), [livePayables]);
 
   if (!isManager && mounted) {
     return (
@@ -102,30 +126,6 @@ export default function FinancialsPage() {
     primaryBorder: isDark ? 'rgba(0,217,255,0.25)' : 'rgba(14,165,233,0.3)',
     divider: isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.4)',
   };
-
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'payables' | 'analytics'>('overview');
-
-  const liveLedger = useMemo(() => {
-    return ledger.length > 0 ? ledger : LEDGER;
-  }, [ledger]);
-
-  const livePayables = useMemo(() => {
-    return purchases.length > 0 ? purchases.map(p => ({
-      supplier: p.supplier?.name || 'Unknown',
-      invoice: p.invoiceNo || p.id.slice(-8),
-      amount: p.total,
-      status: p.status === 'RECEIVED' ? 'paid' : (new Date(p.createdAt || Date.now()).getTime() + 14 * 86400000 < Date.now() ? 'overdue' : 'pending'),
-      dueDate: new Date(new Date(p.createdAt || Date.now()).getTime() + 14 * 86400000).toLocaleDateString(),
-    })) : SUPPLIER_PAYABLES;
-  }, [purchases]);
-
-  const totalRevenue = useMemo(() => liveLedger.filter(l => l.type === 'CREDIT').reduce((a, l) => a + l.amount, 0), [liveLedger]);
-  const totalExpenses = useMemo(() => liveLedger.filter(l => l.type === 'DEBIT').reduce((a, l) => a + l.amount, 0), [liveLedger]);
-  const netProfit = totalRevenue - totalExpenses;
-  const cogsTotal = useMemo(() => liveLedger.filter(l => l.account === 'COGS').reduce((a, l) => a + l.amount, 0), [liveLedger]);
-  const supplierPayments = LEDGER.filter(l => l.account === 'ACCOUNTS_PAYABLE').reduce((a, l) => a + l.amount, 0);
-  const inventoryValue = useMemo(() => products.reduce((sum, p) => sum + (p.costPrice || 0) * (p.stockQuantity || 0), 0), [products]);
-  const outstandingPayables = useMemo(() => livePayables.filter(p => p.status !== 'paid').reduce((a, p) => a + p.amount, 0), [livePayables]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

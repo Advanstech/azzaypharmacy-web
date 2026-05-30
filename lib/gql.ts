@@ -3,7 +3,7 @@
  * Authenticated requests using Supabase JWT
  */
 
-import { supabase } from '@/lib/supabase';
+import { getSessionSafe } from '@/lib/supabase';
 
 const RAW_API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000/graphql';
 const API = typeof window !== 'undefined'
@@ -53,8 +53,8 @@ export function setAuthToken(token: string | null) { _token = token; }
 
 async function resolveAuthToken(): Promise<string | null> {
   try {
-    const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token ?? null;
+    const { session } = await getSessionSafe();
+    const token = session?.access_token ?? null;
     if (token) {
       _token = token;
       return token;
@@ -169,7 +169,9 @@ export const Q_SALES = `
   query GetSales {
     sales {
       id totalAmount amountPaid change paymentMethod
-      customerName createdAt
+      customerName customerPhone receiptNo subtotal discountAmt discountReason
+      nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
+      customerType notes isRefunded refundReason refundedAt createdAt
       user { id name role }
       items {
         id quantity unitPrice total batchNo
@@ -182,7 +184,7 @@ export const Q_SALES = `
 export const Q_LOGIN_STAFF = `
   query GetLoginStaff {
     loginStaff {
-      id name email role avatarUrl position
+      id name email role avatarUrl position phone
     }
   }
 `;
@@ -286,10 +288,84 @@ export const M_CREATE_SALE = `
 `;
 
 export const M_CLOSE_TERMINAL = `
-  mutation CloseTerminal($userId: String!) {
-    closeTerminal(userId: $userId) {
-      cashierName branchName totalSales cashSales momoSales
+  mutation CloseTerminal($userId: String!, $physicalCash: Float, $digitalPayments: Float, $notes: String) {
+    closeTerminal(userId: $userId, physicalCash: $physicalCash, digitalPayments: $digitalPayments, notes: $notes) {
+      id status notes cashierName branchName totalSales cashSales momoSales
       cardSales nhisSales creditSales transactionCount closingTime
+    }
+  }
+`;
+
+export const M_REQUEST_EXPENSE = `
+  mutation RequestExpense($branchId: String!, $categoryId: String!, $amount: Float!, $description: String!, $date: String!, $receiptUrl: String) {
+    requestExpense(branchId: $branchId, categoryId: $categoryId, amount: $amount, description: $description, date: $date, receiptUrl: $receiptUrl) {
+      id amount description date status
+      category { id name }
+      createdAt
+    }
+  }
+`;
+
+export const Q_AUTHORIZATIONS_SHIFT = `
+  query GetShiftReconciliations {
+    shiftReconciliations {
+      id totalRevenue physicalCash digitalPayments discrepancy notes status createdAt
+      pharmacist { id name }
+      branch { id name }
+      approvedBy { id name }
+    }
+  }
+`;
+
+export const Q_MY_SHIFT_RECONCILIATIONS = `
+  query GetMyShiftReconciliations($userId: String!) {
+    myShiftReconciliations(userId: $userId) {
+      id totalRevenue physicalCash digitalPayments discrepancy notes status createdAt
+      branch { id name }
+      approvedBy { id name }
+    }
+  }
+`;
+
+export const Q_AUTHORIZATIONS_EXPENSE = `
+  query GetAllExpenses {
+    allExpenses {
+      id amount description date status createdAt
+      category { id name }
+      requestedById
+      approvedById
+    }
+  }
+`;
+
+export const M_APPROVE_SHIFT = `
+  mutation ApproveShiftReconciliation($id: String!, $physicalCash: Float, $digitalPayments: Float, $notes: String) {
+    approveShiftReconciliation(id: $id, physicalCash: $physicalCash, digitalPayments: $digitalPayments, notes: $notes) {
+      id status physicalCash digitalPayments discrepancy notes
+    }
+  }
+`;
+
+export const M_REJECT_SHIFT = `
+  mutation RejectShiftReconciliation($id: String!) {
+    rejectShiftReconciliation(id: $id) {
+      id status
+    }
+  }
+`;
+
+export const M_APPROVE_EXPENSE = `
+  mutation ApproveExpense($id: String!) {
+    approveExpense(id: $id) {
+      id status
+    }
+  }
+`;
+
+export const M_REJECT_EXPENSE = `
+  mutation RejectExpense($id: String!) {
+    rejectExpense(id: $id) {
+      id status
     }
   }
 `;
@@ -627,6 +703,24 @@ export const M_ASK_NEXUS_AI = `
   }
 `;
 
+export const M_GUARD_LOGIN_TOKEN_REQUEST = `
+  mutation GuardLoginTokenRequest($email: String!) {
+    guardLoginTokenRequest(email: $email)
+  }
+`;
+
+export const M_GUARD_LOGIN_TOKEN_VERIFY = `
+  mutation GuardLoginTokenVerify($email: String!) {
+    guardLoginTokenVerify(email: $email)
+  }
+`;
+
+export const M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT = `
+  mutation RecordLoginTokenVerifyAttempt($email: String!, $success: Boolean!, $reason: String) {
+    recordLoginTokenVerifyAttempt(email: $email, success: $success, reason: $reason)
+  }
+`;
+
 export const M_CREATE_PRESCRIPTION = `
   mutation CreatePrescription(
     $branchId: String!
@@ -663,6 +757,20 @@ export const M_DISPENSE_PRESCRIPTION = `
       id
       status
       dispensedAt
+    }
+  }
+`;
+
+export const M_DELETE_INVOICE = `
+  mutation DeleteInvoice($invoiceId: ID!) {
+    deleteInvoice(invoiceId: $invoiceId)
+  }
+`;
+
+export const Q_BRANCHES = `
+  query GetBranches {
+    branches {
+      id name location phone
     }
   }
 `;

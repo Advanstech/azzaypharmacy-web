@@ -9,7 +9,7 @@ import {
   Trash2, Plus, BarChart3, PieChart, Clock, CheckCircle, AlertCircle,
   Package, Receipt, Printer, ArrowUpRight, ArrowDownRight, Star,
   Award, Target, Zap, Bell, Settings, MoreVertical, ChevronDown,
-  ChevronRight, X, Save, Loader2, Activity
+  ChevronRight, X, Save, Loader2, Activity, ArrowUp, RotateCcw
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
@@ -35,7 +35,7 @@ export default function EnhancedSalesPage() {
   const { theme } = useTheme();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const { sales, loadingSales, refetchSales, me, products, customers } = useStore();
+  const { sales, loadingSales, refetchSales, me, products, customers, refundSale } = useStore();
   const { user } = useAuth();
 
   const [search, setSearch] = useState('');
@@ -48,10 +48,141 @@ export default function EnhancedSalesPage() {
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showRefundModal, setShowRefundModal] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
-  useEffect(() => setMounted(true), []);
+  // Redesigned Detail Modal refund states
+  const [refundReason, setRefundReason] = useState('');
+  const [processingRefund, setProcessingRefund] = useState(false);
+  const [showRefundInline, setShowRefundInline] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 400);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const isDark = mounted && theme === 'dark';
+
+  const handlePrint = (sale: any) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const itemsHtml = sale.items.map((item: any) => `
+      <tr style="border-bottom: 1px dashed #ddd;">
+        <td style="padding: 6px 0;">${item.product?.name || 'Item'}</td>
+        <td style="text-align: center; padding: 6px 0;">${item.quantity}</td>
+        <td style="text-align: right; padding: 6px 0;">GH₵ ${item.unitPrice.toFixed(2)}</td>
+        <td style="text-align: right; padding: 6px 0;">GH₵ ${(item.total || (item.quantity * item.unitPrice)).toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    const discountRow = sale.discountAmt > 0 ? `
+      <tr>
+        <td colspan="3" style="padding: 4px 0;">Discount:</td>
+        <td style="text-align: right; padding: 4px 0;">-GH₵ ${Number(sale.discountAmt).toFixed(2)}</td>
+      </tr>
+    ` : '';
+
+    const taxRow = (sale.vat > 0 || sale.nhil > 0 || sale.getfund > 0) ? `
+      <tr>
+        <td colspan="3" style="padding: 4px 0; font-size: 11px; color: #555;">NHIL/GETFund/VAT:</td>
+        <td style="text-align: right; padding: 4px 0; font-size: 11px; color: #555;">GH₵ ${(Number(sale.vat || 0) + Number(sale.nhil || 0) + Number(sale.getfund || 0)).toFixed(2)}</td>
+      </tr>
+    ` : '';
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Receipt - ${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</title>
+          <style>
+            body { font-family: 'Courier New', Courier, monospace; width: 300px; margin: 0 auto; padding: 20px; font-size: 12px; color: #000; }
+            .header { text-align: center; margin-bottom: 15px; }
+            .title { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+            .divider { border-top: 1px dashed #000; margin: 10px 0; }
+            table { width: 100%; border-collapse: collapse; }
+            .totals { font-weight: bold; }
+            .footer { text-align: center; margin-top: 20px; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">AZZAY PHARMACY</div>
+            <div>Accra, Ghana</div>
+            <div>Tel: +233 24 000 0000</div>
+          </div>
+          <div class="divider"></div>
+          <div>Receipt No: ${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</div>
+          <div>Date: ${new Date(sale.createdAt).toLocaleString()}</div>
+          <div>Cashier: ${sale.user?.name || 'Staff'}</div>
+          <div>Customer: ${sale.customerName || 'Walk-in'}</div>
+          <div class="divider"></div>
+          <table>
+            <thead>
+              <tr style="border-bottom: 1px solid #000;">
+                <th style="text-align: left; padding: 4px 0;">Item</th>
+                <th style="text-align: center; padding: 4px 0;">Qty</th>
+                <th style="text-align: right; padding: 4px 0;">Price</th>
+                <th style="text-align: right; padding: 4px 0;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+          <div class="divider"></div>
+          <table>
+            ${discountRow}
+            ${taxRow}
+            <tr class="totals">
+              <td colspan="3" style="padding: 6px 0; font-size: 14px;">TOTAL:</td>
+              <td style="text-align: right; padding: 6px 0; font-size: 14px;">GH₵ ${sale.totalAmount.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td colspan="3" style="padding: 4px 0;">Amount Paid:</td>
+              <td style="text-align: right; padding: 4px 0;">GH₵ ${sale.amountPaid.toFixed(2)}</td>
+            </tr>
+            <tr>
+              <td colspan="3" style="padding: 4px 0;">Change:</td>
+              <td style="text-align: right; padding: 4px 0;">GH₵ ${sale.change.toFixed(2)}</td>
+            </tr>
+          </table>
+          <div class="divider"></div>
+          <div class="footer">
+            <p>Thank you for your patronage!</p>
+            <p>Products returned within 48 hours are subject to Azzay Pharmacy Return Policies.</p>
+          </div>
+          <script>
+            window.onload = function() {
+              window.print();
+              window.close();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleExecuteRefund = async (saleId: string) => {
+    if (!refundReason.trim()) return;
+    setProcessingRefund(true);
+    try {
+      await refundSale(saleId, refundReason);
+      setRefundReason('');
+      setShowRefundInline(false);
+      // Update selectedSale locally to reflect the change
+      setSelectedSale((prev: any) => prev ? { ...prev, status: 'REFUNDED', isRefunded: true, refundReason } : null);
+      await refetchSales();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to execute refund');
+    } finally {
+      setProcessingRefund(false);
+    }
+  };
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
@@ -142,11 +273,13 @@ export default function EnhancedSalesPage() {
         existing.quantity += item.quantity;
         existing.revenue += (item as any).total || (item.quantity * item.unitPrice);
       } else {
+        const productInfo = products.find(p => p.id === productId);
         acc.push({
           productId: productId,
           productName: item.product?.name || 'Unknown',
           quantity: item.quantity,
           revenue: (item as any).total || (item.quantity * item.unitPrice),
+          stock: productInfo?.stockQuantity || 0,
         });
       }
       return acc;
@@ -196,7 +329,7 @@ export default function EnhancedSalesPage() {
     totalItems
   } = usePagination({
     data: filteredSales,
-    itemsPerPage: 10,
+    itemsPerPage: 5,
   });
 
   if (!mounted) return null;
@@ -364,7 +497,9 @@ export default function EnhancedSalesPage() {
                 #{index + 1}
               </div>
               <p className="text-xs font-bold mb-1 line-clamp-1 w-full" style={{ color: card.text }}>{product.productName}</p>
-              <p className="text-[10px] mb-2" style={{ color: card.subtle }}>{product.quantity} units dispensed</p>
+              <p className="text-[10px] mb-2" style={{ color: card.subtle }}>
+                {product.quantity} units dispensed • <span className={product.stock < 10 ? 'text-red-500 font-medium' : ''}>{product.stock} in stock</span>
+              </p>
               <p className="text-sm font-mono font-bold" style={{ color: card.primary }}>GH₵ {product.revenue.toLocaleString()}</p>
             </div>
           ))}
@@ -399,12 +534,12 @@ export default function EnhancedSalesPage() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr style={{ borderBottom: `1px solid ${card.border}`, background: isDark ? 'rgba(15,23,42,0.3)' : 'rgba(248,250,252,0.6)' }}>
-                {['Receipt', 'Time', 'Customer', 'Items', 'Payment', 'Total', 'Profit', 'Status', 'Actions'].map(h => (
-                  <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: card.subtle }}>{h}</th>
+        <div className="overflow-x-auto max-h-[500px]">
+          <table className="w-full text-left relative">
+            <thead className="sticky top-0 z-20" style={{ background: isDark ? '#0F172A' : '#FFFFFF', borderBottom: `1px solid ${card.border}` }}>
+              <tr style={{ background: isDark ? 'rgba(15,23,42,0.95)' : 'rgba(248,250,252,0.95)' }}>
+                {['Receipt', 'Time', 'Cashier', 'Items', 'Payment', 'Total', 'Profit', 'Status', 'Actions'].map(h => (
+                  <th key={h} className="px-5 py-3 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: card.subtle, borderBottom: `1px solid ${card.border}` }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -438,10 +573,10 @@ export default function EnhancedSalesPage() {
                     <td className="px-5 py-4">
                       <div>
                         <p className="text-sm font-medium" style={{ color: card.text }}>
-                          {sale.customerName || 'Walk-in'}
+                          {sale.user?.name?.split(' ')[0] || 'Unknown'}
                         </p>
                         <p className="text-[10px]" style={{ color: card.subtle }}>
-                          {sale.customerType}
+                          {sale.user?.role?.replace('_', ' ') || 'Pharmacist'}
                         </p>
                       </div>
                     </td>
@@ -517,87 +652,331 @@ export default function EnhancedSalesPage() {
 
       {/* Sale Details Modal */}
       {showDetailsModal && selectedSale && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-2xl rounded-2xl border overflow-hidden" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
-            <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: card.border }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="w-full max-w-6xl h-[85vh] rounded-[32px] overflow-hidden flex flex-col shadow-2xl border transition-all duration-300 animate-in zoom-in-95 duration-200" style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: card.border }}>
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b flex justify-between items-center" style={{ borderColor: card.border, background: isDark ? '#0F172A' : '#F8FAFC' }}>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-500">
                   <Receipt size={20} />
                 </div>
                 <div>
-                  <h2 className="font-display text-lg font-bold" style={{ color: card.text }}>Sale Details</h2>
-                  <p className="text-xs" style={{ color: card.muted }}>{selectedSale.receiptNo || selectedSale.id}</p>
+                  <div className="flex items-center gap-2">
+                    <h2 className="font-display font-bold text-lg" style={{ color: card.text }}>
+                      Receipt: {selectedSale.receiptNo || `REC-${selectedSale.id.slice(-8).toUpperCase()}`}
+                    </h2>
+                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${
+                      selectedSale.status === 'REFUNDED' ? 'bg-red-500/10 text-red-500' :
+                      selectedSale.status === 'VOIDED' ? 'bg-amber-500/10 text-amber-500' :
+                      'bg-emerald-500/10 text-emerald-500'
+                    }`}>
+                      {selectedSale.status || 'COMPLETED'}
+                    </span>
+                  </div>
+                  <p className="text-xs" style={{ color: card.muted }}>
+                    Transaction ID: {selectedSale.id}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setShowDetailsModal(false)} className="text-slate-400 hover:text-red-500 transition-colors">
+              <button 
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  setShowRefundInline(false);
+                  setRefundReason('');
+                }} 
+                className="p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10 transition-colors text-slate-400 hover:text-red-500"
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: 'Date & Time', value: new Date(selectedSale.createdAt).toLocaleString() },
-                  { label: 'Customer', value: selectedSale.customerName || 'Walk-in' },
-                  { label: 'Payment Method', value: selectedSale.paymentMethod },
-                  { label: 'Items Count', value: `${selectedSale.itemsCount} items` },
-                ].map(item => (
-                  <div key={item.label} className="p-3 rounded-xl" style={{ background: card.inputBg }}>
-                    <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.subtle }}>{item.label}</p>
-                    <p className="text-sm font-medium mt-1" style={{ color: card.text }}>{item.value}</p>
+            {/* Modal Body */}
+            <div className="flex-1 grid grid-cols-1 md:grid-cols-12 overflow-hidden">
+              
+              {/* Left Column: Metadata & Compliance logs */}
+              <div className="col-span-1 md:col-span-4 p-6 overflow-y-auto space-y-6 flex flex-col justify-between md:border-r" style={{ borderColor: card.border }}>
+                <div className="space-y-6">
+                  {/* Customer Information */}
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider mb-3 text-slate-400">Customer Details</h3>
+                    <div className="p-4 rounded-2xl border space-y-2" style={{ background: card.inputBg, borderColor: card.border }}>
+                      <div>
+                        <p className="text-[10px] uppercase font-bold" style={{ color: card.muted }}>Name</p>
+                        <p className="font-semibold text-sm" style={{ color: card.text }}>{selectedSale.customerName || 'Walk-in Customer'}</p>
+                      </div>
+                      {selectedSale.customerPhone && (
+                        <div>
+                          <p className="text-[10px] uppercase font-bold" style={{ color: card.muted }}>Phone</p>
+                          <p className="font-semibold text-sm" style={{ color: card.text }}>{selectedSale.customerPhone}</p>
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-[10px] uppercase font-bold" style={{ color: card.muted }}>Customer Type</p>
+                        <p className="text-xs font-semibold" style={{ color: card.primary }}>
+                          {selectedSale.customerType || (selectedSale.customerId ? 'Registered Account' : 'Walk-in Cashier Entry')}
+                        </p>
+                      </div>
+                      {selectedSale.nhisClaimNo && (
+                        <div>
+                          <p className="text-[10px] uppercase font-bold text-amber-500">NHIS Claim Number</p>
+                          <p className="font-mono text-xs font-bold text-amber-500">{selectedSale.nhisClaimNo}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ))}
+
+                  {/* Transaction Metadata */}
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider mb-3 text-slate-400">Compliance & Registry</h3>
+                    <div className="p-4 rounded-2xl border space-y-3" style={{ background: card.inputBg, borderColor: card.border }}>
+                      <div className="flex justify-between items-center text-xs">
+                        <span style={{ color: card.muted }}>Issued At</span>
+                        <span className="font-medium" style={{ color: card.text }}>
+                          {new Date(selectedSale.createdAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span style={{ color: card.muted }}>Authorized Cashier</span>
+                        <span className="font-medium text-blue-500" style={{ color: card.text }}>
+                          {selectedSale.user?.name || 'Staff User'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span style={{ color: card.muted }}>Cashier Role</span>
+                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-500/10 text-slate-400">
+                          {selectedSale.user?.role || 'PHARMACIST'}
+                        </span>
+                      </div>
+                      {selectedSale.profitMargin !== undefined && (
+                        <div className="flex justify-between items-center text-xs border-t pt-2" style={{ borderColor: card.border }}>
+                          <span style={{ color: card.muted }}>Est. Profit Margin</span>
+                          <span className="font-semibold text-emerald-500">
+                            GH₵ {Number(selectedSale.profitMargin || (selectedSale.totalAmount * 0.3)).toFixed(2)} (30%)
+                          </span>
+                        </div>
+                      )}
+                      {selectedSale.averageItemValue !== undefined && (
+                        <div className="flex justify-between items-center text-xs">
+                          <span style={{ color: card.muted }}>Avg Item Value</span>
+                          <span className="font-medium" style={{ color: card.text }}>
+                            GH₵ {Number(selectedSale.averageItemValue || (selectedSale.totalAmount / (selectedSale.items?.length || 1))).toFixed(2)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Refund audit logs */}
+                {selectedSale.isRefunded && (
+                  <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/20 text-xs text-red-500 space-y-2 mt-4">
+                    <p className="font-bold flex items-center gap-1">
+                      <AlertCircle size={14} /> Refunded Audit Trail
+                    </p>
+                    <p><b>Refunded At:</b> {selectedSale.refundedAt ? new Date(selectedSale.refundedAt).toLocaleString() : 'N/A'}</p>
+                    <p className="italic"><b>Reason:</b> "{selectedSale.refundReason || 'No reason specified'}"</p>
+                  </div>
+                )}
               </div>
 
-              <div className="border rounded-xl overflow-hidden" style={{ borderColor: card.border }}>
-                <table className="w-full text-left">
-                  <thead style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC' }}>
-                    <tr>
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Product</th>
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-right" style={{ color: card.subtle }}>Qty</th>
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-right" style={{ color: card.subtle }}>Price</th>
-                      <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-right" style={{ color: card.subtle }}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedSale.items?.map((item: any) => (
-                      <tr key={item.id} style={{ borderBottom: `1px solid ${card.border}` }}>
-                        <td className="px-4 py-3">
-                          <p className="text-sm font-medium" style={{ color: card.text }}>{item.product?.name}</p>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <p className="text-sm" style={{ color: card.text }}>{item.quantity}</p>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <p className="text-sm font-mono" style={{ color: card.muted }}>GH₵ {item.unitPrice.toFixed(2)}</p>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <p className="text-sm font-bold font-mono" style={{ color: card.text }}>GH₵ {(item.total || (item.quantity * item.unitPrice)).toFixed(2)}</p>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC' }}>
-                    <tr>
-                      <td colSpan={3} className="px-4 py-3 text-sm font-bold" style={{ color: card.text }}>Total</td>
-                      <td className="px-4 py-3 text-lg font-bold font-mono" style={{ color: card.primary }}>GH₵ {selectedSale.totalAmount.toFixed(2)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+              {/* Middle Column: Itemized List */}
+              <div className="col-span-1 md:col-span-5 p-6 overflow-y-auto flex flex-col" style={{ borderColor: card.border }}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-400">Items Purchased</h3>
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: card.primaryBg, color: card.primary }}>
+                    {selectedSale.items?.length || 0} items
+                  </span>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin" style={{ maxHeight: '100%' }}>
+                  {selectedSale.items?.map((item: any) => (
+                    <div key={item.id} className="p-4 rounded-2xl bg-slate-500/5 border hover:bg-slate-500/10 transition-colors flex justify-between items-center shadow-sm" style={{ borderColor: card.border }}>
+                      <div className="space-y-1 min-w-0 flex-1 pr-3">
+                        <p className="font-semibold text-sm truncate" style={{ color: card.text }}>
+                          {item.product?.name || 'Unknown Product'}
+                        </p>
+                        <div className="flex items-center gap-2 text-xs" style={{ color: card.muted }}>
+                          <span>Qty: {item.quantity}</span>
+                          <span>•</span>
+                          <span>Price: GH₵ {Number(item.unitPrice).toFixed(2)}</span>
+                          {item.batchNo && item.batchNo !== 'N/A' && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono bg-blue-500/10 text-blue-500 px-1 rounded text-[10px]">
+                                {item.batchNo}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-mono font-bold text-sm" style={{ color: card.text }}>
+                          GH₵ {Number(item.total || (item.quantity * item.unitPrice)).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="flex gap-2">
-                <button onClick={() => setShowDetailsModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>
-                  Close
-                </button>
-                <button className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2" style={{ background: card.primary }}>
-                  <Printer size={16} />
-                  Print Receipt
-                </button>
+              {/* Right Column: Financial summary & Actionables */}
+              <div className="col-span-1 md:col-span-3 p-6 overflow-y-auto bg-slate-50 dark:bg-[#060B14] flex flex-col justify-between md:border-l" style={{ borderColor: card.border }}>
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider mb-3 text-slate-400">Payment Breakdown</h3>
+                    <div className="space-y-2.5 text-xs font-medium border-b pb-4" style={{ borderColor: card.border, color: card.muted }}>
+                      <div className="flex justify-between">
+                        <span>Subtotal</span>
+                        <span className="font-mono" style={{ color: card.text }}>
+                          GH₵ {Number(selectedSale.subtotal || selectedSale.totalAmount).toFixed(2)}
+                        </span>
+                      </div>
+                      {selectedSale.discountAmt > 0 && (
+                        <div className="flex justify-between text-red-500">
+                          <span>Discount ({selectedSale.discountReason || 'Promo'})</span>
+                          <span className="font-mono">-GH₵ {Number(selectedSale.discountAmt).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {selectedSale.nhil > 0 && (
+                        <div className="flex justify-between">
+                          <span>NHIL (2.5%)</span>
+                          <span className="font-mono" style={{ color: card.text }}>GH₵ {Number(selectedSale.nhil).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {selectedSale.getfund > 0 && (
+                        <div className="flex justify-between">
+                          <span>GETFund (2.5%)</span>
+                          <span className="font-mono" style={{ color: card.text }}>GH₵ {Number(selectedSale.getfund).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {selectedSale.covid19Levy > 0 && (
+                        <div className="flex justify-between">
+                          <span>Covid Levy (1%)</span>
+                          <span className="font-mono" style={{ color: card.text }}>GH₵ {Number(selectedSale.covid19Levy).toFixed(2)}</span>
+                        </div>
+                      )}
+                      {selectedSale.vat > 0 && (
+                        <div className="flex justify-between">
+                          <span>VAT (15%)</span>
+                          <span className="font-mono" style={{ color: card.text }}>GH₵ {Number(selectedSale.vat).toFixed(2)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-4 space-y-3">
+                      <div className="flex justify-between items-baseline">
+                        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: card.text }}>Grand Total</span>
+                        <span className="font-display text-2xl font-black" style={{ color: card.primary }}>
+                          GH₵ {Number(selectedSale.totalAmount).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span style={{ color: card.muted }}>Amount Paid</span>
+                        <span className="font-mono font-medium" style={{ color: card.text }}>
+                          GH₵ {Number(selectedSale.amountPaid || selectedSale.totalAmount).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span style={{ color: card.muted }}>Change Given</span>
+                        <span className="font-mono font-medium text-emerald-500">
+                          GH₵ {Number(selectedSale.change || 0).toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs pt-1 border-t" style={{ borderColor: card.border }}>
+                        <span style={{ color: card.muted }}>Payment Mode</span>
+                        <span className="font-bold flex items-center gap-1" style={{ color: card.text }}>
+                          {PAYMENT_METHODS[selectedSale.paymentMethod as keyof typeof PAYMENT_METHODS]?.icon || '💰'} 
+                          {PAYMENT_METHODS[selectedSale.paymentMethod as keyof typeof PAYMENT_METHODS]?.label || selectedSale.paymentMethod}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="mt-8 space-y-3">
+                  {showRefundInline ? (
+                    <div className="p-4 rounded-2xl border bg-red-500/5 space-y-3 animate-in fade-in zoom-in-95 duration-200" style={{ borderColor: 'rgba(239,68,68,0.2)' }}>
+                      <p className="text-[10px] font-black uppercase tracking-wider text-red-500">Execute Return Process</p>
+                      <textarea
+                        value={refundReason}
+                        onChange={e => setRefundReason(e.target.value)}
+                        placeholder="Reason for return/refund..."
+                        rows={2}
+                        className="w-full p-2.5 rounded-xl text-xs outline-none resize-none focus:ring-1 focus:ring-red-500"
+                        style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}
+                      />
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => {
+                            setShowRefundInline(false);
+                            setRefundReason('');
+                          }} 
+                          className="flex-1 py-2 rounded-xl text-xs font-bold transition-colors"
+                          style={{ background: card.inputBg, color: card.text }}
+                        >
+                          Cancel
+                        </button>
+                        <button 
+                          onClick={() => handleExecuteRefund(selectedSale.id)}
+                          disabled={!refundReason.trim() || processingRefund}
+                          className="flex-1 py-2 rounded-xl text-xs font-bold text-white bg-red-500 hover:bg-red-600 transition-colors flex items-center justify-center gap-1"
+                        >
+                          {processingRefund ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                          Confirm
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2.5">
+                      <button 
+                        onClick={() => handlePrint(selectedSale)}
+                        className="w-full py-3.5 rounded-2xl font-bold text-white flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg hover:shadow-xl" 
+                        style={{ background: `linear-gradient(135deg, ${card.primary}, #0284C7)`, boxShadow: `0 8px 20px ${card.primaryBg}` }}
+                      >
+                        <Printer size={18} />
+                        Print Thermal Receipt
+                      </button>
+                      
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => handlePrint(selectedSale)}
+                          className="flex-1 py-3.5 rounded-2xl font-bold text-xs transition-all border flex items-center justify-center gap-1.5" 
+                          style={{ borderColor: card.border, color: card.text, background: card.inputBg }}
+                        >
+                          <Download size={14} /> Download PDF
+                        </button>
+                        
+                        {!selectedSale.isRefunded && selectedSale.status !== 'REFUNDED' && (
+                          <button 
+                            onClick={() => setShowRefundInline(true)}
+                            className="flex-1 py-3.5 rounded-2xl font-bold text-xs bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all flex items-center justify-center gap-1.5"
+                          >
+                            <RotateCcw size={14} /> Refund / Void
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
+
             </div>
           </div>
         </div>
+      )}
+
+      {/* Scroll to Top Button */}
+      {showScrollTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-8 right-8 p-4 rounded-full shadow-2xl transition-all hover:scale-110 hover:-translate-y-1 z-40"
+          style={{ background: card.primary, color: '#fff', boxShadow: `0 8px 24px ${card.primaryBg}` }}
+          title="Scroll to top"
+        >
+          <ArrowUp size={24} />
+        </button>
       )}
     </div>
   );

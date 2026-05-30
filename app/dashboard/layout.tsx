@@ -45,17 +45,7 @@ const navItems = [
   { label: 'AI Assistant', href: '/dashboard/ai', icon: Sparkles, color: '#EC4899' },
 ];
 
-const adminItems = [
-  { label: 'Organization', href: '/dashboard/admin/organization', icon: Building2, color: '#F97316' },
-  { label: 'Branches', href: '/dashboard/admin/branches', icon: Activity, color: '#14B8A6' },
-  { label: 'Supplier Payments', href: '/dashboard/suppliers/payments', icon: CreditCard, color: '#10B981' },
-  { label: 'Financials', href: '/dashboard/admin/financials', icon: CreditCard, color: '#A855F7' },
-  { label: 'Reports', href: '/dashboard/admin/reports', icon: FileText, color: '#3B82F6' },
-  { label: 'System', href: '/dashboard/admin/system', icon: Database, color: '#EF4444' },
-  { label: 'Security', href: '/dashboard/admin/security', icon: Shield, color: '#F59E0B' },
-  { label: 'Staff', href: '/dashboard/staff', icon: Users, color: '#6366F1' },
-  { label: 'Super Terminal', href: '/dashboard/admin/terminal', icon: Activity, color: '#00D9FF' },
-];
+
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useAuth();
@@ -64,7 +54,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -135,11 +124,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return allowedForAll.includes(item.label);
   });
 
-  const filteredAdminItems = adminItems.filter(item => {
-    if (isSuperAdmin) return true;
-    if (item.label === 'Super Terminal') return false; // Only root sees terminal
-    return isManagement;
-  });
+
 
   const canSeeAdmin = isManagement || isSuperAdmin;
 
@@ -293,33 +278,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             );
           })}
 
-          {/* Admin Section */}
+          {/* Admin Section Link */}
           {canSeeAdmin && (
-            <div className={`mt-4 transition-all duration-300 ${showAdmin && !collapsed ? 'bg-red-500/5 rounded-[24px] border border-red-500/10 p-1 mb-4' : ''}`}>
+            <div className={`mt-4 transition-all duration-300`}>
               <div 
-                className={`sticky z-10 backdrop-blur-xl transition-all ${showAdmin && !collapsed ? 'top-[84px] mb-2' : ''}`}
+                className={`sticky z-10 backdrop-blur-xl transition-all ${!collapsed ? 'top-[84px] mb-2' : ''}`}
                 style={{ 
-                  margin: showAdmin && !collapsed ? '0' : (collapsed ? '0' : '0 -4px'),
-                  padding: showAdmin && !collapsed ? '4px 0' : '0',
-                  background: showAdmin && !collapsed ? (isDark ? 'rgba(15, 23, 42, 0.4)' : 'rgba(255, 255, 255, 0.4)') : 'transparent',
+                  margin: !collapsed ? '0' : '0 -4px',
+                  padding: !collapsed ? '4px 0' : '0',
                 }}
               >
                 {!collapsed ? (
-                  <button
-                    onClick={() => setShowAdmin(!showAdmin)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-black uppercase tracking-[0.15em] transition-colors hover:text-red-500 group"
+                  <p
+                    className="px-3 py-2 text-[10px] font-black uppercase tracking-[0.15em]"
                     style={{ color: isDark ? '#64748B' : '#94A3B8' }}
                   >
-                    <div className="flex items-center gap-2">
-                      <Shield size={12} className={showAdmin ? 'text-red-500' : ''} />
-                      <span>Administration</span>
-                    </div>
-                    <ChevronRight
-                      size={12}
-                      className="transition-transform duration-300"
-                      style={{ transform: showAdmin ? 'rotate(90deg)' : 'rotate(0deg)', color: showAdmin ? '#EF4444' : undefined }}
-                    />
-                  </button>
+                    Administration
+                  </p>
                 ) : (
                   <div
                     className="h-px mx-3 my-2"
@@ -328,55 +303,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 )}
               </div>
               
-              {(showAdmin || collapsed) && (
-                <div className={`${!collapsed ? 'pl-2 space-y-1 relative' : 'space-y-1'}`}>
-                  {/* Hierarchy Line */}
-                  {showAdmin && !collapsed && (
-                    <div className="absolute left-[15px] top-0 bottom-4 w-px bg-gradient-to-b from-red-500/40 to-transparent" />
-                  )}
-                  
-                  {filteredAdminItems.map((item) => {
-                    const isActive = pathname === item.href;
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-ui text-sm transition-all group relative overflow-hidden"
-                        style={{
-                          background: isActive
-                            ? isDark
-                              ? 'rgba(239, 68, 68, 0.15)'
-                              : 'rgba(239, 68, 68, 0.1)'
-                            : 'transparent',
-                          color: isActive
-                            ? '#EF4444'
-                            : isDark
-                            ? '#94A3B8'
-                            : '#64748B',
-                          border: isActive ? '1px solid rgba(239, 68, 68, 0.2)' : '1px solid transparent',
-                        }}
-                      >
-                        {isActive && (
-                          <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500" />
-                        )}
-                        <Icon
-                          size={18}
-                          style={{
-                            color: isActive ? item.color : undefined,
-                            filter: isActive ? 'drop-shadow(0 0 8px currentColor)' : undefined,
-                          }}
-                        />
-                        {!collapsed && (
-                          <span className={`font-medium transition-transform group-hover:translate-x-1 ${isActive ? 'font-bold' : ''}`}>
-                            {item.label}
-                          </span>
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
+              <Link
+                href="/admin"
+                className={`flex items-center gap-3 px-4 py-4 rounded-2xl font-ui font-bold text-base transition-all group ${
+                  collapsed ? 'justify-center px-2' : ''
+                }`}
+                style={{
+                  background: isDark
+                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.3) 100%)'
+                    : 'linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.25) 100%)',
+                  color: isDark ? '#F87171' : '#DC2626',
+                  border: `1.5px solid ${isDark ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.5)'}`,
+                  boxShadow: isDark
+                    ? '0 4px 20px rgba(239, 68, 68, 0.15), inset 0 1px 0 rgba(255,255,255,0.1)'
+                    : '0 4px 20px rgba(239, 68, 68, 0.2), inset 0 1px 0 rgba(255,255,255,0.3)',
+                }}
+              >
+                <Shield
+                  size={collapsed ? 22 : 20}
+                  strokeWidth={2.5}
+                  style={{
+                    filter: isDark
+                      ? 'drop-shadow(0 0 8px rgba(248, 113, 113, 0.5))'
+                      : 'drop-shadow(0 0 6px rgba(220, 38, 38, 0.4))',
+                  }}
+                />
+                {!collapsed && (
+                  <span>
+                    Admin Dashboard
+                  </span>
+                )}
+              </Link>
             </div>
           )}
 
@@ -544,7 +501,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
             >
               {navItems.find((n) => n.href === pathname)?.label ||
-                filteredAdminItems.find((n) => n.href === pathname)?.label ||
                 (pathname === '/dashboard/suppliers' ? 'Suppliers' :
                  pathname === '/dashboard/stock-sync' ? 'Stock Sync' : 'Dashboard')}
             </h1>

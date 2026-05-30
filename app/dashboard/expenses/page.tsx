@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
+import { gql } from '@/lib/gql';
+import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE } from '@/lib/gql';
 
 export default function ExpensesPage() {
   const { theme } = useTheme();
@@ -32,14 +34,61 @@ export default function ExpensesPage() {
     warning: '#F59E0B',
   };
 
-  const [expenses, setExpenses] = useState([
-    { id: 1, date: '2026-05-04', cat: 'Logistics', desc: 'Bedither Pharma Delivery Fee', amount: 150, method: 'MOMO', status: 'PENDING', requestedBy: 'Cashier Kwame' },
-    { id: 2, date: '2026-05-03', cat: 'Utilities', desc: 'ECG Prepaid - Main Meter', amount: 500, method: 'CASH', status: 'APPROVED', requestedBy: 'Pharmacist Dery' },
-    { id: 3, date: '2026-05-02', cat: 'Maintenance', desc: 'AC Servicing - POS Area', amount: 300, method: 'CARD', status: 'REJECTED', requestedBy: 'Cashier Kwame' },
-  ]);
+  const [expenses, setExpenses] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleAction = (id: number, status: string) => {
-    setExpenses(prev => prev.map(e => e.id === id ? { ...e, status } : e));
+  // Modal State
+  const [showModal, setShowModal] = useState(false);
+  const [newExp, setNewExp] = useState({ amount: '', desc: '', date: new Date().toISOString().split('T')[0] });
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    fetchExpenses();
+  }, [me]);
+
+  const fetchExpenses = async () => {
+    try {
+      const data = await gql<any>(Q_AUTHORIZATIONS_EXPENSE);
+      // Pharmacists only see their own, managers see all (already handled mostly, but we'll filter here for pharmacists if backend doesn't)
+      let allExp = data.allExpenses || [];
+      if (!isManager) {
+        allExp = allExp.filter((e: any) => e.requestedBy?.id === me?.id);
+      }
+      setExpenses(allExp);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestExpense = async () => {
+    setSubmitting(true);
+    try {
+      const branchId = me?.branchId || me?.branch?.id || '';
+      // We assume a generic category ID for now if we don't fetch them, but backend requires a categoryId.
+      // We will hardcode a dummy one or fetch the first category.
+      const res = await gql<any>(`
+        query { expenseCategories { id } }
+      `);
+      const catId = res.expenseCategories[0]?.id || 'dummy_cat_id';
+
+      const created = await gql<any>(M_REQUEST_EXPENSE, {
+        branchId,
+        categoryId: catId,
+        amount: parseFloat(newExp.amount),
+        description: newExp.desc,
+        date: new Date(newExp.date).toISOString(),
+      });
+      setExpenses([created.requestExpense, ...expenses]);
+      setShowModal(false);
+      setNewExp({ amount: '', desc: '', date: new Date().toISOString().split('T')[0] });
+    } catch (err) {
+      alert('Error requesting expense. Please ensure categories exist in DB.');
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -49,7 +98,9 @@ export default function ExpensesPage() {
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>Operational Expenses</h1>
           <p className="text-sm" style={{ color: c.muted }}>Track utility, logistics, and miscellaneous pharmacy costs</p>
         </div>
-        <button className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all"
+        <button 
+          onClick={() => setShowModal(true)}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all"
           style={{ background: c.primary, color: isDark ? '#060B14' : '#fff' }}>
           <Plus size={18} />
           Record Expense
@@ -90,10 +141,10 @@ export default function ExpensesPage() {
           {expenses.map((e) => (
             <div key={e.id} className="p-4 flex items-center justify-between hover:bg-white/5 transition-all">
               <div className="flex items-center gap-4">
-                <div className="text-xs font-mono" style={{ color: c.muted }}>{e.date}</div>
+                <div className="text-xs font-mono" style={{ color: c.muted }}>{new Date(e.date).toLocaleDateString()}</div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-bold" style={{ color: c.text }}>{e.desc}</p>
+                    <p className="text-sm font-bold" style={{ color: c.text }}>{e.description}</p>
                     <span className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest uppercase"
                       style={{ 
                         background: e.status === 'APPROVED' ? `${c.success}20` : e.status === 'REJECTED' ? `${c.danger}20` : `${c.warning}20`,
@@ -103,39 +154,76 @@ export default function ExpensesPage() {
                     </span>
                   </div>
                   <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
-                    {e.cat} • {e.method} • Requested by <span className="text-emerald-400">{e.requestedBy}</span>
+                    {e.category?.name || 'General'} • Requested by <span className="text-emerald-400">{e.requestedBy?.name || 'Unknown'}</span>
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-6">
                 <div className="text-right">
-                  <p className="text-sm font-black" style={{ color: c.danger }}>- GH₵ {e.amount.toFixed(2)}</p>
-                  <button className="text-[10px] font-bold text-blue-500">View Receipt</button>
+                  <p className="text-sm font-black" style={{ color: c.danger }}>- GH₵ {Number(e.amount).toFixed(2)}</p>
                 </div>
-                
-                {isManager && e.status === 'PENDING' && (
-                  <div className="flex gap-2 border-l pl-6" style={{ borderColor: c.border }}>
-                    <button 
-                      onClick={() => handleAction(e.id, 'APPROVED')}
-                      className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500 hover:text-white transition-all"
-                      title="Approve"
-                    >
-                      <CheckCircle size={18} />
-                    </button>
-                    <button 
-                      onClick={() => handleAction(e.id, 'REJECTED')}
-                      className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition-all"
-                      title="Reject"
-                    >
-                      <XCircle size={18} />
-                    </button>
-                  </div>
-                )}
               </div>
             </div>
           ))}
         </div>
       </div>
+      {/* Request Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-[32px] border shadow-2xl p-6" style={{ background: c.bg, borderColor: c.border }}>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-display text-xl font-bold" style={{ color: c.text }}>Request Expense</h3>
+              <button onClick={() => setShowModal(false)} className="p-2 rounded-full hover:bg-slate-500/10" style={{ color: c.muted }}>
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Amount (GH₵)</label>
+                <input 
+                  type="number"
+                  value={newExp.amount}
+                  onChange={e => setNewExp({...newExp, amount: e.target.value})}
+                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
+                  style={{ borderColor: c.border, color: c.text }}
+                  placeholder="e.g. 50"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Description</label>
+                <input 
+                  type="text"
+                  value={newExp.desc}
+                  onChange={e => setNewExp({...newExp, desc: e.target.value})}
+                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
+                  style={{ borderColor: c.border, color: c.text }}
+                  placeholder="e.g. Water for the pharmacy"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Date</label>
+                <input 
+                  type="date"
+                  value={newExp.date}
+                  onChange={e => setNewExp({...newExp, date: e.target.value})}
+                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
+                  style={{ borderColor: c.border, color: c.text }}
+                />
+              </div>
+
+              <button 
+                onClick={handleRequestExpense}
+                disabled={submitting || !newExp.amount || !newExp.desc}
+                className="w-full py-3 mt-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all disabled:opacity-50"
+                style={{ background: c.primary, color: '#fff' }}
+              >
+                {submitting ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

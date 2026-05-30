@@ -12,9 +12,9 @@ import {
 import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_STAFF, Q_ME, Q_CUSTOMERS,
-  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_LEDGER,
-  M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT,
-  M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS,
+  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_LEDGER, Q_INVOICES,
+  M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE,
+  M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD,
   M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
@@ -69,6 +69,24 @@ export interface Sale {
   change: number;
   paymentMethod: string;
   customerName?: string;
+  customerPhone?: string;
+  receiptNo?: string;
+  subtotal?: number;
+  discountAmt?: number;
+  discountReason?: string;
+  nhil?: number;
+  getfund?: number;
+  covid19Levy?: number;
+  vat?: number;
+  nhisClaimNo?: string;
+  status?: string;
+  profitMargin?: number;
+  averageItemValue?: number;
+  customerType?: string;
+  notes?: string;
+  isRefunded?: boolean;
+  refundReason?: string;
+  refundedAt?: string;
   createdAt: string;
   user?: { id: string; name: string; role: string };
   items: SaleItem[];
@@ -78,6 +96,7 @@ export interface StaffMember {
   id: string;
   supabaseId: string;
   email: string;
+  phone?: string;
   name: string;
   avatarUrl?: string;
   role: string;
@@ -173,6 +192,36 @@ export interface Expense {
   createdAt: string;
 }
 
+export interface InvoicePayment {
+  id: string;
+  invoiceId: string;
+  amount: number;
+  method: string;
+  reference?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNo: string;
+  supplierId: string;
+  purchaseId?: string;
+  type: string;
+  issueDate: string;
+  dueDate?: string;
+  subtotal: number;
+  vat: number;
+  total: number;
+  paidAmount: number;
+  balance: number;
+  paymentStatus: string;
+  notes?: string;
+  createdAt: string;
+  supplier?: { id: string; name: string; contact?: string; phone?: string; email?: string };
+  payments?: InvoicePayment[];
+}
+
 export interface LedgerEntry {
   id: string;
   type: 'DEBIT' | 'CREDIT';
@@ -225,10 +274,12 @@ interface StoreState {
   // ERP modules
   prescriptions: Prescription[];
   purchases: Purchase[];
+  invoices: Invoice[];
   expenses: Expense[];
   ledger: LedgerEntry[];
   loadingPrescriptions: boolean;
   loadingPurchases: boolean;
+  loadingInvoices: boolean;
   loadingExpenses: boolean;
   loadingLedger: boolean;
 
@@ -249,6 +300,7 @@ interface StoreState {
   refetchCustomers: () => Promise<void>;
   refetchPrescriptions: () => Promise<void>;
   refetchPurchases: () => Promise<void>;
+  refetchInvoices: () => Promise<void>;
   refetchExpenses: () => Promise<void>;
   refetchLedger: () => Promise<void>;
   refetchAll: () => Promise<void>;
@@ -264,7 +316,7 @@ interface StoreState {
     customerEmail?: string;
   }) => Promise<Sale>;
 
-  closeTerminal: () => Promise<TerminalReport>;
+  closeTerminal: (physicalCash?: number, digitalPayments?: number, notes?: string) => Promise<TerminalReport>;
 
   inviteStaff: (args: {
     email: string;
@@ -291,6 +343,8 @@ interface StoreState {
   }) => Promise<StaffMember>;
 
   updateDutyStatus: (userId: string, isOnDuty: boolean) => Promise<void>;
+
+  generateTempPassword: (userId: string) => Promise<string>;
 
   updateProductPrices: (productId: string, costPrice: number, sellingPrice: number) => Promise<Product>;
   updateProductFull: (productData: any) => Promise<Product>;
@@ -365,6 +419,10 @@ interface StoreState {
   }) => Promise<Supplier>;
 
   deleteSupplier: (id: string) => Promise<void>;
+
+  // Invoice Management
+  recordSupplierPayment: (invoiceId: string, amount: number, method: string, reference?: string, notes?: string) => Promise<Invoice>;
+  deleteInvoice: (invoiceId: string) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreState | null>(null);
@@ -390,6 +448,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
   const [loadingPurchases, setLoadingPurchases] = useState(false);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -508,6 +568,19 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
+  const refetchInvoices = useCallback(async () => {
+    if (!me?.branchId) return;
+    setLoadingInvoices(true);
+    try {
+      const data = await gql<{ invoices: Invoice[] }>(Q_INVOICES, { branchId: me.branchId });
+      setInvoices(data.invoices ?? []);
+    } catch (e: any) {
+      console.warn('[store] invoices fetch failed:', e.message);
+    } finally {
+      setLoadingInvoices(false);
+    }
+  }, [me?.branchId]);
+
   const refetchExpenses = useCallback(async () => {
     setLoadingExpenses(true);
     try {
@@ -548,6 +621,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       await Promise.all([
         refetchPrescriptions(),
         refetchPurchases(),
+        refetchInvoices(),
         refetchExpenses(),
         refetchLedger(),
       ]);
@@ -556,7 +630,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       console.error('[store] Sync failed:', err);
       setSyncStatus('error');
     }
-  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchExpenses]);
+  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchLedger]);
 
   // Set token and fetch when it becomes available
   useEffect(() => {
@@ -683,9 +757,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     return newSale;
   }, [me, products, refetchSales, refetchProducts]);
 
-  const closeTerminal = useCallback(async (): Promise<TerminalReport> => {
+  const closeTerminal = useCallback(async (physicalCash?: number, digitalPayments?: number, notes?: string): Promise<TerminalReport> => {
     if (!me) throw new Error('Not authenticated');
-    const data = await gql<{ closeTerminal: TerminalReport }>(M_CLOSE_TERMINAL, { userId: me.id });
+    const data = await gql<{ closeTerminal: TerminalReport }>(M_CLOSE_TERMINAL, { 
+      userId: me.id,
+      physicalCash,
+      digitalPayments,
+      notes
+    });
     return data.closeTerminal;
   }, [me]);
 
@@ -724,6 +803,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     await gql(M_UPDATE_DUTY_STATUS, { userId, isOnDuty });
     setStaff(prev => prev.map(s => s.id === userId ? { ...s, isOnDuty } : s));
     setMe(prev => prev && prev.id === userId ? { ...prev, isOnDuty } : prev);
+  }, []);
+
+  const generateTempPassword = useCallback(async (userId: string): Promise<string> => {
+    const data = await gql<{ generateTempPassword: string }>(M_GENERATE_TEMP_PASSWORD, { userId });
+    return data.generateTempPassword;
   }, []);
 
   const updateProductPrices = useCallback(async (
@@ -863,6 +947,20 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     setSuppliers(prev => prev.filter(s => s.id !== id));
   }, []);
 
+  const recordSupplierPayment = useCallback(async (invoiceId: string, amount: number, method: string, reference?: string, notes?: string): Promise<Invoice> => {
+    const data = await gql<{ recordSupplierPayment: Invoice }>(M_RECORD_SUPPLIER_PAYMENT, { invoiceId, amount, method, reference, notes });
+    const updatedInvoice = data.recordSupplierPayment;
+    setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, ...updatedInvoice } : inv));
+    refetchLedger();
+    return updatedInvoice;
+  }, [refetchLedger]);
+
+  const deleteInvoice = useCallback(async (invoiceId: string): Promise<void> => {
+    await gql(M_DELETE_INVOICE, { invoiceId });
+    setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
+    refetchLedger();
+  }, [refetchLedger]);
+
   const getProductsBySupplier = useCallback(async (supplierId: string): Promise<Product[]> => {
     const data = await gql<{ productsBySupplier: Product[] }>(
       Q_PRODUCTS_BY_SUPPLIER, { supplierId }
@@ -873,15 +971,15 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   return (
     <StoreContext.Provider value={{
       products, suppliers, sales, staff, customers, me,
-      prescriptions, purchases, expenses, ledger,
+      prescriptions, purchases, invoices, expenses, ledger,
       loadingProducts, loadingSuppliers, loadingSales, loadingStaff, loadingCustomers,
-      loadingPrescriptions, loadingPurchases, loadingExpenses, loadingLedger,
+      loadingPrescriptions, loadingPurchases, loadingInvoices, loadingExpenses, loadingLedger,
       error, syncStatus,
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
       refetchProducts, refetchSales, refetchStaff, refetchCustomers,
-      refetchPrescriptions, refetchPurchases, refetchExpenses, refetchLedger, refetchAll,
-      createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus,
+      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchLedger, refetchAll,
+      createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, generateTempPassword,
       updateProductPrices, updateProductFull,
       updateProductSupplier,
       bulkUpdateProductSupplier,
@@ -889,6 +987,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       refundSale,
       createProduct, deleteProduct, adjustProductStock,
       createSupplier, updateSupplier, deleteSupplier,
+      recordSupplierPayment, deleteInvoice,
     }}>
       {children}
     </StoreContext.Provider>

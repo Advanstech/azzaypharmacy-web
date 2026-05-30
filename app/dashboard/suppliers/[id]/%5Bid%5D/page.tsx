@@ -9,7 +9,7 @@ import {
   AlertCircle, DollarSign, Check, ChevronDown, LayoutGrid, List,
   Loader2, RefreshCw
 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { getSessionSafe } from '@/lib/supabase';
 import { AZZAY_PRODUCTS_RAW, getDistributedProducts } from '@/data/products';
 
 // Mock suppliers list for UI - in real app, fetch from API
@@ -29,7 +29,7 @@ const SUPPLIERS = [
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 async function fetchGraphQL(query: string, variables: any = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { session } = await getSessionSafe();
   const token = session?.access_token;
 
   const res = await fetch(`${API_URL}/graphql`, {

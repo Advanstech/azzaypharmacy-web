@@ -11,7 +11,7 @@ import {
   ArrowLeft, Mail, Phone, MapPin, Calendar, Award, Briefcase, Shield,
   Clock, Activity, Package, ShoppingCart, DollarSign, UserCheck,
   FileText, BarChart3, CalendarDays, Edit2, CheckCircle2, AlertCircle,
-  X, Save, Loader2, Building, ToggleLeft, ToggleRight
+  X, Save, Loader2, Building, ToggleLeft, ToggleRight, Key
 } from 'lucide-react';
 
 interface StaffMember {
@@ -178,12 +178,28 @@ export default function StaffDetailPage() {
   const [mounted, setMounted] = useState(false);
   const params = useParams();
   const staffId = params.id as string;
-  const { staff: liveStaff, loadingStaff, updateStaffProfile } = useStore();
+  const { staff: liveStaff, loadingStaff, updateStaffProfile, generateTempPassword } = useStore();
   const { addToast } = useToast();
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ role: '', position: '', branchId: '', isActive: true });
   const [isSaving, setIsSaving] = useState(false);
+  
+  const [generatingPassword, setGeneratingPassword] = useState(false);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+
+  const handleGeneratePassword = async () => {
+    if (!confirm("Are you sure you want to generate a new temporary password for this user?")) return;
+    setGeneratingPassword(true);
+    try {
+      const newPass = await generateTempPassword(staffId);
+      setTempPassword(newPass);
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Failed', message: err.message || 'Could not generate password', duration: 5000 });
+    } finally {
+      setGeneratingPassword(false);
+    }
+  };
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setMounted(true));
@@ -364,9 +380,37 @@ export default function StaffDetailPage() {
               <Mail size={14} />
               Send Message
             </button>
+            <button 
+              onClick={handleGeneratePassword}
+              disabled={generatingPassword}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all"
+              style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: `1px solid rgba(239,68,68,0.3)` }}>
+              {generatingPassword ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
+              Generate Password
+            </button>
           </div>
         </div>
       </div>
+
+      {tempPassword && (
+        <div className="p-6 rounded-2xl border border-blue-500/30 bg-blue-500/10 relative backdrop-blur-xl">
+          <button onClick={() => setTempPassword(null)} className="absolute top-4 right-4 text-blue-500 hover:text-blue-600 transition-colors">
+            <X size={20} />
+          </button>
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center shrink-0">
+              <Key size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-blue-500 mb-1">Temporary Password Generated</h3>
+              <p className="text-sm mb-3" style={{ color: card.text }}>Please securely share this temporary password with {getFullName(staff)}. They will be prompted to change it upon next login.</p>
+              <div className="px-4 py-3 rounded-lg inline-flex items-center gap-3 border border-blue-500/30" style={{ background: card.bg }}>
+                <code className="text-xl font-mono font-bold tracking-wider" style={{ color: card.text }}>{tempPassword}</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

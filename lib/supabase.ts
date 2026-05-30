@@ -11,15 +11,44 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// Handle stale refresh tokens — sign out and redirect to login
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'TOKEN_REFRESHED' && !session) {
-    supabase.auth.signOut();
+function isRefreshTokenError(message?: string): boolean {
+  if (!message) return false;
+  const text = message.toLowerCase();
+  return text.includes('refresh token') || text.includes('jwt expired');
+}
+
+export function clearSupabaseAuthStorage() {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const keysToDelete: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      if (key.startsWith('sb-') && key.includes('auth-token')) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // Ignore storage cleanup failures
   }
-  // Handle refresh token errors
+}
+
+export async function getSessionSafe() {
+  const { data, error } = await supabase.auth.getSession();
+
+  if (error && isRefreshTokenError(error.message)) {
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    clearSupabaseAuthStorage();
+    return { session: null, error };
+  }
+
+  return { session: data.session ?? null, error };
+}
+
+supabase.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
-    // Clear any stale data
-    localStorage.removeItem('supabase.auth.token');
-    localStorage.removeItem('supabase.auth.refreshToken');
+    clearSupabaseAuthStorage();
   }
 });
