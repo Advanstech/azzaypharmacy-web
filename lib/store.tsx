@@ -88,6 +88,7 @@ export interface Sale {
   refundReason?: string;
   refundedAt?: string;
   createdAt: string;
+  cashierId?: string;
   user?: { id: string; name: string; role: string };
   items: SaleItem[];
 }

@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { 
   Calendar, Clock, CheckCircle, AlertCircle, FileText, 
   Download, Printer, ArrowRight, UserCheck, BarChart3, TrendingUp,
-  XCircle, Search, Filter, ShieldCheck, CheckSquare, ListTodo, ClipboardCheck, History
+  XCircle, Search, Filter, ShieldCheck, CheckSquare, ListTodo, ClipboardCheck, History,
+  ChevronLeft, ChevronRight, CalendarSearch
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
@@ -28,6 +29,13 @@ export default function EndOfDayDashboardPage() {
   const [pastShifts, setPastShifts] = useState<any[]>([]);
   const [loadingPastShifts, setLoadingPastShifts] = useState(false);
 
+  // History pagination, search & filter
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyDateFilter, setHistoryDateFilter] = useState('');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('ALL');
+  const historyLimit = 5;
+
   const suggestedNotes = [
     "All balanced perfectly",
     "Shortage due to change issue",
@@ -38,8 +46,21 @@ export default function EndOfDayDashboardPage() {
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
-  // Derived personal stats
-  const mySales = todaySales.filter(s => s.user?.id === me?.id || (s as any).cashierId === me?.id);
+  // Derived personal stats — robust multi-field matching
+  const mySales = useMemo(() => {
+    if (!me) return [];
+    return todaySales.filter(s => {
+      // Match by user.id (cuid from cashier relation)
+      if (s.user?.id === me.id) return true;
+      // Match by supabaseId (for sales created before the JWT fix)
+      if (me.supabaseId && s.user?.id === me.supabaseId) return true;
+      // Match by cashierId if present on the sale object
+      if ((s as any).cashierId === me.id) return true;
+      if (me.supabaseId && (s as any).cashierId === me.supabaseId) return true;
+      return false;
+    });
+  }, [todaySales, me]);
+
   const myRevenue = mySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
   const myTransactions = mySales.length;
 
@@ -130,6 +151,45 @@ export default function EndOfDayDashboardPage() {
     setVerifiedStaff(prev => [...prev, id]);
   };
 
+  // ── History filtering & pagination ────────────────────────────────────────
+  const filteredShifts = useMemo(() => {
+    let result = pastShifts;
+
+    // Status filter
+    if (historyStatusFilter !== 'ALL') {
+      result = result.filter(s => s.status === historyStatusFilter);
+    }
+
+    // Date filter
+    if (historyDateFilter) {
+      result = result.filter(s => {
+        const shiftDate = new Date(s.createdAt).toISOString().split('T')[0];
+        return shiftDate === historyDateFilter;
+      });
+    }
+
+    // Text search (by branch name, notes, approver name)
+    if (historySearch.trim()) {
+      const q = historySearch.trim().toLowerCase();
+      result = result.filter(s =>
+        (s.branch?.name || '').toLowerCase().includes(q) ||
+        (s.notes || '').toLowerCase().includes(q) ||
+        (s.approvedBy?.name || '').toLowerCase().includes(q) ||
+        s.status.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [pastShifts, historyStatusFilter, historyDateFilter, historySearch]);
+
+  const historyTotalPages = Math.max(1, Math.ceil(filteredShifts.length / historyLimit));
+  const paginatedShifts = filteredShifts.slice((historyPage - 1) * historyLimit, historyPage * historyLimit);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [historyStatusFilter, historyDateFilter, historySearch]);
+
   const isDark = mounted && theme === 'dark';
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
@@ -175,9 +235,9 @@ export default function EndOfDayDashboardPage() {
                     <p className="text-sm" style={{ color: c.muted }}>No active sales sessions today</p>
                   </div>
                 ) : activeStaffStats.map((item) => (
-                  <div key={item.id} className="p-6 flex items-center justify-between hover:bg-white/5 transition-all">
+                  <div key={item.id} className="p-4 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-white/5 transition-all">
                     <div className="flex items-center gap-4">
-                      <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700 shrink-0">
                         <Clock size={24} className={item.status === 'ON DUTY' ? 'text-blue-400 animate-pulse' : 'text-amber-400'} />
                       </div>
                       <div>
@@ -267,10 +327,65 @@ export default function EndOfDayDashboardPage() {
 
           {/* Shift Reconciliation History */}
           <div className="rounded-[32px] border overflow-hidden backdrop-blur-xl shadow-sm" style={{ background: c.bg, borderColor: c.border }}>
-            <div className="px-6 py-5 border-b flex items-center gap-3" style={{ borderColor: c.border, background: isDark ? '#0F172A' : '#F8FAFC' }}>
-              <History size={18} className="text-blue-500" />
-              <h2 className="font-display font-bold text-sm uppercase tracking-widest" style={{ color: c.text }}>Shift Reconciliation History</h2>
+            <div className="px-4 md:px-6 py-5 border-b flex flex-col md:flex-row md:items-center gap-3 justify-between" style={{ borderColor: c.border, background: isDark ? '#0F172A' : '#F8FAFC' }}>
+              <div className="flex items-center gap-3">
+                <History size={18} className="text-blue-500" />
+                <h2 className="font-display font-bold text-sm uppercase tracking-widest" style={{ color: c.text }}>Shift Reconciliation History</h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black" style={{ background: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)', color: c.primary }}>
+                  {filteredShifts.length}
+                </span>
+              </div>
             </div>
+
+            {/* Filters Bar */}
+            <div className="px-4 md:px-6 py-3 border-b flex flex-col md:flex-row gap-3 items-stretch md:items-center" style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.3)' : 'rgba(248,250,252,0.5)' }}>
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: c.muted }} />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={e => setHistorySearch(e.target.value)}
+                  placeholder="Search by branch, notes, approver..."
+                  className="w-full pl-9 pr-4 py-2 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+                />
+              </div>
+              {/* Date Filter */}
+              <div className="relative">
+                <CalendarSearch className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: c.muted }} />
+                <input
+                  type="date"
+                  value={historyDateFilter}
+                  onChange={e => setHistoryDateFilter(e.target.value)}
+                  className="pl-9 pr-3 py-2 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+                />
+              </div>
+              {/* Status Filter */}
+              <select
+                value={historyStatusFilter}
+                onChange={e => setHistoryStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="PENDING">Pending</option>
+                <option value="APPROVED">Approved</option>
+                <option value="REJECTED">Rejected</option>
+              </select>
+              {/* Clear filters */}
+              {(historySearch || historyDateFilter || historyStatusFilter !== 'ALL') && (
+                <button
+                  onClick={() => { setHistorySearch(''); setHistoryDateFilter(''); setHistoryStatusFilter('ALL'); }}
+                  className="text-[10px] font-bold px-3 py-2 rounded-xl transition-colors"
+                  style={{ background: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.1)', color: '#EF4444' }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -289,21 +404,23 @@ export default function EndOfDayDashboardPage() {
                         Loading past shift reports...
                       </td>
                     </tr>
-                  ) : pastShifts.length === 0 ? (
+                  ) : paginatedShifts.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-5 py-8 text-center text-xs" style={{ color: c.muted }}>
-                        No past shift reconciliations recorded.
+                        {pastShifts.length === 0 
+                          ? 'No past shift reconciliations recorded.' 
+                          : 'No results match your filters.'}
                       </td>
                     </tr>
                   ) : (
-                    pastShifts.map((shift, idx) => {
+                    paginatedShifts.map((shift, idx) => {
                       const dateText = new Date(shift.createdAt).toLocaleDateString();
                       const timeText = new Date(shift.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       const totalDeclared = Number(shift.physicalCash) + Number(shift.digitalPayments);
                       const diff = Number(shift.discrepancy);
                       
                       return (
-                        <tr key={shift.id} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/30" style={{ borderBottom: idx < pastShifts.length - 1 ? `1px solid ${c.border}` : 'none' }}>
+                        <tr key={shift.id} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/30" style={{ borderBottom: idx < paginatedShifts.length - 1 ? `1px solid ${c.border}` : 'none' }}>
                           <td className="px-5 py-4">
                             <p className="text-xs font-bold" style={{ color: c.text }}>{dateText}</p>
                             <p className="text-[10px]" style={{ color: c.muted }}>{timeText} · {shift.branch?.name}</p>
@@ -322,7 +439,7 @@ export default function EndOfDayDashboardPage() {
                             </span>
                             {shift.notes && (
                               <p className="text-[10px] italic mt-0.5 truncate max-w-[150px]" title={shift.notes} style={{ color: c.muted }}>
-                                "{shift.notes}"
+                                &quot;{shift.notes}&quot;
                               </p>
                             )}
                           </td>
@@ -345,6 +462,33 @@ export default function EndOfDayDashboardPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination */}
+            {historyTotalPages > 1 && (
+              <div className="px-4 md:px-6 py-3 border-t flex justify-between items-center" style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC' }}>
+                <p className="text-xs" style={{ color: c.muted }}>
+                  Page {historyPage} of {historyTotalPages} · {filteredShifts.length} records
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                    disabled={historyPage === 1}
+                    className="p-1.5 rounded-lg border hover:bg-slate-500/10 disabled:opacity-40 transition-all"
+                    style={{ borderColor: c.border, color: c.text }}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <button
+                    onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
+                    disabled={historyPage === historyTotalPages}
+                    className="p-1.5 rounded-lg border hover:bg-slate-500/10 disabled:opacity-40 transition-all"
+                    style={{ borderColor: c.border, color: c.text }}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>

@@ -171,7 +171,7 @@ export const Q_SALES = `
       id totalAmount amountPaid change paymentMethod
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
-      customerType notes isRefunded refundReason refundedAt createdAt
+      customerType notes isRefunded refundReason refundedAt createdAt cashierId
       user { id name role }
       items {
         id quantity unitPrice total batchNo
