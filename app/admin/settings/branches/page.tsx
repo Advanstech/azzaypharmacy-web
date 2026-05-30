@@ -282,7 +282,7 @@ export default function BranchesPage() {
               </div>
               
               <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.muted }}>Branch Name *</label>
                     <input 
@@ -319,7 +319,7 @@ export default function BranchesPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.muted }}>Town</label>
                     <input 
@@ -355,7 +355,7 @@ export default function BranchesPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.muted }}>Manager Name</label>
                     <input 
@@ -380,7 +380,7 @@ export default function BranchesPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase tracking-wider" style={{ color: card.muted }}>License Number</label>
                     <input 

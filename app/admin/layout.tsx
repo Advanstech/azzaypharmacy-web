@@ -22,7 +22,8 @@ import {
   ArrowLeft,
   Truck,
   Settings as SettingsIcon,
-  ShieldCheck
+  ShieldCheck,
+  Menu
 } from 'lucide-react';
 
 const adminItems = [
@@ -43,6 +44,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -115,8 +117,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }}
     >
       {/* ── SIDEBAR ──────────────────────────────────────────────────── */}
+      {/* Mobile Backdrop */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/50 md:hidden backdrop-blur-sm"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+      
       <aside
-        className="relative flex flex-col border-r backdrop-blur-xl transition-all duration-300"
+        className={`fixed md:relative z-50 h-full flex flex-col border-r backdrop-blur-xl transition-all duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
         style={{
           width: collapsed ? '80px' : '280px',
           background: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(255, 255, 255, 0.9)',
@@ -216,6 +226,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => setMobileMenuOpen(false)}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl font-ui text-sm transition-all group"
                 style={{
                   background: isActive
@@ -341,12 +352,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
         <header
-          className="h-16 shrink-0 border-b backdrop-blur-xl flex items-center justify-between px-6 gap-6"
+          className="h-16 shrink-0 border-b backdrop-blur-xl flex items-center justify-between px-4 md:px-6 gap-3 md:gap-6"
           style={{
             background: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(255, 255, 255, 0.8)',
             borderColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.15)',
           }}
         >
+          {/* Mobile Menu Toggle */}
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="md:hidden p-2 -ml-2 rounded-lg"
+            style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
+          >
+            <Menu size={24} />
+          </button>
+
           {/* Left: Title */}
           <div className="flex flex-col min-w-max">
             <h1
@@ -387,7 +407,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-6 pb-24">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24">
           <StoreProvider token={session?.access_token}>
             <PageTransition>{children}</PageTransition>
           </StoreProvider>

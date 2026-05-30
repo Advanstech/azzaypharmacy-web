@@ -117,7 +117,7 @@ export default function OrganizationPage() {
           </div>
 
           {/* Country & Currency */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label
                 className="block text-sm font-medium mb-2"
@@ -180,7 +180,7 @@ export default function OrganizationPage() {
           </div>
 
           {/* Contact Info */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label
                 className="block text-sm font-medium mb-2"
