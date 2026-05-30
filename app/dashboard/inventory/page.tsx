@@ -312,7 +312,9 @@ export default function InventoryPage() {
     }
   };
 
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/graphql', '') || 'http://localhost:4000';
   const invoiceAnalyzeEndpoints = [
+    `${apiBaseUrl}/api/invoice/analyze`,
     'http://127.0.0.1:4000/api/invoice/analyze',
     'http://localhost:4000/api/invoice/analyze',
   ];
