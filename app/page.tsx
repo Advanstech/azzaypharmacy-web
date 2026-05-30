@@ -67,7 +67,7 @@ function StaffSelectorModal({
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
             }}
           >
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-xl font-bold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>Select Your Profile</h2>
@@ -382,7 +382,7 @@ function PasswordChangeModal({
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
             }}
           >
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-xl font-bold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>
@@ -562,7 +562,7 @@ function ForgotPasswordModal({
               boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
             }}
           >
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h2 className="text-xl font-bold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>
@@ -906,7 +906,7 @@ export default function LoginPage() {
           <div className="h-[2px] w-full"
             style={{ background: isDark ? 'linear-gradient(90deg, transparent, #00D9FF, #A78BFA, transparent)' : 'linear-gradient(90deg, transparent, #0EA5E9, #8B5CF6, transparent)' }} />
 
-          <div className="p-8">
+          <div className="p-6 md:p-8">
             {/* Logo */}
             <motion.div className="flex flex-col items-center mb-8"
               initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.5 }}>

@@ -97,6 +97,7 @@ function POSInner() {
   const [showNumpad, setShowNumpad] = useState(false);
   const [previewProduct, setPreviewProduct] = useState<any>(null);
   const [previewSupplier, setPreviewSupplier] = useState<string | null>(null);
+  const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
   // AI Drug Intelligence State
@@ -361,16 +362,16 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                  {me?.name ? me.name.charAt(0).toUpperCase() : 'A'}
                </span>
             </div>
-            <div className="flex items-center text-sm font-semibold tracking-wide">
+            <div className="hidden sm:flex items-center text-sm font-semibold tracking-wide">
               <span>{me?.name || 'Azzay Pharmacy'}</span>
               <span className="mx-2 opacity-50">•</span>
-              <span className="font-light">{me?.position || me?.role || 'Cashier'}</span>
+              <span className="font-light truncate max-w-[100px]">{me?.position || me?.role || 'Cashier'}</span>
               <span className="mx-2 opacity-50">•</span>
-              <span className="font-light">{me?.role === 'SE_ADMIN' ? 'Main Branch' : (me?.branch?.name || 'Main Branch')}</span>
+              <span className="font-light truncate max-w-[120px]">{me?.role === 'SE_ADMIN' ? 'Main Branch' : (me?.branch?.name || 'Main Branch')}</span>
             </div>
           </div>
 
-          <div className="h-4 w-px bg-white/20 mx-2"></div>
+          <div className="hidden sm:block h-4 w-px bg-white/20 mx-2"></div>
 
           <button 
             onClick={() => router.push('/dashboard')}
@@ -390,14 +391,14 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         <div className="flex items-center gap-4">
           <button 
             onClick={() => refetchAll()} 
-            className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-white/30 hover:bg-white/10 transition-colors text-xs font-medium"
+            className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-white/30 hover:bg-white/10 transition-colors text-[10px] sm:text-xs font-medium"
           >
             <Wifi size={14} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
-            {syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}
+            <span className="hidden sm:inline">{syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}</span>
           </button>
           <div className="text-right flex flex-col items-end">
-            <p className="font-mono font-bold text-sm leading-none">{formatTime(now)}</p>
-            <p className="text-[10px] opacity-80 mt-0.5">{now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
+            <p className="font-mono font-bold text-xs sm:text-sm leading-none">{formatTime(now)}</p>
+            <p className="hidden sm:block text-[10px] opacity-80 mt-0.5">{now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
           </div>
         </div>
       </header>
@@ -562,7 +563,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 px-2">
+              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-2 lg:gap-3 px-2 pb-24 lg:pb-4">
                 {filteredProducts.map(p => (
                   <button 
                     key={p.id} onClick={() => addToCart(p)}
@@ -576,7 +577,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                   >
                     <div className="flex w-full h-full p-2.5 gap-4 items-center">
                       {/* Left: Image Container */}
-                      <div className="w-24 h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden" style={{ background: isDark ? 'rgba(30,41,59,0.7)' : '#F1F5F9' }}>
+                      <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden" style={{ background: isDark ? 'rgba(30,41,59,0.7)' : '#F1F5F9' }}>
                         <img 
                           src={getProductImage(p)} 
                           alt={p.name} 
@@ -627,13 +628,31 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         </div>
 
         {/* Right: Cart & Preview Container */}
-        <div className="w-[380px] xl:w-[420px] shrink-0 flex flex-col z-20 border-l relative overflow-hidden" style={{ borderColor: c.border, background: c.card }}>
+        {mobileCartOpen && (
+          <div 
+            className="fixed inset-0 bg-black/60 z-40 lg:hidden backdrop-blur-sm transition-opacity"
+            onClick={() => setMobileCartOpen(false)}
+          />
+        )}
+        <div 
+          className={`
+            fixed inset-y-0 right-0 z-50 w-full sm:w-[380px] lg:relative lg:flex flex-col border-l transition-transform duration-300 shadow-2xl lg:shadow-none
+            ${mobileCartOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
+            xl:w-[420px] shrink-0 overflow-hidden
+          `} 
+          style={{ borderColor: c.border, background: c.card }}
+        >
           <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: c.border }}>
             <div className="flex items-center gap-2">
               <ShoppingCart size={18} style={{ color: c.text }} />
               <h2 className="font-bold text-sm" style={{ color: c.text }}>Current Sale</h2>
             </div>
-            <button onClick={() => setCart([])} className="text-[10px] font-bold text-red-500 hover:underline">Clear Cart</button>
+            <div className="flex items-center gap-4">
+              <button onClick={() => setCart([])} className="text-[10px] font-bold text-red-500 hover:underline">Clear Cart</button>
+              <button onClick={() => setMobileCartOpen(false)} className="lg:hidden p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white">
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           {/* CUSTOMER (optional) Section */}
@@ -1018,8 +1037,23 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </>
             )}
           </div>
-
         </div>
+
+        {/* Mobile FAB */}
+        <button
+          onClick={() => setMobileCartOpen(true)}
+          className="lg:hidden fixed bottom-6 right-6 z-30 p-4 rounded-full bg-[#059669] text-white shadow-xl flex items-center justify-center gap-3 hover:scale-105 transition-transform"
+        >
+          <div className="relative">
+            <ShoppingCart size={24} />
+            {cart.length > 0 && (
+              <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold flex items-center justify-center border-2 border-[#059669]">
+                {cart.reduce((sum, item) => sum + item.quantity, 0)}
+              </span>
+            )}
+          </div>
+          <span className="font-bold font-mono">GH₵ {total.toFixed(2)}</span>
+        </button>
       </main>
 
       {/* Customer Search/Create Modal */}
