@@ -228,11 +228,13 @@ export interface Invoice {
       id: string;
       quantity: number;
       unitCost: number;
+      sellingPrice?: number;
       total: number;
       product: {
         id: string;
         name: string;
-        basePrice: number;
+        costPrice?: number;
+        basePrice?: number;
       }
     }[];
   };
@@ -624,8 +626,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchExpenses = useCallback(async () => {
     setLoadingExpenses(true);
     try {
-      const data = await gql<{ expenses: Expense[] }>(Q_EXPENSES);
-      setExpenses(data.expenses ?? []);
+      const data = await gql<{ expenses: { items: Expense[] } }>(Q_EXPENSES);
+      setExpenses(data.expenses?.items ?? []);
     } catch (e: any) {
       console.warn('[store] expenses fetch failed:', e.message);
     } finally {

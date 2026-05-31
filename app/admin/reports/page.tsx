@@ -7,9 +7,13 @@ import { FileText, Download, BarChart3, Package, DollarSign, Users, Calendar, Ch
 
 const CATEGORIES = ['All', 'Sales', 'Inventory', 'Staff', 'Financial'];
 
-function downloadCSV(filename: string, rows: string[][]) {
-  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
+  const csv = rows.map(r => r.map(c => {
+    if (c == null) return '""';
+    const str = String(c).replace(/"/g, '""');
+    return `"${str}"`;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url; a.download = filename; a.click();
@@ -29,9 +33,29 @@ export default function ReportsPage() {
 
   // Computed report summaries
   const todaySales = useMemo(() => sales.filter(s => new Date(s.createdAt).toISOString().split('T')[0] === today), [sales, today]);
+  const monthlySales = useMemo(() => {
+    const now = new Date();
+    return sales.filter(s => {
+      const d = new Date(s.createdAt);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+  }, [sales]);
+  const monthlyRevenue = useMemo(() => monthlySales.reduce((sum, s) => sum + s.totalAmount, 0), [monthlySales]);
+
   const lowStock = useMemo(() => products.filter(p => p.stockQuantity <= 10), [products]);
+  
   const totalRevenue = useMemo(() => sales.reduce((sum, s) => sum + s.totalAmount, 0), [sales]);
-  const totalCogs = totalRevenue * 0.5;
+  const totalCogs = useMemo(() => {
+    return sales.reduce((sum, s) => {
+      const saleCogs = s.items.reduce((itemSum, item) => {
+        const product = products.find(p => p.id === item.product.id);
+        const cost = product ? product.costPrice : (item.unitPrice * 0.5); // Fallback if product not found
+        return itemSum + (cost * item.quantity);
+      }, 0);
+      return sum + saleCogs;
+    }, 0);
+  }, [sales, products]);
+  
   const netProfit = totalRevenue - totalCogs;
 
   const REPORTS = [
@@ -57,19 +81,19 @@ export default function ReportsPage() {
     {
       id: 'sales-monthly',
       title: 'Monthly Revenue Summary',
-      desc: `${sales.length} total transactions · GH₵ ${totalRevenue.toFixed(2)} total revenue`,
+      desc: `${monthlySales.length} transactions this month · GH₵ ${monthlyRevenue.toFixed(2)} revenue`,
       icon: DollarSign, color: '#10B981', category: 'Sales',
       lastGenerated: today,
       onExport: () => {
         const byMethod: Record<string, number> = {};
-        sales.forEach(s => { byMethod[s.paymentMethod] = (byMethod[s.paymentMethod] || 0) + s.totalAmount; });
+        monthlySales.forEach(s => { byMethod[s.paymentMethod] = (byMethod[s.paymentMethod] || 0) + s.totalAmount; });
         const rows = [
           ['Payment Method', 'Total Amount', 'Transaction Count'],
           ...Object.entries(byMethod).map(([m, a]) => [
             m, a.toFixed(2),
-            String(sales.filter(s => s.paymentMethod === m).length),
+            String(monthlySales.filter(s => s.paymentMethod === m).length),
           ]),
-          ['TOTAL', totalRevenue.toFixed(2), String(sales.length)],
+          ['TOTAL', monthlyRevenue.toFixed(2), String(monthlySales.length)],
         ];
         downloadCSV(`monthly-revenue-${today}.csv`, rows);
       },
@@ -140,7 +164,7 @@ export default function ReportsPage() {
         const rows = [
           ['Account', 'Amount (GH₵)'],
           ['Total Revenue', totalRevenue.toFixed(2)],
-          ['Cost of Goods Sold (50%)', totalCogs.toFixed(2)],
+          ['Cost of Goods Sold (Actuals)', totalCogs.toFixed(2)],
           ['Gross Profit', (totalRevenue - totalCogs).toFixed(2)],
           ['Gross Margin %', totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) + '%' : '0%'],
           ['Net Profit', netProfit.toFixed(2)],

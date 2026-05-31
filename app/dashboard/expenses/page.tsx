@@ -10,7 +10,7 @@ import {
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
 import { gql } from '@/lib/gql';
-import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE } from '@/lib/gql';
+import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
 
 export default function ExpensesPage() {
   const { theme } = useTheme();
@@ -36,6 +36,9 @@ export default function ExpensesPage() {
 
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const limit = 10;
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
@@ -44,21 +47,33 @@ export default function ExpensesPage() {
 
   useEffect(() => {
     fetchExpenses();
-  }, [me]);
+  }, [me, page]);
 
   const fetchExpenses = async () => {
     try {
-      const data = await gql<any>(Q_AUTHORIZATIONS_EXPENSE);
-      // Pharmacists only see their own, managers see all (already handled mostly, but we'll filter here for pharmacists if backend doesn't)
-      let allExp = data.allExpenses || [];
+      const data = await gql<any>(Q_AUTHORIZATIONS_EXPENSE, { page, limit });
+      const response = data.expenses || { items: [], totalPages: 1 };
+      
+      let allExp = response.items || [];
       if (!isManager) {
         allExp = allExp.filter((e: any) => e.requestedBy?.id === me?.id);
       }
       setExpenses(allExp);
+      setTotalPages(response.totalPages || 1);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateStatus = async (id: string, status: string) => {
+    try {
+      await gql(M_UPDATE_EXPENSE_STATUS, { id, status });
+      fetchExpenses(); // Re-fetch to update status and approver name
+    } catch (err) {
+      console.error('Failed to update status', err);
+      alert('Failed to update status');
     }
   };
 
@@ -155,6 +170,11 @@ export default function ExpensesPage() {
                   </div>
                   <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
                     {e.category?.name || 'General'} • Requested by <span className="text-emerald-400">{e.requestedBy?.name || 'Unknown'}</span>
+                    {e.status === 'APPROVED' && e.approvedBy && (
+                      <span className="ml-2 border-l pl-2" style={{ borderColor: c.border }}>
+                        Approved by <span style={{ color: c.primary }}>{e.approvedBy.name}</span>
+                      </span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -162,9 +182,34 @@ export default function ExpensesPage() {
                 <div className="text-right">
                   <p className="text-sm font-black" style={{ color: c.danger }}>- GH₵ {Number(e.amount).toFixed(2)}</p>
                 </div>
+                {isManager && e.status === 'PENDING' && (
+                  <div className="flex gap-2">
+                    <button onClick={() => handleUpdateStatus(e.id, 'APPROVED')} className="p-1 rounded-md hover:bg-emerald-500/20 text-emerald-500 transition-colors">
+                      <CheckCircle size={18} />
+                    </button>
+                    <button onClick={() => handleUpdateStatus(e.id, 'REJECTED')} className="p-1 rounded-md hover:bg-rose-500/20 text-rose-500 transition-colors">
+                      <XCircle size={18} />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))}
+        </div>
+        <div className="p-4 border-t flex items-center justify-between" style={{ borderColor: c.border }}>
+          <button 
+            disabled={page <= 1}
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            className="text-xs font-bold uppercase tracking-widest disabled:opacity-50" style={{ color: c.primary }}>
+            Previous
+          </button>
+          <span className="text-xs font-bold" style={{ color: c.muted }}>Page {page} of {totalPages}</span>
+          <button 
+            disabled={page >= totalPages || totalPages === 0}
+            onClick={() => setPage(p => p + 1)}
+            className="text-xs font-bold uppercase tracking-widest disabled:opacity-50" style={{ color: c.primary }}>
+            Next
+          </button>
         </div>
       </div>
       {/* Request Modal */}

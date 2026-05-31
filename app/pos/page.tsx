@@ -608,7 +608,10 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                     </div>
 
                     {/* Rightmost Add Button - Positioned absolute to match design */}
-                    <div className="absolute bottom-3 right-3 flex flex-col justify-end">
+                    <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
+                      <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase ${p.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
+                        {p.requiresRx ? 'POM' : 'OTC'}
+                      </span>
                       <div className="px-3 py-1.5 rounded-full bg-[#059669] text-white flex items-center gap-1 group-hover:bg-[#047857] transition-colors shadow-sm">
                         {cart.find(i => i.product.id === p.id) ? (
                           <span className="font-bold text-xs">{cart.find(i => i.product.id === p.id)?.quantity}</span>

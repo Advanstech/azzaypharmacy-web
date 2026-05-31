@@ -157,6 +157,7 @@ export default function InvoiceDetailPage() {
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Product Name</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Quantity</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Unit Cost</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Selling Price</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Cost Price</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Total Cost</th>
               </tr>
@@ -178,8 +179,11 @@ export default function InvoiceDetailPage() {
                     <td className="px-6 py-4 text-right font-medium text-sm" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
                       GH₵ {item.unitCost.toFixed(2)}
                     </td>
+                    <td className="px-6 py-4 text-right font-bold text-sm text-green-500">
+                      {item.sellingPrice ? `GH₵ ${Number(item.sellingPrice).toFixed(2)}` : 'N/A'}
+                    </td>
                     <td className="px-6 py-4 text-right font-bold text-sm text-blue-500">
-                      {item.product?.basePrice ? `GH₵ ${Number(item.product.basePrice).toFixed(2)}` : 'N/A'}
+                      {item.product?.costPrice ? `GH₵ ${Number(item.product.costPrice).toFixed(2)}` : 'N/A'}
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-sm" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
                       GH₵ {item.total.toFixed(2)}
@@ -197,7 +201,7 @@ export default function InvoiceDetailPage() {
             {invoice.purchase?.items && invoice.purchase.items.length > 0 && (
               <tfoot>
                 <tr style={{ background: isDark ? '#0F172A' : '#F8FAFC' }}>
-                  <td colSpan={4} className="px-6 py-4 text-right font-bold text-sm uppercase tracking-wider" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>
+                  <td colSpan={5} className="px-6 py-4 text-right font-bold text-sm uppercase tracking-wider" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>
                     Subtotal
                   </td>
                   <td className="px-6 py-4 text-right font-black text-base" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>

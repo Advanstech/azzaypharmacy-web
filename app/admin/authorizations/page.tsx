@@ -5,7 +5,7 @@ import { useTheme } from 'next-themes';
 import { ShieldCheck, CheckCircle, XCircle, Search, ChevronLeft, ChevronRight, FileText, DollarSign, Clock, X, Loader2, Edit3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gql } from '@/lib/gql';
-import { Q_AUTHORIZATIONS_SHIFT, Q_AUTHORIZATIONS_EXPENSE, M_APPROVE_SHIFT, M_REJECT_SHIFT, M_APPROVE_EXPENSE, M_REJECT_EXPENSE } from '@/lib/gql';
+import { Q_AUTHORIZATIONS_SHIFT, Q_AUTHORIZATIONS_EXPENSE, M_APPROVE_SHIFT, M_REJECT_SHIFT, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
 
 export default function AdminAuthorizationsPage() {
   const { theme } = useTheme();
@@ -30,10 +30,10 @@ export default function AdminAuthorizationsPage() {
     try {
       const [shiftData, expData] = await Promise.all([
         gql<any>(Q_AUTHORIZATIONS_SHIFT),
-        gql<any>(Q_AUTHORIZATIONS_EXPENSE)
+        gql<any>(Q_AUTHORIZATIONS_EXPENSE, { page: 1, limit: 1000 })
       ]);
       setShifts(shiftData.shiftReconciliations || []);
-      setExpenses(expData.allExpenses || []);
+      setExpenses(expData.expenses?.items || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -90,7 +90,7 @@ export default function AdminAuthorizationsPage() {
 
   const handleApproveExpense = async (id: string) => {
     try {
-      await gql(M_APPROVE_EXPENSE, { id });
+      await gql(M_UPDATE_EXPENSE_STATUS, { id, status: 'APPROVED' });
       setExpenses(prev => prev.map(e => e.id === id ? { ...e, status: 'APPROVED' } : e));
     } catch (err) {
       alert('Error approving expense');
@@ -99,7 +99,7 @@ export default function AdminAuthorizationsPage() {
 
   const handleRejectExpense = async (id: string) => {
     try {
-      await gql(M_REJECT_EXPENSE, { id });
+      await gql(M_UPDATE_EXPENSE_STATUS, { id, status: 'REJECTED' });
       setExpenses(prev => prev.map(e => e.id === id ? { ...e, status: 'REJECTED' } : e));
     } catch (err) {
       alert('Error rejecting expense');

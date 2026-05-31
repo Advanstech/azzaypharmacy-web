@@ -322,115 +322,75 @@ export default function InvoicesPage() {
         }));
       }
 
+      setManualData({
+        supplierId: extractedSupplierId || '',
+        invoiceNumber: extractedInvoiceNumber || `AI-${Date.now()}`,
+        issueDate: extractedIssueDate ? toIsoDateOrFallback(extractedIssueDate).split('T')[0] : new Date().toISOString().split('T')[0],
+        dueDate: '',
+      });
+      
       if (!extractedSupplierId && extractedSupplierName) {
-        const createdSupplier = await createSupplier({
-          name: extractedSupplierName,
-          categories: ['GENERAL'],
-        });
-        extractedSupplierId = createdSupplier.id;
+        setManualSupplierDraft(extractedSupplierName);
+        setManualCreateSupplierOnSubmit(true);
+      } else {
+        setManualSupplierDraft('');
+        setManualCreateSupplierOnSubmit(false);
       }
 
-      // Validate required fields after AI extraction
-      if (!extractedSupplierId) {
-        addToast({
-          type: 'warning',
-          title: 'Supplier Not Detected',
-          message: 'Could not identify supplier from document and could not create one automatically. Please use Manual Entry for this invoice.',
-          duration: 6000,
-        });
-        setShowUploadModal(false);
-        setShowManualLedger(true);
-        return;
-      }
+      const newManualItems = items.map((item, index) => {
+        let pId = item.productId;
+        let createOnSubmit = false;
+        let existingSellingPrice = 0;
 
-      const normalizedItems: any[] = [];
-
-      for (const item of items) {
-        let resolvedProductId = item.productId;
-        const itemName = (item.name || '').trim();
-
-        if (!resolvedProductId && itemName) {
+        if (!pId && item.name) {
           const existingProduct = products.find((p: any) => {
             const n = (p.name || '').toLowerCase();
-            const d = itemName.toLowerCase();
+            const d = item.name.toLowerCase();
             return n.includes(d) || d.includes(n);
           });
 
           if (existingProduct?.id) {
-            resolvedProductId = existingProduct.id;
+            pId = existingProduct.id;
+            existingSellingPrice = existingProduct.sellingPrice || 0;
           } else {
-            const createdProduct = await createProduct({
-              name: itemName,
-              category: 'MISCELLANEOUS',
-              costPrice: Math.max(0, Number(item.unitCost) || 0),
-              sellingPrice: Math.max(0, Number(item.unitCost) || 0) * 1.3,
-              stockQuantity: 0,
-              supplierId: extractedSupplierId,
-              dosageForm: 'OTHER',
-            });
-            resolvedProductId = createdProduct.id;
+            createOnSubmit = true;
           }
+        } else if (pId) {
+           const existingProduct = products.find((p: any) => p.id === pId);
+           if (existingProduct) {
+             existingSellingPrice = existingProduct.sellingPrice || 0;
+           }
         }
 
-        if (!resolvedProductId) continue;
+        const calculatedSellingPrice = existingSellingPrice > 0 
+          ? existingSellingPrice 
+          : Math.max(0, Number(item.unitCost) || 0) * 1.3;
 
-        normalizedItems.push({
-          productId: resolvedProductId,
-          quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
+        return {
+          id: Date.now().toString() + index,
+          productId: pId,
+          productName: item.name || '',
+          createProductOnSubmit: createOnSubmit,
+          quantity: item.quantity || 1,
           unitCost: Math.max(0, Number(item.unitCost) || 0),
-          batchNo: item.batchNo || `BATCH-${Date.now()}`,
-          expiryDate: item.expiryDate ? toIsoDateOrFallback(item.expiryDate) : new Date(Date.now() + 365 * 86400000).toISOString(),
-        });
-      }
+          sellingPrice: Number(calculatedSellingPrice.toFixed(2)),
+          batchNo: item.batchNo || '',
+          expiryDate: item.expiryDate ? toIsoDateOrFallback(item.expiryDate).split('T')[0] : '',
+        };
+      });
 
-      if (!extractedInvoiceNumber) {
-        extractedInvoiceNumber = `AI-${Date.now()}`;
-      }
+      setManualLineItems(newManualItems);
 
-      if (normalizedItems.length === 0) {
-        addToast({
-          type: 'warning',
-          title: 'No Usable Line Items',
-          message: 'AI did not produce usable line items and auto-create failed. Please use Manual Entry for this invoice.',
-          duration: 6000,
-        });
-        setShowUploadModal(false);
-        setShowManualLedger(true);
-        return;
-      }
-
-      // Create the invoice using GraphQL mutation
-      const payload = {
-        branchId,
-        supplierId: extractedSupplierId,
-        invoiceNo: extractedInvoiceNumber,
-        invoiceDate: toIsoDateOrFallback(extractedIssueDate),
-        dueDate: undefined,
-        items: normalizedItems,
-        tax: 0,
-        notes: `AI-powered invoice upload${extractedTotal > 0 ? ` · Extracted total: GH₵${extractedTotal.toFixed(2)}` : ''}`,
-      };
-
-      console.log('📤 [AI_UPLOAD] Creating invoice with payload:', payload);
-      
-      // Call the receiveInvoice mutation
-      await gql(M_RECEIVE_INVOICE, payload);
-      
-      console.log('✅ [AI_UPLOAD] Invoice created successfully');
       addToast({
         type: 'success',
-        title: 'Invoice Processed',
-        message: 'Invoice uploaded and processed successfully.',
+        title: 'AI Processing Complete',
+        message: 'Please review the extracted items, set selling prices, and submit.',
         duration: 5000,
       });
-      
-      if (me?.branchId) {
-        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: me.branchId });
-        setInvoiceRecords(data.invoices ?? []);
-      }
-      await refetchPurchases();
+
       setShowUploadModal(false);
       setUploadData({ file: null });
+      setShowManualLedger(true);
     } catch (error: any) {
       console.error('❌ [AI_UPLOAD] Upload failed:', error);
       addToast({
@@ -452,6 +412,7 @@ export default function InvoicesPage() {
       createProductOnSubmit: false,
       quantity: 1,
       unitCost: 0,
+      sellingPrice: 0,
       batchNo: '',
       expiryDate: '',
     }]);
@@ -561,6 +522,7 @@ export default function InvoicesPage() {
           productId: resolvedProductId,
           quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
           unitCost: Math.max(0, Number(item.unitCost) || 0),
+          sellingPrice: Math.max(0, Number(item.sellingPrice) || 0),
           batchNo: item.batchNo || `BATCH-${Date.now()}`,
           expiryDate: item.expiryDate ? toIsoDateOrFallback(item.expiryDate) : new Date(Date.now() + 365 * 86400000).toISOString(),
         });
@@ -1025,7 +987,7 @@ export default function InvoicesPage() {
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {manualLineItems.map((item) => (
                       <div key={item.id} className="p-3 rounded-xl border" style={{ background: card.inputBg, borderColor: card.border }}>
-                        <div className="grid grid-cols-5 gap-2 mb-2">
+                        <div className="grid grid-cols-6 gap-2 mb-2">
                           <div className="col-span-2">
                             <select 
                               value={item.productId} 
@@ -1083,6 +1045,16 @@ export default function InvoicesPage() {
                               value={item.unitCost} 
                               onChange={e => updateManualLineItem(item.id, 'unitCost', parseFloat(e.target.value))}
                               placeholder="Unit Cost" 
+                              className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none" 
+                              style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border, color: card.text }} 
+                            />
+                          </div>
+                          <div>
+                            <input 
+                              type="number" 
+                              value={item.sellingPrice} 
+                              onChange={e => updateManualLineItem(item.id, 'sellingPrice', parseFloat(e.target.value))}
+                              placeholder="Sell Price" 
                               className="w-full px-3 py-2 rounded-lg text-xs focus:outline-none" 
                               style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border, color: card.text }} 
                             />

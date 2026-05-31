@@ -1130,7 +1130,7 @@ export default function InventoryPage() {
       )}
 
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
           <div className="w-full max-w-3xl rounded-2xl border overflow-hidden shadow-2xl transition-all" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
             
             {/* Header */}

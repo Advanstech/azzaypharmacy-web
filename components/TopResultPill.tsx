@@ -89,18 +89,23 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
 
       {/* Add to Cart Button */}
       {onAddToCart && (
-        <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onAddToCart(product);
-          }}
-          className="flex-shrink-0 p-2 rounded-lg transition-all hover:scale-110 active:scale-95"
-          style={{ background: '#22c55e', color: '#fff' }}
-          title="Add to cart"
-        >
-          <Plus size={20} />
-        </button>
+        <div className="flex flex-col items-end gap-1.5">
+          <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase ${product.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
+            {product.requiresRx ? 'POM' : 'OTC'}
+          </span>
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onAddToCart(product);
+            }}
+            className="flex-shrink-0 p-2 rounded-lg transition-all hover:scale-110 active:scale-95"
+            style={{ background: '#22c55e', color: '#fff' }}
+            title="Add to cart"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
       )}
     </div>
   );

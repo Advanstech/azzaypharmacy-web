@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -178,7 +178,7 @@ export default function StaffDetailPage() {
   const [mounted, setMounted] = useState(false);
   const params = useParams();
   const staffId = params.id as string;
-  const { staff: liveStaff, loadingStaff, updateStaffProfile, generateTempPassword } = useStore();
+  const { staff: liveStaff, loadingStaff, updateStaffProfile, generateTempPassword, sales } = useStore();
   const { addToast } = useToast();
 
   const [showEditModal, setShowEditModal] = useState(false);
@@ -187,6 +187,9 @@ export default function StaffDetailPage() {
   
   const [generatingPassword, setGeneratingPassword] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  
+  const [activityPage, setActivityPage] = useState(1);
+  const ITEMS_PER_PAGE = 5;
 
   const handleGeneratePassword = async () => {
     if (!confirm("Are you sure you want to generate a new temporary password for this user?")) return;
@@ -209,7 +212,25 @@ export default function StaffDetailPage() {
 
   const liveStaffMember = liveStaff.find(s => s.id === staffId);
   const staff = liveStaffMember ?? STAFF.find(s => s.id === staffId);
-  const activities = ACTIVITIES[staffId] || [];
+  
+  const liveActivities = useMemo(() => {
+    const staffSales = sales.filter(s => s.cashierId === staffId || s.user?.id === staffId);
+    return staffSales.map(sale => ({
+      id: sale.id,
+      type: 'sale' as const,
+      description: `Sale completed for GH₵ ${sale.totalAmount.toLocaleString()} (${sale.items.length} items)`,
+      details: undefined,
+      timestamp: new Date(sale.createdAt).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }).replace(',', ''),
+      amount: sale.totalAmount,
+      date: new Date(sale.createdAt).getTime()
+    })).sort((a, b) => b.date - a.date);
+  }, [sales, staffId]);
+
+  const baseActivities = ACTIVITIES[staffId] || [];
+  const allActivities = liveActivities.length > 0 ? liveActivities : baseActivities;
+  
+  const totalPages = Math.max(1, Math.ceil(allActivities.length / ITEMS_PER_PAGE));
+  const paginatedActivities = allActivities.slice((activityPage - 1) * ITEMS_PER_PAGE, activityPage * ITEMS_PER_PAGE);
 
   if (!mounted) return null;
   if (loadingStaff && !staff) {
@@ -275,8 +296,8 @@ export default function StaffDetailPage() {
       : 'inactive';
   const statusStyle = STATUS_COLORS[statusKey] || STATUS_COLORS.active;
   const staffBranch = typeof staff.branch === 'string' ? staff.branch : staff.branch?.name || 'Main Branch';
-  const todaySales = activities.filter(a => a.type === 'sale').reduce((sum, a) => sum + (a.amount || 0), 0);
-  const todayTransactions = activities.filter(a => a.type === 'sale').length;
+  const todaySales = allActivities.filter(a => a.type === 'sale').reduce((sum, a) => sum + (a.amount || 0), 0);
+  const todayTransactions = allActivities.filter(a => a.type === 'sale').length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -550,12 +571,12 @@ export default function StaffDetailPage() {
             </div>
 
             <div className="divide-y" style={{ borderColor: card.divider }}>
-              {activities.length === 0 ? (
+              {paginatedActivities.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Activity size={40} style={{ color: card.subtle }} />
                   <p className="mt-3 text-sm" style={{ color: card.muted }}>No activities recorded today</p>
                 </div>
-              ) : activities.map((activity, index) => {
+              ) : paginatedActivities.map((activity, index) => {
                 const Icon = ACTIVITY_ICONS[activity.type];
                 const color = ACTIVITY_COLORS[activity.type];
                 return (
@@ -576,7 +597,7 @@ export default function StaffDetailPage() {
                           )}
                         </div>
                         <span className="text-xs shrink-0" style={{ color: card.subtle }}>
-                          {activity.timestamp.split(' ')[1]}
+                          {activity.timestamp.split(' ')[1] || activity.timestamp}
                         </span>
                       </div>
                       {activity.amount && (
@@ -589,6 +610,29 @@ export default function StaffDetailPage() {
                 );
               })}
             </div>
+            {totalPages > 1 && (
+              <div className="p-4 border-t flex items-center justify-between" style={{ borderColor: card.divider, background: isDark ? 'rgba(15,23,42,0.2)' : 'rgba(248,250,252,0.5)' }}>
+                <button
+                  onClick={() => setActivityPage(p => Math.max(1, p - 1))}
+                  disabled={activityPage === 1}
+                  className="px-4 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                  style={{ background: card.primaryBg, color: card.primary }}
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-bold" style={{ color: card.muted }}>
+                  Page {activityPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setActivityPage(p => Math.min(totalPages, p + 1))}
+                  disabled={activityPage === totalPages}
+                  className="px-4 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                  style={{ background: card.primaryBg, color: card.primary }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Weekly Schedule Preview */}

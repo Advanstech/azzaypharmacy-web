@@ -328,12 +328,17 @@ export const Q_MY_SHIFT_RECONCILIATIONS = `
 `;
 
 export const Q_AUTHORIZATIONS_EXPENSE = `
-  query GetAllExpenses {
-    allExpenses {
-      id amount description date status createdAt
-      category { id name }
-      requestedById
-      approvedById
+  query GetExpensesPaginated($page: Float, $limit: Float) {
+    expenses(page: $page, limit: $limit) {
+      items {
+        id amount description date status createdAt
+        category { id name }
+        requestedBy { id name }
+        approvedBy { id name }
+      }
+      totalCount
+      totalPages
+      currentPage
     }
   }
 `;
@@ -354,10 +359,11 @@ export const M_REJECT_SHIFT = `
   }
 `;
 
-export const M_APPROVE_EXPENSE = `
-  mutation ApproveExpense($id: String!) {
-    approveExpense(id: $id) {
+export const M_UPDATE_EXPENSE_STATUS = `
+  mutation UpdateExpenseStatus($id: ID!, $status: String!) {
+    updateExpenseStatus(id: $id, status: $status) {
       id status
+      approvedBy { id name }
     }
   }
 `;
@@ -516,8 +522,10 @@ export const Q_PURCHASES = `
 export const Q_EXPENSES = `
   query GetExpenses {
     expenses {
-      id amount description date receiptUrl
-      category { id name }
+      items {
+        id amount description date receiptUrl
+        category { id name }
+      }
     }
   }
 `;
@@ -706,7 +714,7 @@ export const Q_INVOICES = `
       purchase {
         id
         items {
-          id quantity unitCost total
+          id quantity unitCost sellingPrice total
           product { id name costPrice }
         }
       }
