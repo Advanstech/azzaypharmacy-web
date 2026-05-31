@@ -435,8 +435,8 @@ export const M_UPDATE_DUTY_STATUS = `
 `;
 
 export const M_UPDATE_PRODUCT_PRICES = `
-  mutation UpdateProductPrices($productId: ID!, $costPrice: Float!, $sellingPrice: Float!) {
-    updateProductPrices(productId: $productId, costPrice: $costPrice, sellingPrice: $sellingPrice) {
+  mutation UpdateProductPrices($productId: ID!, $costPrice: Float!, $sellingPrice: Float!, $purchaseItemId: ID) {
+    updateProductPrices(productId: $productId, costPrice: $costPrice, sellingPrice: $sellingPrice, purchaseItemId: $purchaseItemId) {
       id name costPrice sellingPrice stockQuantity
     }
   }

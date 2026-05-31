@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion';
 import { Truck, FileText, CheckCircle, Clock, AlertCircle, Trash2, DollarSign, Eye, ThumbsUp, ThumbsDown, PauseCircle, ShieldCheck } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
 import { gql, M_UPDATE_INVOICE_APPROVAL_STATUS } from '@/lib/gql';
@@ -30,9 +30,24 @@ export default function SupplierInvoicesPage() {
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 5;
+
   const pendingInvoices = useMemo(() => invoices.filter((inv: any) => inv.paymentStatus !== 'PAID'), [invoices]);
   const overdueInvoices = useMemo(() => pendingInvoices.filter((inv: any) => inv.dueDate && new Date(inv.dueDate) < new Date()), [pendingInvoices]);
   const clearedInvoices = useMemo(() => invoices.filter((inv: any) => inv.paymentStatus === 'PAID'), [invoices]);
+
+  const totalPages = Math.ceil(invoices.length / pageSize);
+  const paginatedInvoices = useMemo(() => {
+    return invoices.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [invoices, currentPage]);
+
+  // Reset page if invoices change and current page is now empty
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
 
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,19 +157,83 @@ export default function SupplierInvoicesPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          {/* Mobile View (Cards) */}
+          <div className="md:hidden divide-y" style={{ borderColor: borderC }}>
+            {paginatedInvoices.map((invoice: any, index: number) => {
+              const approvalCfg = APPROVAL_CONFIG[invoice.approvalStatus || 'PENDING'];
+              const isActioning = approvingId === invoice.id;
+              return (
+                <div key={invoice.id} className="p-4 space-y-4">
+                  <div className="flex justify-between items-start">
+                    <Link href={`/admin/invoices/${invoice.id}`} className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>
+                        <FileText size={18} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm" style={{ color: textC }}>{invoice.invoiceNo}</p>
+                        <p className="text-xs font-medium" style={{ color: mutedC }}>Due: {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}</p>
+                      </div>
+                    </Link>
+                    <span className="text-xs font-bold px-2 py-1 rounded-lg" style={{ background: approvalCfg.bg, color: approvalCfg.color }}>
+                      {approvalCfg.label}
+                    </span>
+                  </div>
+                  
+                  <div>
+                    <p className="font-medium text-sm" style={{ color: textC }}>{invoice.supplier?.name || 'Unknown Supplier'}</p>
+                    <div className="flex justify-between mt-2 text-sm font-bold">
+                      <span style={{ color: textC }}>Total: GH₵ {invoice.total.toFixed(2)}</span>
+                      {invoice.balance > 0 && <span className="text-red-500">Bal: GH₵ {invoice.balance.toFixed(2)}</span>}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-3 border-t" style={{ borderColor: borderC }}>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-lg ${
+                      invoice.paymentStatus === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' :
+                      invoice.paymentStatus === 'PARTIAL' ? 'bg-orange-500/10 text-orange-500' :
+                      'bg-red-500/10 text-red-500'
+                    }`}>
+                      {invoice.paymentStatus}
+                    </span>
+
+                    <div className="flex items-center gap-1.5">
+                      {invoice.balance > 0 && (
+                        <button onClick={() => { setSelectedInvoiceId(invoice.id); setPaymentAmount(invoice.balance.toString()); setPaymentModalOpen(true); }} className="p-2 rounded-xl bg-blue-500/10 text-blue-500">
+                          <DollarSign size={14} />
+                        </button>
+                      )}
+                      {canApprove && invoice.approvalStatus !== 'APPROVED' && (
+                        <button onClick={() => handleApprovalAction(invoice.id, 'APPROVED')} disabled={isActioning} className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500">
+                          <ThumbsUp size={14} />
+                        </button>
+                      )}
+                      <button onClick={() => handleDeleteInvoice(invoice.id)} className="p-2 rounded-xl bg-red-500/10 text-red-500">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {invoices.length === 0 && (
+              <div className="p-8 text-center text-sm" style={{ color: mutedC }}>No supplier invoices found.</div>
+            )}
+          </div>
+
+          {/* Desktop View (Table) */}
+          <table className="w-full text-left border-collapse hidden md:table min-w-[800px]">
             <thead>
               <tr style={{ background: isDark ? '#0F172A' : '#F8FAFC', borderBottom: `1px solid ${borderC}` }}>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: mutedC }}>Invoice Info</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: mutedC }}>Supplier</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: mutedC }}>Amount / Balance</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: mutedC }}>Payment</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: mutedC }}>Approval</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: mutedC }}>Actions</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: mutedC }}>Invoice Info</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: mutedC }}>Supplier</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: mutedC }}>Amount / Balance</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: mutedC }}>Payment</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: mutedC }}>Approval</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right whitespace-nowrap" style={{ color: mutedC }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {invoices.map((invoice: any, index: number) => {
+              {paginatedInvoices.map((invoice: any, index: number) => {
                 const approvalCfg = APPROVAL_CONFIG[invoice.approvalStatus || 'PENDING'];
                 const isActioning = approvingId === invoice.id;
                 return (
@@ -167,7 +246,7 @@ export default function SupplierInvoicesPage() {
                     style={{ borderBottom: `1px solid ${borderC}` }}
                   >
                     {/* Invoice Info — clickable to detail */}
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <Link href={`/admin/invoices/${invoice.id}`} className="flex items-center gap-3 group">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors group-hover:bg-blue-500/10" style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>
                           <FileText size={18} />
@@ -188,11 +267,11 @@ export default function SupplierInvoicesPage() {
 
                     {/* Supplier */}
                     <td className="px-6 py-4">
-                      <p className="font-medium text-sm" style={{ color: textC }}>{invoice.supplier?.name || 'Unknown Supplier'}</p>
+                      <p className="font-medium text-sm line-clamp-2" style={{ color: textC }}>{invoice.supplier?.name || 'Unknown Supplier'}</p>
                     </td>
 
                     {/* Amount */}
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-0.5">
                         <span className="font-bold text-sm" style={{ color: textC }}>Total: GH₵ {invoice.total.toFixed(2)}</span>
                         {invoice.balance > 0 && (
@@ -202,8 +281,8 @@ export default function SupplierInvoicesPage() {
                     </td>
 
                     {/* Payment Status */}
-                    <td className="px-6 py-4">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-lg ${
                         invoice.paymentStatus === 'PAID' ? 'bg-emerald-500/10 text-emerald-500' :
                         invoice.paymentStatus === 'PARTIAL' ? 'bg-orange-500/10 text-orange-500' :
                         'bg-red-500/10 text-red-500'
@@ -213,10 +292,10 @@ export default function SupplierInvoicesPage() {
                     </td>
 
                     {/* Approval Status */}
-                    <td className="px-6 py-4">
-                      <div className="flex flex-col gap-1">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col gap-1 items-start">
                         <span
-                          className="text-xs font-bold px-2.5 py-1 rounded-lg inline-block"
+                          className="text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-lg inline-block"
                           style={{ background: approvalCfg.bg, color: approvalCfg.color }}
                         >
                           {approvalCfg.label}
@@ -230,7 +309,7 @@ export default function SupplierInvoicesPage() {
                     </td>
 
                     {/* Actions */}
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
                         {/* View Details */}
                         <Link
@@ -312,6 +391,33 @@ export default function SupplierInvoicesPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ borderColor: borderC }}>
+            <span className="text-xs font-medium text-center sm:text-left" style={{ color: mutedC }}>
+              Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, invoices.length)} of {invoices.length} invoices
+            </span>
+            <div className="flex gap-2 justify-center sm:justify-end">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                className="px-4 py-2 rounded-xl text-xs font-bold disabled:opacity-50 transition-colors hover:opacity-80"
+                style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: textC }}
+              >
+                Previous
+              </button>
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                className="px-4 py-2 rounded-xl text-xs font-bold disabled:opacity-50 transition-colors hover:opacity-80"
+                style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: textC }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Payment Modal */}

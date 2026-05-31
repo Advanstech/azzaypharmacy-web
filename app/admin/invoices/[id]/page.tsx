@@ -16,7 +16,7 @@ import { useToast } from '@/components/pharma-toast';
 export default function InvoiceDetailPage() {
   const { id } = useParams();
   const router = useRouter();
-  const { invoices, recordSupplierPayment } = useStore();
+  const { invoices, recordSupplierPayment, refetchInvoices, refetchProducts } = useStore() as any;
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const { addToast } = useToast();
@@ -24,7 +24,7 @@ export default function InvoiceDetailPage() {
   // Selling price editing state: { [itemId]: { value: number, saving: boolean } }
   const [editingPrices, setEditingPrices] = useState<Record<string, { value: string; saving: boolean }>>({});
 
-  const invoice = useMemo(() => invoices.find(inv => inv.id === id), [invoices, id]);
+  const invoice = useMemo(() => invoices.find((inv: any) => inv.id === id), [invoices, id]);
   
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(invoice?.balance.toString() || '');
@@ -77,7 +77,9 @@ export default function InvoiceDetailPage() {
     }
     setEditingPrices(prev => ({ ...prev, [itemId]: { ...prev[itemId], saving: true } }));
     try {
-      await gql(M_UPDATE_PRODUCT_PRICES, { productId, costPrice, sellingPrice: newSellingPrice });
+      await gql(M_UPDATE_PRODUCT_PRICES, { productId, costPrice, sellingPrice: newSellingPrice, purchaseItemId: itemId });
+      if (typeof refetchInvoices === 'function') await refetchInvoices();
+      if (typeof refetchProducts === 'function') await refetchProducts();
       addToast({ type: 'success', title: 'Selling Price Updated', message: `New price: GH₵ ${newSellingPrice.toFixed(2)}`, duration: 4000 });
       cancelEditPrice(itemId);
     } catch (err: any) {
@@ -197,7 +199,7 @@ export default function InvoiceDetailPage() {
             </thead>
             <tbody>
               {invoice.purchase?.items && invoice.purchase.items.length > 0 ? (
-                invoice.purchase.items.map((item, index) => (
+                invoice.purchase.items.map((item: any, index: number) => (
                   <tr 
                     key={item.id}
                     className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
@@ -283,7 +285,7 @@ export default function InvoiceDetailPage() {
                     Subtotal
                   </td>
                   <td className="px-6 py-4 text-right font-black text-base" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
-                    GH₵ {invoice.purchase.items.reduce((sum, item) => sum + item.total, 0).toFixed(2)}
+                    GH₵ {invoice.purchase.items.reduce((sum: number, item: any) => sum + item.total, 0).toFixed(2)}
                   </td>
                 </tr>
               </tfoot>
@@ -298,7 +300,7 @@ export default function InvoiceDetailPage() {
             <h2 className="font-display font-bold text-lg" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>Payment History</h2>
           </div>
           <div className="p-6 space-y-4">
-            {invoice.payments.map((payment, idx) => (
+            {invoice.payments.map((payment: any, idx: number) => (
               <div key={idx} className="flex items-center justify-between p-4 rounded-2xl border" style={{ borderColor: isDark ? '#1E293B' : '#E2E8F0', background: isDark ? '#0F172A' : '#F8FAFC' }}>
                 <div className="flex items-center gap-4">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
