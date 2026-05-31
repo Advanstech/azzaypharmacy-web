@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import * as THREE from 'three';
-import { gql, Q_LOGIN_STAFF, M_CHANGE_PASSWORD, M_FORGOT_PASSWORD } from '@/lib/gql';
+import { gql, Q_LOGIN_STAFF, M_CHANGE_PASSWORD, M_FORGOT_PASSWORD, M_UPDATE_DUTY_STATUS } from '@/lib/gql';
 import { saveToCache, getFromCache } from '@/lib/offline';
 import { StaffMember } from '@/lib/store';
 
@@ -740,7 +740,7 @@ export default function LoginPage() {
         return;
       }
 
-      const { error: err } = await verifyLoginToken({
+      const { data, error: err } = await verifyLoginToken({
         email,
         token: cleanToken,
         phone: selectedPhone,
@@ -756,13 +756,22 @@ export default function LoginPage() {
         if (DEBUG_AUTH) {
           console.log('[AUTH][UI] Verify succeeded');
         }
+        
+        if (data?.user?.id) {
+          try {
+            await gql(M_UPDATE_DUTY_STATUS, { userId: data.user.id, isOnDuty: true });
+          } catch (e) {
+            console.error('[AUTH] Failed to auto-clock in', e);
+          }
+        }
+
         setIsSuccessTransition(true);
         setTimeout(() => {
           router.push('/dashboard');
         }, 800);
       }
     } else {
-      const { error: err } = await signIn(email, password);
+      const { data, error: err } = await signIn(email, password);
       if (err) {
         if (err.includes('Invalid login credentials')) {
           setError('Invalid credentials. If you are a new staff member, please ask your manager to set up your account at /dashboard/setup-staff');
@@ -779,6 +788,14 @@ export default function LoginPage() {
           setShowPasswordChangeModal(true);
           setLoading(false);
         } else {
+          if (data?.user?.id) {
+            try {
+              await gql(M_UPDATE_DUTY_STATUS, { userId: data.user.id, isOnDuty: true });
+            } catch (e) {
+              console.error('[AUTH] Failed to auto-clock in', e);
+            }
+          }
+
           setIsSuccessTransition(true);
           setTimeout(() => {
             router.push('/dashboard');
@@ -1053,7 +1070,7 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <motion.button type="submit" disabled={loading || tokenSending || (loginMode === 'token' && !tokenStepVisible)}
+              <motion.button suppressHydrationWarning type="submit" disabled={!mounted || loading || tokenSending || (loginMode === 'token' && !tokenStepVisible)}
                 className="w-full py-3.5 rounded-xl font-bold text-sm relative overflow-hidden"
                 whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
                 style={{

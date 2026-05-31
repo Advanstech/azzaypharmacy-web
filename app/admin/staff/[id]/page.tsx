@@ -182,7 +182,7 @@ export default function StaffDetailPage() {
   const { addToast } = useToast();
 
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({ role: '', position: '', branchId: '', isActive: true });
+  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', role: '', position: '', branchId: '', isActive: true });
   const [isSaving, setIsSaving] = useState(false);
   
   const [generatingPassword, setGeneratingPassword] = useState(false);
@@ -383,6 +383,9 @@ export default function StaffDetailPage() {
             <button
               onClick={() => {
                 setEditForm({
+                  name: getFullName(staff) || '',
+                  email: staff.email || '',
+                  phone: (staff as any).phone || '',
                   role: staff.role || '',
                   position: (staff as any).position || '',
                   branchId: (staff as any).branchId || (typeof staff.branch === 'object' ? staff.branch?.id : '') || '',
@@ -711,6 +714,51 @@ export default function StaffDetailPage() {
               {/* Body */}
               <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
 
+                {/* Name */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
+                    <UserCheck size={11} /> Full Name
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Full Name"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                    value={editForm.name}
+                    onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
+                  />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
+                    <Mail size={11} /> Email Address
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="Email Address"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                    value={editForm.email}
+                    onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+
+                {/* Phone */}
+                <div>
+                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
+                    <Phone size={11} /> Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="Phone Number"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                    value={editForm.phone}
+                    onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+
                 {/* Role */}
                 <div>
                   <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
@@ -777,7 +825,7 @@ export default function StaffDetailPage() {
                 {/* Info note */}
                 <div className="px-4 py-2.5 rounded-xl text-xs font-medium flex items-start gap-2" style={{ background: card.primaryBg, color: card.primary }}>
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                  <span>Email and name changes must be done through Supabase Auth. This form updates role, position, branch, and account status.</span>
+                  <span>Updates to Name and Email will also modify the user's authentication profile.</span>
                 </div>
               </div>
 
@@ -797,6 +845,9 @@ export default function StaffDetailPage() {
                     try {
                       await updateStaffProfile({
                         userId: staffId,
+                        name: editForm.name || undefined,
+                        email: editForm.email || undefined,
+                        phone: editForm.phone || undefined,
                         role: editForm.role || undefined,
                         position: editForm.position || undefined,
                         branchId: editForm.branchId || undefined,

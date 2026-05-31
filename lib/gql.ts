@@ -409,6 +409,9 @@ export const M_INVITE_STAFF = `
 export const M_UPDATE_STAFF_PROFILE = `
   mutation UpdateStaffProfile(
     $userId: ID!
+    $name: String
+    $email: String
+    $phone: String
     $role: UserRole
     $branchId: String
     $position: String
@@ -416,12 +419,15 @@ export const M_UPDATE_STAFF_PROFILE = `
   ) {
     updateStaffProfile(
       userId: $userId
+      name: $name
+      email: $email
+      phone: $phone
       role: $role
       branchId: $branchId
       position: $position
       isActive: $isActive
     ) {
-      id name email role branchId position isActive isOnDuty
+      id name email role branchId position isActive isOnDuty phone
     }
   }
 `;
@@ -458,10 +464,39 @@ export const M_BULK_UPDATE_PRODUCT_SUPPLIER = `
   }
 `;
 
-export const M_REFUND_SALE = `
-  mutation RefundSale($saleId: ID!, $reason: String!) {
-    refundSale(saleId: $saleId, reason: $reason) {
-      id status isRefunded refundReason totalAmount paymentMethod
+export const Q_REFUND_REQUESTS = `
+  query GetRefundRequests {
+    refundRequests {
+      id saleId reason status createdAt
+      sale { id totalAmount paymentMethod }
+      requestedBy { id name }
+      approvedBy { id name }
+    }
+  }
+`;
+
+export const M_REQUEST_REFUND = `
+  mutation RequestRefund($saleId: ID!, $reason: String!) {
+    requestRefund(saleId: $saleId, reason: $reason) {
+      id status reason
+    }
+  }
+`;
+
+export const M_APPROVE_REFUND = `
+  mutation ApproveRefund($requestId: ID!) {
+    approveRefund(requestId: $requestId) {
+      id status
+      approvedBy { id name }
+    }
+  }
+`;
+
+export const M_REJECT_REFUND = `
+  mutation RejectRefund($requestId: ID!) {
+    rejectRefund(requestId: $requestId) {
+      id status
+      approvedBy { id name }
     }
   }
 `;

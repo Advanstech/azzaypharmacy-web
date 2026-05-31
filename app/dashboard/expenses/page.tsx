@@ -122,7 +122,8 @@ export default function ExpensesPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {isManager && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { label: 'Total Month', value: 'GH₵ 8,240', sub: 'vs 7.5k last month', icon: DollarSign, color: '#EF4444' },
           { label: 'Utilities', value: 'GH₵ 1,200', sub: 'Electricity & Water', icon: Landmark, color: '#0EA5E9' },
@@ -140,7 +141,8 @@ export default function ExpensesPage() {
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
 
       <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
         <div className="p-4 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>

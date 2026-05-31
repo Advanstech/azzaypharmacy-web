@@ -15,9 +15,9 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string) => Promise<{ data?: any; error: string | null }>;
   requestLoginToken: (args: { email: string; phone?: string }) => Promise<{ error: string | null }>;
-  verifyLoginToken: (args: { email: string; token: string; phone?: string }) => Promise<{ error: string | null }>;
+  verifyLoginToken: (args: { email: string; token: string; phone?: string }) => Promise<{ data?: any; error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         // Handle refresh token errors specifically
         if (error.message.includes('refresh token')) {
@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         return { error: error.message };
       }
-      return { error: null };
+      return { data, error: null };
     } catch (err) {
       return { error: 'Authentication failed. Please try again.' };
     }
@@ -211,7 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      const { error: emailError } = await supabase.auth.verifyOtp({
+      const { data: emailData, error: emailError } = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token,
         type: 'email',
@@ -231,11 +231,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           success: true,
           reason: null,
         });
-        return { error: null };
+        return { data: emailData, error: null };
       }
 
       if (cleanPhone) {
-        const { error: smsError } = await supabase.auth.verifyOtp({
+        const { data: smsData, error: smsError } = await supabase.auth.verifyOtp({
           phone: cleanPhone,
           token,
           type: 'sms',
@@ -255,7 +255,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             success: true,
             reason: null,
           });
-          return { error: null };
+          return { data: smsData, error: null };
         }
 
         await gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {

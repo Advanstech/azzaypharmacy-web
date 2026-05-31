@@ -16,7 +16,7 @@ export default function RefundPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && theme === 'dark';
 
-  const { sales, me, refundSale } = useStore();
+  const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests } = useStore();
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
@@ -45,20 +45,14 @@ export default function RefundPage() {
     success: '#10B981',
   };
 
-  // Real refunds are those already marked as refunded in our sales list
-  // Pending refunds are simulated for this demo as "requests" that haven't been processed yet
-  // In a real system, we'd have a RefundRequest table. For now, I'll use local state for pending.
-  const [refundRequests, setRefundRequests] = useState<any[]>([]);
-
-  const handleRefund = async (saleId: string, reason: string) => {
+  const submitRequest = async () => {
+    if (!foundSale || !refundReason.trim()) return;
     setProcessing(true);
     try {
-      await refundSale(saleId, reason);
+      await requestRefund(foundSale.id, refundReason);
       setFoundSale(null);
       setReceiptSearch('');
       setRefundReason('');
-      // Remove from pending if it was there
-      setRefundRequests(prev => prev.filter(r => r.saleId !== saleId));
     } catch (err) {
       console.error(err);
     } finally {
@@ -66,30 +60,26 @@ export default function RefundPage() {
     }
   };
 
-  const submitRequest = () => {
-    if (!foundSale || !refundReason.trim()) return;
-    
-    // If manager, process immediately
-    if (isManager) {
-      handleRefund(foundSale.id, refundReason);
-      return;
+  const handleApprove = async (requestId: string) => {
+    setProcessing(true);
+    try {
+      await approveRefund(requestId);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProcessing(false);
     }
+  };
 
-    // Otherwise, add to pending requests (local for now)
-    setRefundRequests(prev => [{
-      id: `req-${Date.now()}`,
-      saleId: foundSale.id,
-      date: new Date().toISOString(),
-      item: foundSale.items[0]?.product?.name || 'Multiple items',
-      amount: foundSale.totalAmount,
-      reason: refundReason,
-      status: 'PENDING',
-      requestedBy: me?.name || user?.email || 'Staff',
-      sale: foundSale
-    }, ...prev]);
-    setFoundSale(null);
-    setReceiptSearch('');
-    setRefundReason('');
+  const handleReject = async (requestId: string) => {
+    setProcessing(true);
+    try {
+      await rejectRefund(requestId);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const recentRefunds = sales.filter(s => (s as any).status === 'REFUNDED').slice(0, 10);
@@ -168,7 +158,7 @@ export default function RefundPage() {
                       disabled={!refundReason.trim() || processing}
                       className="w-full py-3.5 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50"
                       style={{ background: c.primary, color: isDark ? '#060B14' : '#fff' }}>
-                      {processing ? 'Processing...' : isManager ? 'Execute Refund Now' : 'Request Refund Approval'}
+                      {processing ? 'Processing...' : 'Request Refund Approval'}
                     </button>
                   </div>
                 )}
@@ -193,12 +183,16 @@ export default function RefundPage() {
                       <div>
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-bold" style={{ color: c.text }}>{r.saleId}</p>
-                          <span className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest uppercase bg-amber-500/10 text-amber-500">
-                            PENDING
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-black tracking-widest uppercase ${
+                            r.status === 'PENDING' ? 'bg-amber-500/10 text-amber-500' :
+                            r.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-500' :
+                            'bg-red-500/10 text-red-500'
+                          }`}>
+                            {r.status}
                           </span>
                         </div>
                         <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
-                          {r.item} • GH₵ {Number(r.amount).toFixed(2)} • Requested by <span className="text-blue-400">{r.requestedBy}</span>
+                          GH₵ {Number(r.sale?.totalAmount || 0).toFixed(2)} • Requested by <span className="text-blue-400">{r.requestedBy?.name || 'Staff'}</span>
                         </p>
                         <p className="text-[10px] text-slate-500 mt-1 italic">"{r.reason}"</p>
                       </div>
@@ -206,15 +200,17 @@ export default function RefundPage() {
                     
                     <div className="flex gap-2">
                       <button 
-                        onClick={() => handleRefund(r.saleId, r.reason)}
-                        className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all"
+                        onClick={() => handleApprove(r.id)}
+                        disabled={processing || r.status !== 'PENDING'}
+                        className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50"
                         title="Authorize Refund"
                       >
                         <CheckCircle size={20} />
                       </button>
                       <button 
-                        onClick={() => setRefundRequests(prev => prev.filter(req => req.id !== r.id))}
-                        className="p-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all"
+                        onClick={() => handleReject(r.id)}
+                        disabled={processing || r.status !== 'PENDING'}
+                        className="p-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"
                         title="Reject Request"
                       >
                         <XCircle size={20} />

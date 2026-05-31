@@ -35,8 +35,11 @@ export default function EnhancedSalesPage() {
   const { theme } = useTheme();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const { sales, loadingSales, refetchSales, me, products, customers, refundSale } = useStore();
+  const { sales, loadingSales, refetchSales, me, products, customers, requestRefund } = useStore();
   const { user } = useAuth();
+
+  const role = user?.user_metadata?.role || me?.role;
+  const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -170,15 +173,16 @@ export default function EnhancedSalesPage() {
     if (!refundReason.trim()) return;
     setProcessingRefund(true);
     try {
-      await refundSale(saleId, refundReason);
+      await requestRefund(saleId, refundReason);
       setRefundReason('');
       setShowRefundInline(false);
       // Update selectedSale locally to reflect the change
       setSelectedSale((prev: any) => prev ? { ...prev, status: 'REFUNDED', isRefunded: true, refundReason } : null);
+
       await refetchSales();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Failed to execute refund');
+      alert(`Failed to execute refund: ${err.message || 'Unknown error'}`);
     } finally {
       setProcessingRefund(false);
     }
@@ -365,12 +369,14 @@ export default function EnhancedSalesPage() {
         </div>
       </div>
 
+      {isManager && (
+        <>
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { 
             label: 'Total Revenue', 
-            value: `GH₵ ${(metrics.totalRevenue/1000).toFixed(1)}k`, 
+            value: `GH₵ ${metrics.totalRevenue >= 1000 ? (metrics.totalRevenue/1000).toFixed(1) + 'k' : metrics.totalRevenue.toFixed(2)}`, 
             sub: `${metrics.totalTransactions} transactions`,
             icon: DollarSign, 
             color: '#10B981',
@@ -379,7 +385,7 @@ export default function EnhancedSalesPage() {
           },
           { 
             label: 'Total Profit', 
-            value: `GH₵ ${(metrics.totalProfit/1000).toFixed(1)}k`, 
+            value: `GH₵ ${metrics.totalProfit >= 1000 ? (metrics.totalProfit/1000).toFixed(1) + 'k' : metrics.totalProfit.toFixed(2)}`, 
             sub: `${metrics.profitMargin.toFixed(1)}% margin`,
             icon: TrendingUp, 
             color: '#8B5CF6',
@@ -508,6 +514,8 @@ export default function EnhancedSalesPage() {
           )}
         </div>
       </div>
+        </>
+      )}
 
       {/* Sales Table */}
       <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>

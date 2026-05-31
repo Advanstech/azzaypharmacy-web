@@ -12,13 +12,14 @@ import {
 import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_STAFF, Q_ME, Q_CUSTOMERS,
-  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES,
+  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES, Q_REFUND_REQUESTS,
   M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD,
   M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
-  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_REFUND_SALE, M_CREATE_EXPENSE,
+  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_CREATE_EXPENSE,
+  M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND
 } from './gql';
 import { saveToCache, getFromCache } from './offline';
 
@@ -118,6 +119,17 @@ export interface Customer {
   loyaltyPoints?: number;
   totalSpent?: number;
   createdAt?: string;
+}
+
+export interface RefundRequest {
+  id: string;
+  saleId: string;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  createdAt: string;
+  sale: Partial<Sale>;
+  requestedBy: { id: string; name: string };
+  approvedBy?: { id: string; name: string };
 }
 
 export interface TerminalReport {
@@ -361,6 +373,9 @@ interface StoreState {
 
   updateStaffProfile: (args: {
     userId: string;
+    name?: string;
+    email?: string;
+    phone?: string;
     role?: string;
     branchId?: string;
     position?: string;
@@ -391,7 +406,11 @@ interface StoreState {
     address?: string;
   }) => Promise<Customer>;
 
-  refundSale: (saleId: string, reason: string) => Promise<void>;
+  refundRequests: RefundRequest[];
+  refetchRefundRequests: () => Promise<void>;
+  requestRefund: (saleId: string, reason: string) => Promise<void>;
+  approveRefund: (requestId: string) => Promise<void>;
+  rejectRefund: (requestId: string) => Promise<void>;
 
   getProductsBySupplier: (supplierId: string) => Promise<Product[]>;
 
@@ -491,6 +510,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
 
   // ── Fetchers ──────────────────────────────────────────────────────────────
 
@@ -663,6 +683,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       setLoadingLedger(false);
     }
   }, [me?.branchId]);
+  const refetchRefundRequests = useCallback(async () => {
+    try {
+      const data = await gql<{ refundRequests: RefundRequest[] }>(Q_REFUND_REQUESTS);
+      setRefundRequests(data.refundRequests || []);
+    } catch (err: any) {
+      console.error('Failed to fetch refund requests', err);
+    }
+  }, []);
 
   const refetchAll = useCallback(async () => {
     setSyncStatus('syncing');
@@ -684,13 +712,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         refetchExpenses(),
         refetchExpenseCategories(),
         refetchLedger(),
+        refetchRefundRequests(),
       ]);
       setSyncStatus('idle');
     } catch (err) {
       console.error('[store] Sync failed:', err);
       setSyncStatus('error');
     }
-  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger]);
+  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchRefundRequests]);
 
   // Set token and fetch when it becomes available
   useEffect(() => {
@@ -851,7 +880,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, [refetchStaff]);
 
   const updateStaffProfile = useCallback(async (args: {
-    userId: string; role?: string; branchId?: string; position?: string; isActive?: boolean;
+    userId: string; name?: string; email?: string; phone?: string; role?: string; branchId?: string; position?: string; isActive?: boolean;
   }): Promise<StaffMember> => {
     const data = await gql<{ updateStaffProfile: StaffMember }>(M_UPDATE_STAFF_PROFILE, args);
     const updated = data.updateStaffProfile;
@@ -919,15 +948,36 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     return updated;
   }, []);
 
-  const refundSale = useCallback(async (saleId: string, reason: string) => {
+
+  const requestRefund = useCallback(async (saleId: string, reason: string) => {
     try {
-      await gql(M_REFUND_SALE, { saleId, reason });
-      await Promise.all([refetchSales(), refetchProducts()]);
+      await gql(M_REQUEST_REFUND, { saleId, reason });
+      await refetchRefundRequests();
     } catch (err: any) {
-      setError(err.message || 'Failed to refund sale');
+      setError(err.message || 'Failed to request refund');
       throw err;
     }
-  }, [refetchSales, refetchProducts]);
+  }, [refetchRefundRequests]);
+
+  const approveRefund = useCallback(async (requestId: string) => {
+    try {
+      await gql(M_APPROVE_REFUND, { requestId });
+      await Promise.all([refetchRefundRequests(), refetchSales(), refetchProducts()]);
+    } catch (err: any) {
+      setError(err.message || 'Failed to approve refund');
+      throw err;
+    }
+  }, [refetchRefundRequests, refetchSales, refetchProducts]);
+
+  const rejectRefund = useCallback(async (requestId: string) => {
+    try {
+      await gql(M_REJECT_REFUND, { requestId });
+      await refetchRefundRequests();
+    } catch (err: any) {
+      setError(err.message || 'Failed to reject refund');
+      throw err;
+    }
+  }, [refetchRefundRequests]);
 
   const createProduct = useCallback(async (args: {
     name: string; genericName?: string; brand?: string; category: string;
@@ -1055,7 +1105,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       updateProductSupplier,
       bulkUpdateProductSupplier,
       createCustomer, updateCustomer, getProductsBySupplier,
-      refundSale,
+      refundRequests,
+      refetchRefundRequests,
+      requestRefund,
+      approveRefund,
+      rejectRefund,
       createProduct, deleteProduct, adjustProductStock,
       createSupplier, updateSupplier, deleteSupplier,
       recordSupplierPayment, deleteInvoice,
