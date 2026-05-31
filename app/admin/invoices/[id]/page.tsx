@@ -36,17 +36,20 @@ export default function InvoiceDetailPage() {
     );
   }
 
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
   const handleRecordPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!paymentAmount) return;
-    
+    setPaymentError(null);
     try {
       await recordSupplierPayment(invoice.id, parseFloat(paymentAmount), paymentMethod);
       setPaymentModalOpen(false);
       setPaymentAmount('');
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.message || 'Unknown error';
       console.error('Failed to record payment', err);
-      alert('Failed to record payment');
+      setPaymentError(msg);
     }
   };
 
@@ -154,7 +157,7 @@ export default function InvoiceDetailPage() {
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Product Name</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Quantity</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Unit Cost</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Selling Price</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Cost Price</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-right" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Total Cost</th>
               </tr>
             </thead>
@@ -176,7 +179,7 @@ export default function InvoiceDetailPage() {
                       GH₵ {item.unitCost.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-sm text-blue-500">
-                      {item.product?.basePrice ? `GH₵ ${Number(item.product.basePrice).toFixed(2)}` : 'N/A'}
+                      {item.product?.costPrice ? `GH₵ ${Number(item.product.costPrice).toFixed(2)}` : 'N/A'}
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-sm" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
                       GH₵ {item.total.toFixed(2)}
@@ -266,10 +269,16 @@ export default function InvoiceDetailPage() {
                 </select>
               </div>
               
+              {paymentError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                  <p className="text-xs font-bold text-red-500">Payment Failed</p>
+                  <p className="text-xs mt-0.5" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>{paymentError}</p>
+                </div>
+              )}
               <div className="flex gap-3 mt-6 pt-4 border-t" style={{ borderColor: isDark ? '#1E293B' : '#E2E8F0' }}>
                 <button 
                   type="button" 
-                  onClick={() => setPaymentModalOpen(false)}
+                  onClick={() => { setPaymentModalOpen(false); setPaymentError(null); }}
                   className="flex-1 p-3 rounded-xl font-bold transition-colors"
                   style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#E2E8F0' : '#475569' }}
                 >
@@ -277,7 +286,7 @@ export default function InvoiceDetailPage() {
                 </button>
                 <button 
                   type="submit"
-                  className="flex-1 p-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold transition-colors"
+                  className="flex-1 p-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold transition-colors disabled:opacity-50"
                 >
                   Save Payment
                 </button>

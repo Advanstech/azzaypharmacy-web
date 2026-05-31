@@ -707,7 +707,7 @@ export const Q_INVOICES = `
         id
         items {
           id quantity unitCost total
-          product { id name basePrice }
+          product { id name costPrice }
         }
       }
     }

@@ -30,6 +30,7 @@ export default function InventoryPage() {
     products: storeProducts, 
     suppliers,
     purchases,
+    invoices,
     stockMovements,
     loadingProducts, 
     refetchProducts, 
@@ -130,10 +131,25 @@ export default function InventoryPage() {
   const [invoiceNotes, setInvoiceNotes] = useState<string>('');
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [invoiceDuplicateStatus, setInvoiceDuplicateStatus] = useState<'idle' | 'checking' | 'duplicate' | 'ok'>('idle');
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Live duplicate invoice number check
+  useEffect(() => {
+    const trimmed = invoiceNumber.trim();
+    if (!trimmed) { setInvoiceDuplicateStatus('idle'); return; }
+    setInvoiceDuplicateStatus('checking');
+    const timer = setTimeout(() => {
+      const exists = invoices.some(
+        inv => inv.invoiceNo?.toLowerCase() === trimmed.toLowerCase()
+      );
+      setInvoiceDuplicateStatus(exists ? 'duplicate' : 'ok');
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [invoiceNumber, invoices]);
 
   const isDark = mounted && theme === 'dark';
 
@@ -1823,16 +1839,41 @@ export default function InventoryPage() {
                         </div>
                       )}
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-1">
                        <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block">Invoice Number</label>
-                       <input 
-                         type="text" 
-                         value={invoiceNumber} 
-                         onChange={e => setInvoiceNumber(e.target.value)} 
-                         placeholder="e.g. INV-2026-102"
-                         className="w-full px-4 py-3 rounded-xl text-sm font-bold font-mono focus:outline-none" 
-                         style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${card.border}`, color: card.text }}
-                       />
+                       <div className="relative">
+                         <input 
+                           type="text" 
+                           value={invoiceNumber} 
+                           onChange={e => setInvoiceNumber(e.target.value)} 
+                           placeholder="e.g. INV-2026-102"
+                           className="w-full px-4 py-3 rounded-xl text-sm font-bold font-mono focus:outline-none" 
+                           style={{ 
+                             background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', 
+                             border: `1px solid ${
+                               invoiceDuplicateStatus === 'duplicate' ? '#ef4444' 
+                               : invoiceDuplicateStatus === 'ok' ? '#10b981' 
+                               : card.border
+                             }`, 
+                             color: card.text 
+                           }}
+                         />
+                         {invoiceDuplicateStatus === 'checking' && (
+                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs opacity-50" style={{ color: card.muted }}>Checking…</span>
+                         )}
+                         {invoiceDuplicateStatus === 'ok' && (
+                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-emerald-500">✓ Available</span>
+                         )}
+                       </div>
+                       {invoiceDuplicateStatus === 'duplicate' && (
+                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 mt-1">
+                           <span className="text-red-500 text-lg leading-none">⚠</span>
+                           <div>
+                             <p className="text-xs font-black text-red-500">Invoice already uploaded!</p>
+                             <p className="text-[10px]" style={{ color: card.muted }}>Invoice <span className="font-bold font-mono">{invoiceNumber}</span> already exists in the system. Please verify your invoice number.</p>
+                           </div>
+                         </div>
+                       )}
                     </div>
                   </div>
                   <div className="flex items-center justify-between mb-4">
@@ -2153,7 +2194,7 @@ export default function InventoryPage() {
                  ) : (
                    <button 
                      onClick={handleReceiveInvoice}
-                     disabled={isSaving || !hasResolvableSupplier || !invoiceNumber}
+                     disabled={isSaving || !hasResolvableSupplier || !invoiceNumber || invoiceDuplicateStatus === 'duplicate'}
                      className="px-12 py-3 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
                      style={{ background: card.success, color: '#fff' }}
                    >

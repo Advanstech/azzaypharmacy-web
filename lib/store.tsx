@@ -598,10 +598,20 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, []);
 
   const refetchInvoices = useCallback(async () => {
-    if (!me?.branchId) return;
     setLoadingInvoices(true);
     try {
-      const data = await gql<{ invoices: Invoice[] }>(Q_INVOICES, { branchId: me.branchId });
+      // Fetch branchId directly from Q_ME rather than relying on `me` React state
+      // (which may not have updated yet when called from refetchAll)
+      let branchId = me?.branchId;
+      if (!branchId) {
+        const meData = await gql<{ me: { branchId: string } }>(`query Me { me { branchId } }`);
+        branchId = meData.me?.branchId;
+      }
+      if (!branchId) {
+        console.warn('[store] refetchInvoices: no branchId — skipping');
+        return;
+      }
+      const data = await gql<{ invoices: Invoice[] }>(Q_INVOICES, { branchId });
       setInvoices(data.invoices ?? []);
     } catch (e: any) {
       console.warn('[store] invoices fetch failed:', e.message);
@@ -651,14 +661,15 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     setSyncStatus('syncing');
     setError(null);
     try {
+      // Phase 1: Core data — refetchStaff also sets `me` (with branchId)
       await Promise.all([
         refetchProducts(),
         refetchSuppliers(),
         refetchSales(),
-        refetchStaff(),
+        refetchStaff(),    // ← must complete before invoices (sets me+branchId)
         refetchCustomers(),
       ]);
-      // Load ERP modules lazily after core data
+      // Phase 2: ERP modules that need branchId from `me`
       await Promise.all([
         refetchPrescriptions(),
         refetchPurchases(),
