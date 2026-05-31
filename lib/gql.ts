@@ -523,7 +523,7 @@ export const Q_EXPENSES = `
   query GetExpenses {
     expenses {
       items {
-        id amount description date receiptUrl
+        id amount description date receiptUrl status createdAt
         category { id name }
       }
     }
@@ -708,6 +708,8 @@ export const Q_INVOICES = `
   query GetInvoices($branchId: String!, $supplierId: String) {
     invoices(branchId: $branchId, supplierId: $supplierId) {
       id invoiceNo type total paidAmount balance paymentStatus issueDate dueDate createdAt
+      approvalStatus
+      approvedBy { id name role }
       supplier { id name }
       payments { id amount method reference notes paidAt }
       uploadedBy { id name role }
@@ -727,6 +729,14 @@ export const M_RECORD_SUPPLIER_PAYMENT = `
     recordSupplierPayment(invoiceId: $invoiceId, amount: $amount, method: $method, reference: $reference, notes: $notes) {
       id paidAmount balance paymentStatus
       payments { id amount method paidAt }
+    }
+  }
+`;
+
+export const M_UPDATE_INVOICE_APPROVAL_STATUS = `
+  mutation UpdateInvoiceApprovalStatus($invoiceId: ID!, $status: String!) {
+    updateInvoiceApprovalStatus(invoiceId: $invoiceId, status: $status) {
+      id approvalStatus approvedBy { id name role }
     }
   }
 `;

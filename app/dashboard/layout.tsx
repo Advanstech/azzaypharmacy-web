@@ -113,15 +113,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (isSuperAdmin) return true;
     if (isManagement) return true;
     
-    // Non-management clinical/sales roles
+    // Non-management clinical/sales roles — Expenses visible to ALL staff so they can submit requests
     const allowedForAll = [
-      'Overview', 
+      'Overview',
       'Sales',
-      'Market Intelligence', 
-      'Inventory', 
-      'Suppliers', 
+      'Market Intelligence',
+      'Inventory',
+      'Suppliers',
+      'Expenses',
+      'Refunds',
       'AI Assistant',
-      'End of Day'
+      'End of Day',
     ];
     return allowedForAll.includes(item.label);
   });

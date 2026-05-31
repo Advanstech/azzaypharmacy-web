@@ -91,7 +91,7 @@ export default function AdminAuthorizationsPage() {
   const handleApproveExpense = async (id: string) => {
     try {
       await gql(M_UPDATE_EXPENSE_STATUS, { id, status: 'APPROVED' });
-      setExpenses(prev => prev.map(e => e.id === id ? { ...e, status: 'APPROVED' } : e));
+      await fetchData(); // Re-fetch to get approvedBy populated
     } catch (err) {
       alert('Error approving expense');
     }
@@ -100,7 +100,7 @@ export default function AdminAuthorizationsPage() {
   const handleRejectExpense = async (id: string) => {
     try {
       await gql(M_UPDATE_EXPENSE_STATUS, { id, status: 'REJECTED' });
-      setExpenses(prev => prev.map(e => e.id === id ? { ...e, status: 'REJECTED' } : e));
+      await fetchData(); // Re-fetch to get approvedBy populated
     } catch (err) {
       alert('Error rejecting expense');
     }
@@ -224,7 +224,14 @@ export default function AdminAuthorizationsPage() {
                       </span>
                     </div>
                     <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                      {new Date(e.date).toLocaleDateString()} • {e.category?.name || 'General'} • By {e.requestedBy?.name || 'Unknown'}
+                      {new Date(e.date).toLocaleDateString()} • {e.category?.name || 'General'}
+                      {' '}&bull;{' '}
+                      <span style={{ color: c.primary }}>Requested by {e.requestedBy?.name || 'Unknown'}</span>
+                      {e.approvedBy && (
+                        <span className="ml-1">
+                          &bull; <span style={{ color: c.success }}>Actioned by {e.approvedBy.name}</span>
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -234,8 +241,8 @@ export default function AdminAuthorizationsPage() {
                   </div>
                   {e.status === 'PENDING' && (
                     <div className="flex gap-2 border-l pl-4" style={{ borderColor: c.border }}>
-                      <button onClick={() => handleApproveExpense(e.id)} className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500 hover:text-white transition-all"><CheckCircle size={18} /></button>
-                      <button onClick={() => handleRejectExpense(e.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition-all"><XCircle size={18} /></button>
+                      <button onClick={() => handleApproveExpense(e.id)} title="Approve" className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg hover:bg-emerald-500 hover:text-white transition-all"><CheckCircle size={18} /></button>
+                      <button onClick={() => handleRejectExpense(e.id)} title="Reject" className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500 hover:text-white transition-all"><XCircle size={18} /></button>
                     </div>
                   )}
                 </div>

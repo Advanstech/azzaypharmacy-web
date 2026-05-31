@@ -56,7 +56,10 @@ export default function ReportsPage() {
     }, 0);
   }, [sales, products]);
   
-  const netProfit = totalRevenue - totalCogs;
+  const { expenses } = useStore();
+  const totalOperatingExpenses = useMemo(() => expenses.filter(e => e.status === 'APPROVED').reduce((sum, e) => sum + Number(e.amount), 0), [expenses]);
+  
+  const netProfit = totalRevenue - totalCogs - totalOperatingExpenses;
 
   const REPORTS = [
     {
@@ -166,7 +169,8 @@ export default function ReportsPage() {
           ['Total Revenue', totalRevenue.toFixed(2)],
           ['Cost of Goods Sold (Actuals)', totalCogs.toFixed(2)],
           ['Gross Profit', (totalRevenue - totalCogs).toFixed(2)],
-          ['Gross Margin %', totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) + '%' : '0%'],
+          ['Gross Margin %', totalRevenue > 0 ? (((totalRevenue - totalCogs) / totalRevenue) * 100).toFixed(1) + '%' : '0%'],
+          ['Operating Expenses', totalOperatingExpenses.toFixed(2)],
           ['Net Profit', netProfit.toFixed(2)],
         ];
         downloadCSV(`profit-loss-${today}.csv`, rows);

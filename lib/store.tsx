@@ -190,6 +190,7 @@ export interface Expense {
   date: string;
   receiptUrl?: string;
   category?: ExpenseCategory;
+  status: string;
   createdAt: string;
 }
 
@@ -222,6 +223,9 @@ export interface Invoice {
   createdAt: string;
   supplier?: { id: string; name: string; contact?: string; phone?: string; email?: string };
   payments?: InvoicePayment[];
+  uploadedBy?: { id: string; name: string; role: string };
+  approvalStatus?: string;
+  approvedBy?: { id: string; name: string; role: string };
   purchase?: {
     id: string;
     items: {

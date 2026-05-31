@@ -185,6 +185,8 @@ export default function InventoryPage() {
       cat: p.category || 'OTC',
       stock: p.stockQuantity,
       price: p.sellingPrice,
+      sellingPrice: p.sellingPrice,
+      costPrice: p.costPrice,
       cost: p.costPrice,
       status: p.stockQuantity === 0 ? 'OUT' : p.stockQuantity <= 10 ? 'LOW' : 'OK',
       expiry: 'N/A',
@@ -535,6 +537,9 @@ export default function InventoryPage() {
             name: (i.name || 'Unnamed Item').trim(),
             quantity: Math.max(1, Number(i.quantity) || 1),
             unitCost: Math.max(0, Number(i.unitCost) || 0),
+            sellingPrice: matchedProduct?.sellingPrice
+              ? Number(matchedProduct.sellingPrice)
+              : Math.max(0, Number(i.unitCost) || 0) * 1.3,
             batchNo: i.batchNo || '',
             expiryDate: i.expiryDate || '',
             exists: !!matchedProduct
@@ -650,6 +655,7 @@ export default function InventoryPage() {
       name: product.name,
       quantity: 1,
       unitCost: product.costPrice || 0,
+      sellingPrice: product.sellingPrice || 0,
       batchNo: '',
       expiryDate: '',
       exists: true
@@ -794,6 +800,7 @@ export default function InventoryPage() {
           productId: item.productId,
           quantity: Math.max(1, Math.round(Number(item.quantity) || 1)),
           unitCost: Math.max(0, Number(item.unitCost) || 0),
+          sellingPrice: Math.max(0, Number(item.sellingPrice) || 0),
           batchNo: item.batchNo || `BATCH-${Date.now()}`,
           expiryDate: item.expiryDate ? toIsoDateOrFallback(item.expiryDate) : new Date(Date.now() + 365 * 86400000).toISOString(),
         })),
@@ -1944,7 +1951,7 @@ export default function InventoryPage() {
                       <table className="w-full text-left min-w-[900px]">
                         <thead style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
                           <tr>
-                            {['Product Name', 'Batch No', 'Expiry', 'Qty', 'Unit Cost (GH₵)', 'Total', ''].map(h => (
+                            {['Product Name', 'Batch No', 'Expiry', 'Qty', 'Unit Cost (GH₵)', 'Sell Price (GH₵)', 'Total', ''].map(h => (
                               <th key={h} className="px-6 py-4 text-[10px] font-black uppercase tracking-widest opacity-40" style={{ color: card.text }}>{h}</th>
                             ))}
                           </tr>
@@ -2040,6 +2047,20 @@ export default function InventoryPage() {
                                    }}
                                  />
                               </td>
+                              <td className="px-6 py-4">
+                                 <input 
+                                   type="number" 
+                                   className="w-24 bg-transparent font-mono text-sm font-bold focus:outline-none" 
+                                   style={{ color: card.success }}
+                                   placeholder="Sell Price"
+                                   value={item.sellingPrice || ''}
+                                   onChange={(e) => {
+                                     const newItems = [...invoiceItems];
+                                     newItems[idx].sellingPrice = parseFloat(e.target.value) || 0;
+                                     setInvoiceItems(newItems);
+                                   }}
+                                 />
+                              </td>
                               <td className="px-6 py-4 font-mono text-sm font-bold" style={{ color: card.text }}>
                                  GH₵ {(item.quantity * item.unitCost).toFixed(2)}
                               </td>
@@ -2055,7 +2076,7 @@ export default function InventoryPage() {
                           ))}
                           {invoiceItems.length === 0 && (
                             <tr>
-                              <td colSpan={7} className="py-24 text-center">
+                              <td colSpan={8} className="py-24 text-center">
                                  <div className="w-16 h-16 rounded-full bg-slate-500/5 flex items-center justify-center mx-auto mb-4">
                                     <Package size={32} className="opacity-10" />
                                  </div>

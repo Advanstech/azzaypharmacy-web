@@ -6,10 +6,12 @@ import { useParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, FileText, CheckCircle, Clock, AlertCircle, 
-  DollarSign, Truck, Calendar, Receipt, ChevronRight 
+  DollarSign, Truck, Calendar, Receipt, ChevronRight, Edit2, Save, X
 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
+import { gql, M_UPDATE_PRODUCT_PRICES } from '@/lib/gql';
+import { useToast } from '@/components/pharma-toast';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams();
@@ -17,6 +19,10 @@ export default function InvoiceDetailPage() {
   const { invoices, recordSupplierPayment } = useStore();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
+  const { addToast } = useToast();
+
+  // Selling price editing state: { [itemId]: { value: number, saving: boolean } }
+  const [editingPrices, setEditingPrices] = useState<Record<string, { value: string; saving: boolean }>>({});
 
   const invoice = useMemo(() => invoices.find(inv => inv.id === id), [invoices, id]);
   
@@ -50,6 +56,33 @@ export default function InvoiceDetailPage() {
       const msg = err?.message || 'Unknown error';
       console.error('Failed to record payment', err);
       setPaymentError(msg);
+    }
+  };
+
+  const startEditPrice = (itemId: string, currentPrice?: number) => {
+    setEditingPrices(prev => ({ ...prev, [itemId]: { value: (currentPrice ?? 0).toString(), saving: false } }));
+  };
+
+  const cancelEditPrice = (itemId: string) => {
+    setEditingPrices(prev => { const n = { ...prev }; delete n[itemId]; return n; });
+  };
+
+  const saveEditPrice = async (itemId: string, productId: string, costPrice: number) => {
+    const edit = editingPrices[itemId];
+    if (!edit) return;
+    const newSellingPrice = parseFloat(edit.value);
+    if (isNaN(newSellingPrice) || newSellingPrice < 0) {
+      addToast({ type: 'warning', title: 'Invalid Price', message: 'Enter a valid selling price.', duration: 4000 });
+      return;
+    }
+    setEditingPrices(prev => ({ ...prev, [itemId]: { ...prev[itemId], saving: true } }));
+    try {
+      await gql(M_UPDATE_PRODUCT_PRICES, { productId, costPrice, sellingPrice: newSellingPrice });
+      addToast({ type: 'success', title: 'Selling Price Updated', message: `New price: GH₵ ${newSellingPrice.toFixed(2)}`, duration: 4000 });
+      cancelEditPrice(itemId);
+    } catch (err: any) {
+      addToast({ type: 'error', title: 'Update Failed', message: err?.message || 'Try again.', duration: 5000 });
+      setEditingPrices(prev => ({ ...prev, [itemId]: { ...prev[itemId], saving: false } }));
     }
   };
 
@@ -179,8 +212,53 @@ export default function InvoiceDetailPage() {
                     <td className="px-6 py-4 text-right font-medium text-sm" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
                       GH₵ {item.unitCost.toFixed(2)}
                     </td>
-                    <td className="px-6 py-4 text-right font-bold text-sm text-green-500">
-                      {item.sellingPrice ? `GH₵ ${Number(item.sellingPrice).toFixed(2)}` : 'N/A'}
+                    <td className="px-6 py-4 text-right">
+                      {editingPrices[item.id] ? (
+                        <div className="flex items-center justify-end gap-1">
+                          <span className="text-xs font-bold" style={{ color: isDark ? '#64748B' : '#94A3B8' }}>GH₵</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={editingPrices[item.id].value}
+                            onChange={e => setEditingPrices(prev => ({ ...prev, [item.id]: { ...prev[item.id], value: e.target.value } }))}
+                            className="w-24 px-2 py-1 rounded-lg text-xs font-bold text-right focus:outline-none focus:ring-2 focus:ring-green-500"
+                            style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#E2E8F0' : '#0F172A', border: `1px solid ${isDark ? '#334155' : '#CBD5E1'}` }}
+                            autoFocus
+                            disabled={editingPrices[item.id].saving}
+                          />
+                          <button
+                            onClick={() => saveEditPrice(item.id, item.product?.id || '', item.unitCost)}
+                            disabled={editingPrices[item.id].saving}
+                            className="p-1.5 rounded-lg bg-green-500/10 text-green-500 hover:bg-green-500/20 transition-colors disabled:opacity-50"
+                            title="Save"
+                          >
+                            <Save size={13} />
+                          </button>
+                          <button
+                            onClick={() => cancelEditPrice(item.id)}
+                            disabled={editingPrices[item.id].saving}
+                            className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-50"
+                            title="Cancel"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2 group">
+                          <span className="font-bold text-sm text-green-500">
+                            {item.sellingPrice ? `GH₵ ${Number(item.sellingPrice).toFixed(2)}` : <span style={{ color: isDark ? '#475569' : '#94A3B8' }}>N/A</span>}
+                          </span>
+                          <button
+                            onClick={() => startEditPrice(item.id, item.sellingPrice ? Number(item.sellingPrice) : item.unitCost)}
+                            className="p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-500/10"
+                            title="Edit Selling Price"
+                            style={{ color: isDark ? '#64748B' : '#94A3B8' }}
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-sm text-blue-500">
                       {item.product?.costPrice ? `GH₵ ${Number(item.product.costPrice).toFixed(2)}` : 'N/A'}

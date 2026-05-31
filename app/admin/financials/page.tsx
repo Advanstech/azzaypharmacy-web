@@ -56,7 +56,7 @@ export default function FinancialsPage() {
 
     // Inject real expenses
     if (expenses && expenses.length > 0) {
-      expenses.forEach(exp => {
+      expenses.filter(e => e.status === 'APPROVED').forEach(exp => {
         if (!entries.some(l => l.ref === exp.id || l.id === exp.id)) {
           entries.push({
             id: exp.id,
@@ -138,10 +138,10 @@ export default function FinancialsPage() {
   const inventoryValue = useMemo(() => products.reduce((sum, p) => sum + (p.costPrice || 0) * (p.stockQuantity || 0), 0), [products]);
   const outstandingPayables = useMemo(() => invoices.reduce((a, inv) => a + Number(inv.balance || 0), 0), [invoices]);
 
-  // Dynamic category breakdown from real data
   const categoryBreakdown = useMemo(() => {
     const totalInvoiceValue = invoices.reduce((a, inv) => a + Number(inv.total || 0), 0);
-    const totalExpenseAmt = expenses.reduce((a, e) => a + Number(e.amount || 0), 0);
+    const approvedExpenses = expenses.filter(e => e.status === 'APPROVED');
+    const totalExpenseAmt = approvedExpenses.reduce((a, e) => a + Number(e.amount || 0), 0);
     const maxAmt = Math.max(totalRevenue, totalInvoiceValue, cogsTotal, totalExpenseAmt) || 1;
     return [
       { category: 'Pharmacy Sales', amount: totalRevenue, type: 'income' as const, percentage: Math.round((totalRevenue / maxAmt) * 100) },
