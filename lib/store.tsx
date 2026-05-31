@@ -347,6 +347,8 @@ interface StoreState {
     items: CartItem[];
     paymentMethod: string;
     amountPaid: number;
+    cashAmount?: number;
+    momoAmount?: number;
     customerId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -744,6 +746,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     items: CartItem[];
     paymentMethod: string;
     amountPaid: number;
+    cashAmount?: number;
+    momoAmount?: number;
     customerId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -757,6 +761,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       items: args.items.map(i => ({ productId: i.product.id, quantity: i.quantity })),
       paymentMethod: args.paymentMethod.toUpperCase(),
       amountPaid: args.amountPaid,
+      cashAmount: args.cashAmount,
+      momoAmount: args.momoAmount,
       customerId: args.customerId,
       customerName: args.customerName,
       customerPhone: args.customerPhone,

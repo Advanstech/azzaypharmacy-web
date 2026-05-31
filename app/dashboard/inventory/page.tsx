@@ -245,6 +245,22 @@ export default function InventoryPage() {
     }
   };
 
+  const handleGenerateImageEdit = async () => {
+    if (!editForm.name) return;
+    setIsGeneratingImage(true);
+    try {
+      const { gql, M_GENERATE_PRODUCT_IMAGE } = await import('@/lib/gql');
+      const data = await gql<{ generateProductImage: string }>(M_GENERATE_PRODUCT_IMAGE, { name: editForm.name });
+      if (data.generateProductImage) {
+        setEditForm((prev: any) => ({ ...prev, imageUrl: data.generateProductImage }));
+      }
+    } catch (error) {
+      console.error('Failed to generate image:', error);
+    } finally {
+      setIsGeneratingImage(false);
+    }
+  };
+
   const handleCreateInvoiceProductNow = async (itemId: string) => {
     const target = invoiceItems.find(i => i.id === itemId);
     if (!target) return;
@@ -379,7 +395,7 @@ export default function InventoryPage() {
           id: Math.random().toString(36).substring(7),
           productId: created.id,
           name: created.name,
-          quantity: 1,
+          quantity: newProduct.stockQuantity || 1,
           unitCost: newProduct.costPrice || 0,
           batchNo: '',
           expiryDate: '',
@@ -1607,7 +1623,7 @@ export default function InventoryPage() {
                   </div>
                   <div className="space-y-3">
                     <label className="text-[10px] font-bold uppercase tracking-wider block" style={{ color: card.subtle }}>Product Preview</label>
-                    <div className="aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden" style={{ borderColor: card.border, background: card.inputBg }}>
+                    <div className="relative aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden" style={{ borderColor: card.border, background: card.inputBg }}>
                       {editForm.imageUrl ? (
                         <img src={editForm.imageUrl} className="w-full h-full object-cover" alt="Preview" onError={() => setEditForm({...editForm, imageUrl: ''})} />
                       ) : (
@@ -1616,7 +1632,12 @@ export default function InventoryPage() {
                           <p className="text-[10px]" style={{ color: card.text }}>No image set</p>
                         </div>
                       )}
+                      {isGeneratingImage && <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-cyan-500 text-[10px] font-bold tracking-widest animate-pulse">GENERATING...</div>}
                     </div>
+                    <button onClick={handleGenerateImageEdit} disabled={!editForm.name || isGeneratingImage} className="w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+                      {isGeneratingImage ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} 
+                      {isGeneratingImage ? 'AI is working...' : 'Auto-Generate via AI'}
+                    </button>
                   </div>
                 </div>
               )}
@@ -2122,7 +2143,7 @@ export default function InventoryPage() {
                         <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                       </div>
                       <div>
-                        <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Due Date (Intelligence)</label>
+                        <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Payment Due Date</label>
                         <div className="relative">
                           <input type="date" value={invoiceDueDate} onChange={e => setInvoiceDueDate(e.target.value)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                         </div>
@@ -2132,8 +2153,8 @@ export default function InventoryPage() {
 
                   <div className="space-y-6">
                     <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Receiving Notes</label>
-                      <textarea rows={4} value={invoiceNotes} onChange={e => setInvoiceNotes(e.target.value)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} placeholder="Mention damages, batch issues, or storage instructions..." />
+                      <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Receiving Notes (Narration)</label>
+                      <textarea rows={4} value={invoiceNotes} onChange={e => setInvoiceNotes(e.target.value)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} placeholder="e.g. Paid 500 GHS in cash, balance 200 via Momo. Handled by Kwame." />
                     </div>
 
                     <div className="p-6 rounded-[32px] border-2 border-dashed flex flex-col items-center justify-center gap-3 text-center" style={{ borderColor: card.border, background: card.inputBg }}>

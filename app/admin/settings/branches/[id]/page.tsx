@@ -201,7 +201,7 @@ export default function BranchDashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => router.push('/dashboard/admin/branches')}
+            onClick={() => router.push('/admin/settings/branches')}
             className="p-2 rounded-xl hover:bg-white/5 transition-all"
             style={{ background: card.bg, border: `1px solid ${card.border}` }}>
             <ArrowLeft size={20} style={{ color: card.muted }} />

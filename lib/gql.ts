@@ -262,6 +262,8 @@ export const M_CREATE_SALE = `
     $items: [SaleItemInput!]!
     $paymentMethod: PaymentMethod!
     $amountPaid: Float!
+    $cashAmount: Float
+    $momoAmount: Float
     $customerId: String
     $customerName: String
     $customerPhone: String
@@ -273,6 +275,8 @@ export const M_CREATE_SALE = `
       items: $items
       paymentMethod: $paymentMethod
       amountPaid: $amountPaid
+      cashAmount: $cashAmount
+      momoAmount: $momoAmount
       customerId: $customerId
       customerName: $customerName
       customerPhone: $customerPhone

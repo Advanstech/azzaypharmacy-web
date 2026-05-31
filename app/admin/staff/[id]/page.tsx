@@ -250,7 +250,7 @@ export default function StaffDetailPage() {
         <p className="mt-4 text-lg font-semibold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>
           Staff member not found
         </p>
-        <Link href="/dashboard/staff" className="mt-4 px-4 py-2 rounded-xl text-sm font-medium"
+        <Link href="/admin/staff" className="mt-4 px-4 py-2 rounded-xl text-sm font-medium"
           style={{ background: isDark ? 'rgba(248,250,252,0.08)' : 'rgba(14,165,233,0.1)', color: isDark ? '#F8FAFC' : '#0F172A' }}>
           Back to Staff
         </Link>
@@ -280,7 +280,7 @@ export default function StaffDetailPage() {
       <div className="flex flex-col items-center justify-center py-20">
         <AlertCircle size={48} style={{ color: card.muted }} />
         <p className="mt-4 text-lg font-semibold" style={{ color: card.text }}>Staff member not found</p>
-        <Link href="/dashboard/staff" className="mt-4 px-4 py-2 rounded-xl text-sm font-medium"
+        <Link href="/admin/staff" className="mt-4 px-4 py-2 rounded-xl text-sm font-medium"
           style={{ background: card.primaryBg, color: card.primary }}>
           Back to Staff
         </Link>
@@ -302,7 +302,7 @@ export default function StaffDetailPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Back Button */}
-      <Link href="/dashboard/staff" className="inline-flex items-center gap-2 text-sm font-medium transition-colors"
+      <Link href="/admin/staff" className="inline-flex items-center gap-2 text-sm font-medium transition-colors"
         style={{ color: card.muted }}>
         <ArrowLeft size={16} />
         Back to Staff Directory

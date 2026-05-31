@@ -303,7 +303,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
               </div>
             ))}
           </div>
-          <Link href="/dashboard/staff" className="flex items-center justify-center gap-1 mt-3 py-2 rounded-xl text-[11px] font-medium transition-colors"
+          <Link href="/admin/staff" className="flex items-center justify-center gap-1 mt-3 py-2 rounded-xl text-[11px] font-medium transition-colors"
             style={{ background: `${s.accent}10`, color: s.accent }}>
             View All Staff <ChevronRight size={14} />
           </Link>

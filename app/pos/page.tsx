@@ -47,7 +47,7 @@ interface CartItem {
   quantity: number;
 }
 
-type PaymentMethod = 'Cash' | 'MoMo' | 'Card' | 'NHIS';
+type PaymentMethod = 'Cash' | 'MoMo' | 'Card' | 'NHIS' | 'SPLIT';
 
 function POSInner() {
   const { theme, resolvedTheme } = useTheme();
@@ -84,6 +84,8 @@ function POSInner() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [tendered, setTendered] = useState('');
+  const [splitCash, setSplitCash] = useState('');
+  const [splitMomo, setSplitMomo] = useState('');
   const [showReceipt, setShowReceipt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [completedSale, setCompletedSale] = useState<any>(null);
@@ -290,8 +292,10 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     try {
       const sale = await createSale({
         items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
-        paymentMethod,
+        paymentMethod: paymentMethod === 'SPLIT' ? 'SPLIT' : paymentMethod.toUpperCase(),
         amountPaid: paymentMethod === 'Cash' ? tenderedNum || total : total,
+        cashAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitCash) || 0) : undefined,
+        momoAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitMomo) || 0) : undefined,
         customerId: selectedCustomer?.id,
         customerName: selectedCustomer?.name || 'Walk-in Customer',
         customerPhone: selectedCustomer?.phone,
@@ -749,8 +753,8 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </div>
             </div>
 
-            <div className="grid grid-cols-4 gap-2">
-              {(['Cash', 'MoMo', 'Card', 'NHIS'] as PaymentMethod[]).map(m => (
+            <div className="grid grid-cols-5 gap-2">
+              {(['Cash', 'MoMo', 'Card', 'NHIS', 'SPLIT'] as PaymentMethod[]).map(m => (
                 <button 
                   key={m} onClick={() => setPaymentMethod(m)}
                   className={`py-2 rounded-xl text-[10px] font-bold border transition-all ${
@@ -782,9 +786,22 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </button>
             )}
 
+            {paymentMethod === 'SPLIT' && (
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-[10px] font-bold text-slate-500 block mb-1">Cash Amount</label>
+                  <input type="number" value={splitCash} onChange={e => setSplitCash(e.target.value)} placeholder="0.00" className="w-full py-3 px-4 rounded-xl border font-mono text-sm focus:outline-none focus:border-[#059669]" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', borderColor: c.border, color: c.text }} />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[10px] font-bold text-slate-500 block mb-1">MoMo Amount</label>
+                  <input type="number" value={splitMomo} onChange={e => setSplitMomo(e.target.value)} placeholder="0.00" className="w-full py-3 px-4 rounded-xl border font-mono text-sm focus:outline-none focus:border-[#059669]" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', borderColor: c.border, color: c.text }} />
+                </div>
+              </div>
+            )}
+
             <button 
               onClick={handleComplete}
-              disabled={cart.length === 0 || submitting}
+              disabled={cart.length === 0 || submitting || (paymentMethod === 'SPLIT' && (parseFloat(splitCash) || 0) + (parseFloat(splitMomo) || 0) !== total)}
               className="w-full py-4 rounded-2xl bg-primary text-white font-display font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
               style={{ background: submitting ? c.muted : c.primary }}
             >
@@ -1403,6 +1420,18 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                     </div>
                   </>
                 )}
+                {paymentMethod === 'SPLIT' && completedSale && (
+                  <>
+                    <div className="flex justify-between text-[10px] opacity-60">
+                      <span>Cash Paid</span>
+                      <span className="font-mono">GH₵ {completedSale.cashAmount?.toFixed(2) || '0.00'}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] opacity-60">
+                      <span>MoMo Paid</span>
+                      <span className="font-mono">GH₵ {completedSale.momoAmount?.toFixed(2) || '0.00'}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Barcode Line */}
@@ -1426,7 +1455,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
               <div className="flex gap-3 pt-2 print:hidden">
                 <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-2" style={{ borderColor: c.border, color: c.text }}><Printer size={16} /> Print</button>
-                <button onClick={() => { setShowReceipt(false); setCompletedSale(null); setSelectedCustomer(null); setPaymentMethod('Cash'); refetchProducts(); }} className="flex-[2] py-3 rounded-xl bg-primary text-white font-bold text-xs" style={{ background: c.primary }}>Next Sale</button>
+                <button onClick={() => { setShowReceipt(false); setCompletedSale(null); setSelectedCustomer(null); setPaymentMethod('Cash'); setSplitCash(''); setSplitMomo(''); refetchProducts(); }} className="flex-[2] py-3 rounded-xl bg-primary text-white font-bold text-xs" style={{ background: c.primary }}>Next Sale</button>
               </div>
             </div>
           </div>
@@ -1473,6 +1502,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
           #receipt-print-area * {
             background: transparent !important;
             color: #000 !important;
+            opacity: 1 !important;
             text-shadow: none !important;
             box-shadow: none !important;
           }

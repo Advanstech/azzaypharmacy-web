@@ -234,7 +234,7 @@ export default function BranchesPage() {
             {/* Footer */}
             <div className="px-5 pb-5 flex gap-3">
               <button 
-                onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/admin/branches/${branch.id}`); }}
+                onClick={(e) => { e.stopPropagation(); router.push(`/admin/settings/branches/${branch.id}`); }}
                 className="flex-1 py-2 rounded-xl text-xs font-bold transition-all hover:opacity-80 flex items-center justify-center gap-1"
                 style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
                 View Dashboard <ArrowRight size={12} />
