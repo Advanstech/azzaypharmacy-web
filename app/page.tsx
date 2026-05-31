@@ -771,7 +771,9 @@ export default function LoginPage() {
         }, 800);
       }
     } else {
-      const { data, error: err } = await signIn(email, password);
+      const cleanEmail = email.trim();
+      const cleanPassword = password.trim();
+      const { data, error: err } = await signIn(cleanEmail, cleanPassword);
       if (err) {
         if (err.includes('Invalid login credentials')) {
           setError('Invalid credentials. If you are a new staff member, please ask your manager to set up your account at /dashboard/setup-staff');
@@ -783,7 +785,7 @@ export default function LoginPage() {
         setLoading(false);
       } else {
         // Check if this is a temporary password (starts with "Azzay@")
-        if (password.startsWith('Azzay@')) {
+        if (cleanPassword.startsWith('Azzay@')) {
           setIsFirstTimeLogin(true);
           setShowPasswordChangeModal(true);
           setLoading(false);
