@@ -200,6 +200,7 @@ export interface InvoicePayment {
   method: string;
   reference?: string;
   notes?: string;
+  paidAt?: string;
   createdAt: string;
 }
 

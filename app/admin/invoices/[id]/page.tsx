@@ -179,7 +179,7 @@ export default function InvoiceDetailPage() {
                       GH₵ {item.unitCost.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-sm text-blue-500">
-                      {item.product?.costPrice ? `GH₵ ${Number(item.product.costPrice).toFixed(2)}` : 'N/A'}
+                      {item.product?.basePrice ? `GH₵ ${Number(item.product.basePrice).toFixed(2)}` : 'N/A'}
                     </td>
                     <td className="px-6 py-4 text-right font-bold text-sm" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
                       GH₵ {item.total.toFixed(2)}
@@ -224,7 +224,7 @@ export default function InvoiceDetailPage() {
                   </div>
                   <div>
                     <p className="font-bold text-sm" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>{payment.method} Payment</p>
-                    <p className="text-xs" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>{new Date(payment.paidAt).toLocaleString()}</p>
+                    <p className="text-xs" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>{payment.paidAt ? new Date(payment.paidAt).toLocaleString() : 'N/A'}</p>
                   </div>
                 </div>
                 <p className="font-display font-black text-emerald-500 text-lg">GH₵ {payment.amount.toFixed(2)}</p>
@@ -264,8 +264,10 @@ export default function InvoiceDetailPage() {
                 >
                   <option value="CASH">Cash</option>
                   <option value="MOMO">Mobile Money (MoMo)</option>
+                  <option value="CARD">Card / POS</option>
                   <option value="BANK_TRANSFER">Bank Transfer</option>
                   <option value="CHEQUE">Cheque</option>
+                  <option value="CREDIT">Credit</option>
                 </select>
               </div>
               

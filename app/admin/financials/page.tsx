@@ -11,56 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
-// Comprehensive Ledger with inventory and supplier integration
-const LEDGER = [
-  // May 2026
-  { id: 'TXN-2026-0052', date: '2026-05-03', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 2845.00, description: 'Daily POS Sales — Branch A', ref: 'POS-284758', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0051', date: '2026-05-03', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 1422.50, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284758' },
-  { id: 'TXN-2026-0050', date: '2026-05-03', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 1890.00, description: 'Daily POS Sales — Branch A', ref: 'POS-284757', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0049', date: '2026-05-03', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 945.00, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284757' },
-  { id: 'TXN-2026-0048', date: '2026-05-03', type: 'DEBIT', account: 'SALARIES', category: 'Staff Costs', amount: 1200.00, description: 'Staff Salaries — 1st Week May', ref: 'PAY-2026-W1' },
-  { id: 'TXN-2026-0047', date: '2026-05-02', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 2156.00, description: 'Daily POS Sales — Branch A', ref: 'POS-284756', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0046', date: '2026-05-02', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 1078.00, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284756' },
-  { id: 'TXN-2026-0045', date: '2026-05-02', type: 'DEBIT', account: 'ACCOUNTS_PAYABLE', category: 'Supplier Payment', amount: 1160.00, description: 'Invoice Payment — Danadams Pharmaceuticals (INV-DAN-2026-089)', ref: 'PAY-DAN-089', supplier: 'Danadams Pharmaceuticals' },
-  { id: 'TXN-2026-0044', date: '2026-05-02', type: 'DEBIT', account: 'INVENTORY', category: 'Inventory Purchase', amount: 1160.00, description: 'Stock Receipt — Ceftriaxone & Cefuroxime', ref: 'PO-2026-045', supplier: 'Danadams Pharmaceuticals' },
-  { id: 'TXN-2026-0043', date: '2026-05-01', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 1987.50, description: 'Daily POS Sales — Branch A', ref: 'POS-284755', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0042', date: '2026-05-01', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 993.75, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284755' },
-  { id: 'TXN-2026-0041', date: '2026-05-01', type: 'DEBIT', account: 'ACCOUNTS_PAYABLE', category: 'Supplier Payment', amount: 4500.00, description: 'Invoice Payment — Ernest Chemists (INV-ERN-2026-056)', ref: 'PAY-ERN-056', supplier: 'Ernest Chemists Ltd' },
-  { id: 'TXN-2026-0040', date: '2026-05-01', type: 'DEBIT', account: 'UTILITIES', category: 'Operating Expenses', amount: 450.00, description: 'Electricity & Water — May Bill', ref: 'UTIL-2026-05' },
-  // April 2026
-  { id: 'TXN-2026-0039', date: '2026-04-30', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 3245.00, description: 'Daily POS Sales — Branch A', ref: 'POS-284754', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0038', date: '2026-04-30', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 1622.50, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284754' },
-  { id: 'TXN-2026-0037', date: '2026-04-30', type: 'DEBIT', account: 'ACCOUNTS_PAYABLE', category: 'Supplier Payment', amount: 2100.00, description: 'Invoice Payment — MedSupply Ghana (INV-MS-2026-023)', ref: 'PAY-MS-023', supplier: 'MedSupply Ghana Ltd' },
-  { id: 'TXN-2026-0036', date: '2026-04-29', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 2780.00, description: 'Daily POS Sales — Branch A', ref: 'POS-284753', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0035', date: '2026-04-29', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 1390.00, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284753' },
-  { id: 'TXN-2026-0034', date: '2026-04-28', type: 'DEBIT', account: 'INVENTORY', category: 'Inventory Purchase', amount: 1110.00, description: 'Stock Receipt — Amovulin & Benzyl Penicillin', ref: 'PO-2026-043', supplier: 'Bedither Pharmaceuticals' },
-  { id: 'TXN-2026-0033', date: '2026-04-28', type: 'DEBIT', account: 'ACCOUNTS_PAYABLE', category: 'Supplier Payment', amount: 800.00, description: 'Invoice Payment — OA&J Pharmaceuticals (INV-OAJ-2026-045)', ref: 'PAY-OAJ-045', supplier: 'OA&J Pharmaceuticals' },
-  { id: 'TXN-2026-0032', date: '2026-04-28', type: 'DEBIT', account: 'INVENTORY', category: 'Inventory Purchase', amount: 800.00, description: 'Stock Receipt — Flucoron & Novacip', ref: 'PO-2026-044', supplier: 'OA&J Pharmaceuticals' },
-  { id: 'TXN-2026-0031', date: '2026-04-28', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 2456.50, description: 'Daily POS Sales — Branch A', ref: 'POS-284752', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0030', date: '2026-04-28', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 1228.25, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284752' },
-  { id: 'TXN-2026-0029', date: '2026-04-27', type: 'DEBIT', account: 'SALARIES', category: 'Staff Costs', amount: 4800.00, description: 'Monthly Staff Salaries — April', ref: 'PAY-2026-04' },
-  { id: 'TXN-2026-0028', date: '2026-04-27', type: 'CREDIT', account: 'SALES_REVENUE', category: 'Pharmacy Sales', amount: 3120.00, description: 'Daily POS Sales — Branch A', ref: 'POS-284751', paymentMethod: 'Cash/Momo' },
-  { id: 'TXN-2026-0027', date: '2026-04-27', type: 'DEBIT', account: 'COGS', category: 'Cost of Goods', amount: 1560.00, description: 'Inventory Cost — Sales Deduction', ref: 'COGS-284751' },
-  { id: 'TXN-2026-0026', date: '2026-04-25', type: 'DEBIT', account: 'RENT', category: 'Operating Expenses', amount: 3500.00, description: 'Monthly Rent — Dormaa Central', ref: 'RENT-2026-04' },
-  { id: 'TXN-2026-0025', date: '2026-04-15', type: 'DEBIT', account: 'INVENTORY', category: 'Inventory Purchase', amount: 3100.00, description: 'Stock Receipt — Atorvastatin & Methyldopa', ref: 'PO-2026-039', supplier: 'Ernest Chemists Ltd' },
-];
-
-const SUPPLIER_PAYABLES = [
-  { supplier: 'Danadams Pharmaceuticals', invoice: 'INV-DAN-2026-089', amount: 0, status: 'paid', dueDate: '2026-05-09', paidDate: '2026-05-02' },
-  { supplier: 'Bedither Pharmaceuticals', invoice: 'INV-BED-2026-112', amount: 1110.00, status: 'pending', dueDate: '2026-05-28' },
-  { supplier: 'OA&J Pharmaceuticals', invoice: 'INV-OAJ-2026-045', amount: 0, status: 'paid', dueDate: '2026-05-31', paidDate: '2026-04-28' },
-  { supplier: 'ADD Pharma Limited', invoice: 'INV-ADD-2026-089', amount: 1830.00, status: 'overdue', dueDate: '2026-05-09' },
-  { supplier: 'Ernest Chemists Ltd', invoice: 'INV-ERN-2026-056', amount: 0, status: 'paid', dueDate: '2026-05-15', paidDate: '2026-05-01' },
-];
-
-const CATEGORY_BREAKDOWN = [
-  { category: 'Pharmacy Sales', amount: 19575.00, type: 'income', percentage: 100 },
-  { category: 'Cost of Goods', amount: 9787.50, type: 'expense', percentage: 50 },
-  { category: 'Staff Salaries', amount: 6000.00, type: 'expense', percentage: 30.6 },
-  { category: 'Supplier Payments', amount: 10360.00, type: 'expense', percentage: 52.9 },
-  { category: 'Rent & Utilities', amount: 3950.00, type: 'expense', percentage: 20.2 },
-  { category: 'Inventory Purchases', amount: 6170.00, type: 'expense', percentage: 31.5 },
-];
+// No hardcoded data — all figures come from the live store
 
 export default function FinancialsPage() {
   const { theme } = useTheme();
@@ -69,11 +20,12 @@ export default function FinancialsPage() {
   const isDark = mounted && theme === 'dark';
 
   const { user } = useAuth();
-  const { sales, products, ledger, purchases, expenses, expenseCategories, createExpense, refetchLedger, me } = useStore();
+  const { sales, products, ledger, purchases, invoices, expenses, expenseCategories, createExpense, refetchLedger, refetchInvoices, me } = useStore();
 
   useEffect(() => {
     refetchLedger();
-  }, [refetchLedger]);
+    refetchInvoices();
+  }, [refetchLedger, refetchInvoices]);
 
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'ACCOUNTANT'].includes(role || '');
@@ -84,48 +36,121 @@ export default function FinancialsPage() {
   const [expenseForm, setExpenseForm] = useState({ categoryId: '', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
 
   const liveLedger = useMemo(() => {
-    const baseLedger = ledger.length > 0 ? ledger : LEDGER;
-    const combined = [...baseLedger];
-    
-    // Inject real expenses from the API if they exist
+    const entries: any[] = [...ledger];
+
+    // Inject sales as CREDIT entries if ledger is sparse
+    if (sales && sales.length > 0 && ledger.length === 0) {
+      sales.forEach(sale => {
+        entries.push({
+          id: `SALE-${sale.id}`,
+          date: new Date(sale.createdAt).toISOString().split('T')[0],
+          type: 'CREDIT',
+          account: 'SALES_REVENUE',
+          category: 'Pharmacy Sales',
+          amount: sale.totalAmount,
+          description: `POS Sale — ${sale.paymentMethod}`,
+          ref: sale.id.slice(-8).toUpperCase(),
+        });
+      });
+    }
+
+    // Inject real expenses
     if (expenses && expenses.length > 0) {
       expenses.forEach(exp => {
-        // Only add if not already present by reference
-        if (!combined.some(l => l.ref === exp.id || l.id === exp.id)) {
-          combined.push({
+        if (!entries.some(l => l.ref === exp.id || l.id === exp.id)) {
+          entries.push({
             id: exp.id,
             date: exp.date ? new Date(exp.date).toISOString().split('T')[0] : new Date(exp.createdAt || Date.now()).toISOString().split('T')[0],
             type: 'DEBIT',
-            account: 'EXPENSE', // Or appropriate mapping
+            account: 'EXPENSE',
             category: exp.category?.name || 'Operating Expense',
             amount: exp.amount,
             description: exp.description,
-            ref: exp.id,
+            ref: exp.id.slice(-8).toUpperCase(),
           });
         }
       });
     }
 
-    return combined.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [ledger, expenses]);
+    // Inject invoice payments as DEBIT (cash out / liability reduction)
+    if (invoices && invoices.length > 0) {
+      invoices.forEach(inv => {
+        if (inv.payments && inv.payments.length > 0) {
+          inv.payments.forEach(pmt => {
+            const pmtId = `PMT-${pmt.id}`;
+            if (!entries.some(l => l.id === pmtId)) {
+              entries.push({
+                id: pmtId,
+                date: new Date(pmt.paidAt || Date.now()).toISOString().split('T')[0],
+                type: 'DEBIT',
+                account: 'LIABILITY',
+                category: 'Supplier Payment',
+                amount: pmt.amount,
+                description: `Supplier Payment — INV: ${inv.invoiceNo} (${pmt.method})`,
+                ref: inv.invoiceNo,
+                supplier: inv.supplier?.name,
+              });
+            }
+          });
+        }
+        // Inject the original purchase liability (CREDIT = we owe)
+        const liabilityId = `LIA-${inv.id}`;
+        if (!entries.some(l => l.id === liabilityId)) {
+          entries.push({
+            id: liabilityId,
+            date: new Date(inv.issueDate).toISOString().split('T')[0],
+            type: 'CREDIT',
+            account: 'LIABILITY',
+            category: 'Accounts Payable',
+            amount: inv.total,
+            description: `Supplier Invoice Received — INV: ${inv.invoiceNo}`,
+            ref: inv.invoiceNo,
+            supplier: inv.supplier?.name,
+          });
+        }
+      });
+    }
 
+    return entries.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [ledger, expenses, sales, invoices]);
+
+  // Live payables from real invoices
   const livePayables = useMemo(() => {
-    return purchases.length > 0 ? purchases.map(p => ({
-      supplier: p.supplier?.name || 'Unknown',
-      invoice: p.invoiceNo || p.id.slice(-8),
-      amount: p.total,
-      status: p.status === 'RECEIVED' ? 'paid' : (new Date(p.createdAt || Date.now()).getTime() + 14 * 86400000 < Date.now() ? 'overdue' : 'pending'),
-      dueDate: new Date(new Date(p.createdAt || Date.now()).getTime() + 14 * 86400000).toLocaleDateString(),
-    })) : SUPPLIER_PAYABLES;
-  }, [purchases]);
+    if (!invoices || invoices.length === 0) return [];
+    return invoices.map(inv => ({
+      id: inv.id,
+      supplier: inv.supplier?.name || 'Unknown Supplier',
+      invoice: inv.invoiceNo,
+      amount: inv.balance,
+      total: inv.total,
+      paidAmount: inv.paidAmount,
+      status: inv.paymentStatus === 'PAID' ? 'paid' : (inv.dueDate && new Date(inv.dueDate) < new Date() ? 'overdue' : 'pending'),
+      dueDate: inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : 'No due date',
+      issueDate: new Date(inv.issueDate).toLocaleDateString(),
+    }));
+  }, [invoices]);
 
-  const totalRevenue = useMemo(() => liveLedger.filter(l => l.type === 'CREDIT').reduce((a, l) => a + l.amount, 0), [liveLedger]);
-  const totalExpenses = useMemo(() => liveLedger.filter(l => l.type === 'DEBIT').reduce((a, l) => a + l.amount, 0), [liveLedger]);
+  const totalRevenue = useMemo(() => liveLedger.filter(l => l.type === 'CREDIT' && l.account === 'SALES_REVENUE').reduce((a, l) => a + Number(l.amount), 0), [liveLedger]);
+  const totalExpenses = useMemo(() => liveLedger.filter(l => l.type === 'DEBIT' && l.account !== 'LIABILITY').reduce((a, l) => a + Number(l.amount), 0), [liveLedger]);
   const netProfit = totalRevenue - totalExpenses;
-  const cogsTotal = useMemo(() => liveLedger.filter(l => l.account === 'COGS').reduce((a, l) => a + l.amount, 0), [liveLedger]);
-  const supplierPayments = LEDGER.filter(l => l.account === 'ACCOUNTS_PAYABLE').reduce((a, l) => a + l.amount, 0);
+  const cogsTotal = useMemo(() => liveLedger.filter(l => l.account === 'COGS').reduce((a, l) => a + Number(l.amount), 0), [liveLedger]);
+  const supplierPayments = useMemo(() => invoices.reduce((a, inv) => a + Number(inv.paidAmount || 0), 0), [invoices]);
   const inventoryValue = useMemo(() => products.reduce((sum, p) => sum + (p.costPrice || 0) * (p.stockQuantity || 0), 0), [products]);
-  const outstandingPayables = useMemo(() => livePayables.filter(p => p.status !== 'paid').reduce((a, p) => a + p.amount, 0), [livePayables]);
+  const outstandingPayables = useMemo(() => invoices.reduce((a, inv) => a + Number(inv.balance || 0), 0), [invoices]);
+
+  // Dynamic category breakdown from real data
+  const categoryBreakdown = useMemo(() => {
+    const totalInvoiceValue = invoices.reduce((a, inv) => a + Number(inv.total || 0), 0);
+    const totalExpenseAmt = expenses.reduce((a, e) => a + Number(e.amount || 0), 0);
+    const maxAmt = Math.max(totalRevenue, totalInvoiceValue, cogsTotal, totalExpenseAmt) || 1;
+    return [
+      { category: 'Pharmacy Sales', amount: totalRevenue, type: 'income' as const, percentage: Math.round((totalRevenue / maxAmt) * 100) },
+      { category: 'Cost of Goods', amount: cogsTotal, type: 'expense' as const, percentage: Math.round((cogsTotal / maxAmt) * 100) },
+      { category: 'Supplier Invoices', amount: totalInvoiceValue, type: 'expense' as const, percentage: Math.round((totalInvoiceValue / maxAmt) * 100) },
+      { category: 'Supplier Payments', amount: supplierPayments, type: 'expense' as const, percentage: Math.round((supplierPayments / maxAmt) * 100) },
+      { category: 'Operating Expenses', amount: totalExpenseAmt, type: 'expense' as const, percentage: Math.round((totalExpenseAmt / maxAmt) * 100) },
+    ];
+  }, [totalRevenue, cogsTotal, invoices, supplierPayments, expenses]);
 
   if (!isManager && mounted) {
     return (
@@ -368,7 +393,7 @@ export default function FinancialsPage() {
             style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
             <h3 className="font-display text-sm font-bold mb-4" style={{ color: card.text }}>Expense Breakdown</h3>
             <div className="space-y-3">
-              {CATEGORY_BREAKDOWN.filter(c => c.type === 'expense').map((cat, i) => (
+              {categoryBreakdown.filter(c => c.type === 'expense').map((cat, i) => (
                 <div key={cat.category} className="flex items-center gap-3">
                   <div className="flex-1">
                     <div className="flex items-center justify-between mb-1">
@@ -456,23 +481,28 @@ export default function FinancialsPage() {
             </div>
             <div className="flex gap-2">
               <span className="px-3 py-1.5 rounded-lg text-xs" style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B' }}>
-                Pending: GH₵ {livePayables.filter(p => p.status === 'pending').reduce((a, p) => a + p.amount, 0).toLocaleString()}
+                Pending: GH₵ {livePayables.filter(p => p.status === 'pending').reduce((a, p) => a + Number(p.amount), 0).toLocaleString()}
               </span>
               <span className="px-3 py-1.5 rounded-lg text-xs" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444' }}>
-                Overdue: GH₵ {livePayables.filter(p => p.status === 'overdue').reduce((a, p) => a + p.amount, 0).toLocaleString()}
+                Overdue: GH₵ {livePayables.filter(p => p.status === 'overdue').reduce((a, p) => a + Number(p.amount), 0).toLocaleString()}
               </span>
             </div>
           </div>
           <div className="divide-y" style={{ borderColor: card.divider }}>
-            {livePayables.map((p, i) => {
+            {livePayables.length === 0 ? (
+              <div className="p-8 text-center" style={{ color: card.muted }}>
+                <p className="text-sm font-medium">No supplier invoices found.</p>
+                <p className="text-xs mt-1 opacity-60">Upload invoices in the Inventory section to see payables here.</p>
+              </div>
+            ) : livePayables.map((p, i) => {
               const statusColors: Record<string, { bg: string; color: string }> = {
                 paid: { bg: 'rgba(16,185,129,0.1)', color: '#10B981' },
                 pending: { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B' },
                 overdue: { bg: 'rgba(239,68,68,0.1)', color: '#EF4444' },
               };
-              const st = statusColors[p.status];
+              const st = statusColors[p.status] || statusColors.pending;
               return (
-                <div key={p.invoice} className="flex items-center gap-4 p-4" style={{ background: i % 2 === 0 ? 'transparent' : (isDark ? 'rgba(15,23,42,0.2)' : 'rgba(248,250,252,0.5)') }}>
+                <div key={p.invoice} className="flex items-center gap-4 p-4" style={{ background: i % 2 === 0 ? 'transparent' : (isDark ? 'rgba(15,23,42,0.2)' : 'rgba(248,250,252,0.5)'), borderBottom: `1px solid ${card.divider}` }}>
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: card.primaryBg }}>
                     <Building2 size={18} style={{ color: card.primary }} />
                   </div>
@@ -481,19 +511,18 @@ export default function FinancialsPage() {
                     <div className="flex items-center gap-3 text-[11px]" style={{ color: card.muted }}>
                       <span className="font-mono">{p.invoice}</span>
                       <span>Due: {p.dueDate}</span>
+                      {p.paidAmount > 0 && <span className="text-emerald-500 font-bold">Paid: GH₵ {Number(p.paidAmount).toLocaleString()}</span>}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-mono text-sm font-bold" style={{ color: card.text }}>GH₵ {p.amount.toLocaleString()}</p>
+                  <div className="text-right shrink-0">
+                    <p className="font-mono text-xs line-through opacity-40" style={{ color: card.muted }}>Total: GH₵ {Number(p.total || 0).toLocaleString()}</p>
+                    <p className="font-mono text-sm font-bold" style={{ color: p.status === 'paid' ? '#10B981' : card.text }}>
+                      {p.status === 'paid' ? 'CLEARED' : `GH₵ ${Number(p.amount).toLocaleString()} due`}
+                    </p>
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-bold capitalize" style={{ background: st.bg, color: st.color }}>
                       {p.status}
                     </span>
                   </div>
-                  {p.status !== 'paid' && (
-                    <button className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}>
-                      Pay
-                    </button>
-                  )}
                 </div>
               );
             })}
@@ -557,7 +586,7 @@ export default function FinancialsPage() {
               <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.3)' : '#F8FAFC' }}>
                 <div className="flex items-center gap-2">
                   <Building2 size={16} style={{ color: '#F59E0B' }} />
-                  <span className="text-sm" style={{ color: card.text }}>Supplier Payments</span>
+                  <span className="text-sm" style={{ color: card.text }}>Supplier Payments Made</span>
                 </div>
                 <span className="font-mono font-bold" style={{ color: '#F59E0B' }}>GH₵ {supplierPayments.toLocaleString()}</span>
               </div>
