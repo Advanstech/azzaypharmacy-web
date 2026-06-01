@@ -31,7 +31,7 @@ export default function SupplierProductsPage() {
   const router = useRouter();
   const { theme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { products: allProducts, suppliers: storeSuppliers, getProductsBySupplier, updateProductPrices, updateProductSupplier, updateProductFull, deleteProduct, refetchProducts, loadingProducts, createProduct } = useStore();
+  const { products: allProducts, suppliers: storeSuppliers, getProductsBySupplier, updateProductPrices, updateProductSupplier, updateProductFull, adjustProductStock, deleteProduct, refetchProducts, loadingProducts, createProduct } = useStore();
   
   const supplierId = params.id as string;
   const supplier = storeSuppliers.find(s => s.id === supplierId) || FALLBACK_SUPPLIERS.find(s => s.id === supplierId) || FALLBACK_SUPPLIERS[0];
@@ -165,6 +165,7 @@ export default function SupplierProductsPage() {
   const saveEdit = async () => {
     setIsUpdating(true);
     try {
+      const currentQty = editingProduct?.qty || 0;
       await updateProductFull({
         id: editingProduct.id,
         name: editForm.name,
@@ -176,6 +177,12 @@ export default function SupplierProductsPage() {
         supplierId: editForm.supplierId,
         requiresRx: editForm.requiresRx
       });
+
+      if (editForm.qty !== currentQty) {
+        const diff = editForm.qty - currentQty;
+        await adjustProductStock(editingProduct.id, diff, 'Manual stock adjustment from supplier management');
+      }
+
       setShowEditModal(false);
       setEditingProduct(null);
       refetchProducts();
@@ -541,6 +548,10 @@ export default function SupplierProductsPage() {
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selling Price (GH₵)</label>
                   <input type="number" value={editForm.sell} onChange={e => setEditForm({...editForm, sell: parseFloat(e.target.value)})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                </div>
+                <div className="col-span-2 space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stock Quantity</label>
+                  <input type="number" min="0" value={editForm.qty || ''} onChange={e => setEditForm({...editForm, qty: parseInt(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 font-mono" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
                 </div>
                 <div className="col-span-2 pt-2 border-t flex items-center justify-between" style={{ borderColor: c.border }}>
                   <div>

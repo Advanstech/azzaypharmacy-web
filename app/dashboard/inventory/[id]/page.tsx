@@ -21,7 +21,7 @@ export default function ProductDetailedPaper() {
   const [mounted, setMounted] = useState(false);
   
   const productId = params?.id as string;
-  const { products, suppliers, stockMovements, updateProductFull, updateProductSupplier, refetchProducts, loadingProducts, me } = useStore();
+  const { products, suppliers, stockMovements, updateProductFull, updateProductSupplier, adjustProductStock, refetchProducts, loadingProducts, me } = useStore();
   
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [targetSupplierId, setTargetSupplierId] = useState('');
@@ -123,6 +123,7 @@ export default function ProductDetailedPaper() {
 
   const handleSave = async () => {
     try {
+      const currentStock = product?.stockQuantity || 0;
       await updateProductFull({
         id: productId,
         name: editForm.name,
@@ -131,7 +132,6 @@ export default function ProductDetailedPaper() {
         category: editForm.category,
         costPrice: editForm.costPrice,
         sellingPrice: editForm.sellingPrice,
-        stockQuantity: editForm.stockQuantity,
         supplierId: editForm.supplierId || undefined,
         strength: editForm.strength || undefined,
         dosageForm: editForm.dosageForm || undefined,
@@ -141,6 +141,12 @@ export default function ProductDetailedPaper() {
         isControlled: editForm.classification === 'CONTROLLED',
         imageUrl: editForm.imageUrl || undefined,
       });
+
+      if (editForm.stockQuantity !== currentStock) {
+        const diff = editForm.stockQuantity - currentStock;
+        await adjustProductStock(productId, diff, 'Manual stock adjustment during product edit');
+      }
+
       setShowEditModal(false);
     } catch (error) {
       console.error('Failed to update product:', error);
