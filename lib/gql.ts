@@ -5,20 +5,20 @@
 
 import { getSessionSafe } from '@/lib/supabase';
 
-const RAW_API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4000/graphql';
-const API = typeof window !== 'undefined'
-  ? RAW_API.replace('://localhost:', '://127.0.0.1:')
-  : RAW_API;
+const RAW_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/graphql';
+const API = RAW_API;
 
 function buildApiCandidates(apiUrl: string): string[] {
-  const candidates = new Set<string>([apiUrl]);
-  if (apiUrl.includes('://localhost:')) {
-    candidates.add(apiUrl.replace('://localhost:', '://127.0.0.1:'));
-  }
+  const candidates: string[] = [];
+  // Always prefer localhost first (Safari treats 127.0.0.1 as a different origin)
   if (apiUrl.includes('://127.0.0.1:')) {
-    candidates.add(apiUrl.replace('://127.0.0.1:', '://localhost:'));
+    candidates.push(apiUrl.replace('://127.0.0.1:', '://localhost:'));
   }
-  return Array.from(candidates);
+  candidates.push(apiUrl);
+  if (apiUrl.includes('://localhost:')) {
+    candidates.push(apiUrl.replace('://localhost:', '://127.0.0.1:'));
+  }
+  return [...new Set(candidates)];
 }
 
 function getApiRootUrl(apiUrl: string): string | null {

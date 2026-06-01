@@ -87,6 +87,7 @@ export default function InventoryPage() {
     category: '',
     costPrice: 0,
     sellingPrice: 0,
+    stockQuantity: 0,
     supplierId: '',
     strength: '',
     dosageForm: 'TABLET',
@@ -440,6 +441,12 @@ export default function InventoryPage() {
         isControlled: editForm.classification === 'CONTROLLED',
         imageUrl: editForm.imageUrl || undefined,
       });
+
+      if (editForm.stockQuantity !== undefined && editForm.stockQuantity !== editingProduct.stockQuantity) {
+        const diff = editForm.stockQuantity - (editingProduct.stockQuantity || 0);
+        await adjustProductStock(editingProduct.id, diff, 'Manual stock adjustment during product edit');
+      }
+
       setShowEditModal(false);
       setEditingProduct(null);
       setEditModalTab('basic');
@@ -462,6 +469,7 @@ export default function InventoryPage() {
       category: raw.category || '',
       costPrice: raw.costPrice || 0,
       sellingPrice: raw.sellingPrice || 0,
+      stockQuantity: raw.stockQuantity || 0,
       supplierId: raw.supplierId || '',
       strength: raw.strength || '',
       dosageForm: raw.dosageForm || 'TABLET',
@@ -1598,6 +1606,14 @@ export default function InventoryPage() {
                       </div>
                     </div>
                   )}
+
+                  <div className="col-span-2 border-t pt-5 mt-2" style={{ borderColor: card.border }}>
+                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Current Stock Quantity</label>
+                    <div className="flex items-center gap-4">
+                      <input type="number" min="0" value={editForm.stockQuantity === undefined ? '' : editForm.stockQuantity} onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                      <p className="text-xs w-1/2" style={{ color: card.muted }}>Update the stock count manually if needed.</p>
+                    </div>
+                  </div>
                 </div>
               )}
 

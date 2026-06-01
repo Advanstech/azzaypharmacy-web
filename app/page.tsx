@@ -633,8 +633,9 @@ export default function LoginPage() {
   const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
   const [token, setToken]       = useState('');
-  const [loginMode, setLoginMode] = useState<'token' | 'password'>('token');
+  const [loginMode, setLoginMode] = useState<'token' | 'password'>('password');
   const [tokenStepVisible, setTokenStepVisible] = useState(false);
+  const [passwordStepVisible, setPasswordStepVisible] = useState(false);
   const [tokenSent, setTokenSent] = useState(false);
   const [tokenSending, setTokenSending] = useState(false);
   const [tokenCooldown, setTokenCooldown] = useState(0);
@@ -663,24 +664,29 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (loginMode !== 'token') {
-      setTokenStepVisible(false);
-      setTokenSent(false);
-      setToken('');
-      return;
-    }
-
     const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail) {
+    
+    if (loginMode === 'token') {
+      setPasswordStepVisible(false);
+      if (!cleanEmail) {
+        setTokenStepVisible(false);
+        setTokenSent(false);
+        setToken('');
+      } else {
+        setTokenStepVisible(true);
+        setTokenSent(false);
+        setToken('');
+      }
+    } else {
       setTokenStepVisible(false);
       setTokenSent(false);
       setToken('');
-      return;
+      if (!cleanEmail) {
+        setPasswordStepVisible(false);
+      } else {
+        setPasswordStepVisible(true);
+      }
     }
-
-    setTokenStepVisible(true);
-    setTokenSent(false);
-    setToken('');
   }, [email, loginMode]);
 
   useEffect(() => {
@@ -1050,29 +1056,56 @@ export default function LoginPage() {
                   )}
                 </AnimatePresence>
               ) : (
-                <div>
-                  <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                    style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Password</label>
-                  <div className="relative group">
-                    <input ref={passwordRef} type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
-                      placeholder="••••••••"
-                      className="w-full px-4 py-3 rounded-xl text-sm font-medium focus:outline-none"
-                      style={inputStyle('password')}
-                      onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} />
-
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 hover:opacity-100 transition-opacity"
-                      style={{ color: isDark ? '#94A3B8' : '#64748B' }}
+                <AnimatePresence initial={false}>
+                  {passwordStepVisible && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, height: 0 }}
+                      animate={{ opacity: 1, y: 0, height: 'auto' }}
+                      exit={{ opacity: 0, y: -6, height: 0 }}
+                      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                      className="overflow-hidden"
                     >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
+                      <div className="mb-2">
+                        <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
+                          style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Password</label>
+                        <div className="relative group">
+                          <input ref={passwordRef} type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
+                            placeholder="••••••••"
+                            className="w-full px-4 py-3 rounded-xl text-sm font-medium focus:outline-none"
+                            style={inputStyle('password')}
+                            onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} />
+
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 hover:opacity-100 transition-opacity"
+                            style={{ color: isDark ? '#94A3B8' : '#64748B' }}
+                          >
+                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="pt-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setError(null);
+                            setLoginMode('token');
+                          }}
+                          className="text-xs font-medium inline-flex items-center gap-1.5"
+                          style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }}
+                        >
+                          <KeyRound size={12} />
+                          Prefer token login? Click here
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               )}
 
-              <motion.button suppressHydrationWarning type="submit" disabled={!mounted || loading || tokenSending || (loginMode === 'token' && !tokenStepVisible)}
+              <motion.button suppressHydrationWarning type="submit" disabled={!mounted || loading || tokenSending || (loginMode === 'token' && !tokenStepVisible) || (loginMode === 'password' && !passwordStepVisible)}
                 className="w-full py-3.5 rounded-xl font-bold text-sm relative overflow-hidden"
                 whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
                 style={{
@@ -1095,23 +1128,6 @@ export default function LoginPage() {
                   'Preparing token...'
                 ) : (loginMode === 'token' ? 'Verify & Access NEXUS' : 'Access NEXUS Terminal')}
               </motion.button>
-
-              {loginMode === 'password' && (
-                <div className="pt-1 text-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setError(null);
-                      setLoginMode('token');
-                    }}
-                    className="text-xs font-medium inline-flex items-center gap-1.5"
-                    style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }}
-                  >
-                    <KeyRound size={12} />
-                    Prefer token login? Click here
-                  </button>
-                </div>
-              )}
             </motion.form>
 
             {/* Footer */}
