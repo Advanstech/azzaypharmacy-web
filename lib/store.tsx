@@ -14,7 +14,7 @@ import {
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES, Q_REFUND_REQUESTS,
   M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE,
-  M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD,
+  M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD, M_DELETE_STAFF,
   M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
@@ -385,6 +385,7 @@ interface StoreState {
   }) => Promise<StaffMember>;
 
   updateDutyStatus: (userId: string, isOnDuty: boolean) => Promise<void>;
+  deleteStaff: (userId: string) => Promise<boolean>;
 
   generateTempPassword: (userId: string) => Promise<string>;
 
@@ -900,6 +901,15 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     setMe(prev => prev && prev.id === userId ? { ...prev, isOnDuty } : prev);
   }, []);
 
+  const deleteStaffFn = useCallback(async (userId: string): Promise<boolean> => {
+    const data = await gql<{ deleteStaff: boolean }>(M_DELETE_STAFF, { userId });
+    const result = data.deleteStaff;
+    if (result) {
+      setStaff(prev => prev.filter(s => s.id !== userId));
+    }
+    return result;
+  }, []);
+
   const generateTempPassword = useCallback(async (userId: string): Promise<string> => {
     const data = await gql<{ generateTempPassword: string }>(M_GENERATE_TEMP_PASSWORD, { userId });
     return data.generateTempPassword;
@@ -1106,7 +1116,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       stockMovements,
       refetchProducts, refetchSales, refetchStaff, refetchCustomers,
       refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchAll,
-      createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, generateTempPassword,
+      createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, updateProductFull,
       updateProductSupplier,
       bulkUpdateProductSupplier,

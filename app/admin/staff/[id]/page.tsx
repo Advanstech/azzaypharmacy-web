@@ -12,7 +12,7 @@ import {
   ArrowLeft, Mail, Phone, MapPin, Calendar, Award, Briefcase, Shield,
   Clock, Activity, Package, ShoppingCart, DollarSign, UserCheck,
   FileText, BarChart3, CalendarDays, Edit2, CheckCircle2, AlertCircle,
-  X, Save, Loader2, Building, ToggleLeft, ToggleRight, Key
+  X, Save, Loader2, Building, ToggleLeft, ToggleRight, Key, Trash2
 } from 'lucide-react';
 
 interface StaffMember {
@@ -216,7 +216,7 @@ export default function StaffDetailPage() {
   const [mounted, setMounted] = useState(false);
   const params = useParams();
   const staffId = params.id as string;
-  const { staff: liveStaff, loadingStaff, updateStaffProfile, generateTempPassword, sales } = useStore();
+  const { staff: liveStaff, loadingStaff, updateStaffProfile, generateTempPassword, sales, me, deleteStaff } = useStore();
   const { addToast } = useToast();
 
   const [showEditModal, setShowEditModal] = useState(false);
@@ -227,6 +227,9 @@ export default function StaffDetailPage() {
   
   const [generatingPassword, setGeneratingPassword] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [backendActivities, setBackendActivities] = useState<Activity[]>([]);
   const [activitiesLoaded, setActivitiesLoaded] = useState(false);
   const [loadingActivities, setLoadingActivities] = useState(false);
@@ -244,6 +247,23 @@ export default function StaffDetailPage() {
       addToast({ type: 'error', title: 'Failed', message: err.message || 'Could not generate password', duration: 5000 });
     } finally {
       setGeneratingPassword(false);
+    }
+  };
+
+  const handleDeleteStaff = async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteStaff(staffId);
+      setShowDeleteConfirm(false);
+      addToast({ type: 'success', title: 'Staff Deleted', message: 'Staff member has been removed', duration: 4000 });
+      // Navigate back to staff roster
+      window.location.href = '/admin/staff';
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete staff member');
+      addToast({ type: 'error', title: 'Failed', message: err.message || 'Could not delete staff', duration: 5000 });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -538,6 +558,19 @@ export default function StaffDetailPage() {
               {generatingPassword ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
               Generate Password
             </button>
+            {me?.id !== staffId && (
+              <button
+                onClick={() => {
+                  setDeleteError(null);
+                  setShowDeleteConfirm(true);
+                }}
+                disabled={isDeleting}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all hover:bg-red-500/10 text-red-500 border border-red-500/30 disabled:opacity-50"
+              >
+                <Trash2 size={14} />
+                Delete Staff
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1016,6 +1049,67 @@ export default function StaffDetailPage() {
                 >
                   {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                   {isSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(16px)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowDeleteConfirm(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              className="w-full max-w-md rounded-3xl border shadow-2xl flex flex-col"
+              style={{ background: isDark ? '#0D1424' : '#ffffff', borderColor: card.border }}
+            >
+              <div className="flex-1 px-6 py-6">
+                <div className="w-14 h-14 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mb-5">
+                  <Trash2 size={28} />
+                </div>
+                <h2 className="text-xl font-black tracking-tight mb-2" style={{ color: card.text }}>
+                  Delete Staff Member
+                </h2>
+                <p className="text-sm leading-relaxed mb-1" style={{ color: card.muted }}>
+                  Are you sure you want to delete <strong style={{ color: card.text }}>{getFullName(staff)}</strong>? This action will:
+                </p>
+                <ul className="text-sm list-disc list-inside mb-4" style={{ color: card.muted }}>
+                  <li>Deactivate their account</li>
+                  <li>Remove them from the roster</li>
+                  <li>Disable their login access</li>
+                </ul>
+                <p className="text-xs font-bold" style={{ color: '#EF4444' }}>This action cannot be undone.</p>
+                {deleteError && (
+                  <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2 text-sm text-red-500">
+                    <AlertCircle size={16} />
+                    {deleteError}
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-5 border-t flex gap-3 shrink-0" style={{ borderColor: card.border }}>
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all hover:opacity-90"
+                  style={{ color: card.muted, border: `1.5px solid ${card.border}` }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteStaff}
+                  disabled={isDeleting}
+                  className="flex-[2] py-3 rounded-2xl text-sm font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-95 disabled:opacity-40 bg-red-500 text-white"
+                >
+                  {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                  {isDeleting ? 'Deleting…' : 'Delete Staff'}
                 </button>
               </div>
             </motion.div>

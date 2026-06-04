@@ -113,15 +113,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (isSuperAdmin) return true;
     if (isManagement) return true;
     
-    // Non-management clinical/sales roles
-    const allowedForAll = [
+    // Clinical roles (PHARMACIST, TECHNICIAN) - view only access
+    if (isClinical) {
+      const allowedForClinical = [
+        'Overview',
+        'Sales',
+        'Inventory',
+        'Suppliers',
+        'Expenses',
+        'Refunds',
+        'End of Day',
+      ];
+      return allowedForClinical.includes(item.label);
+    }
+    
+    // Sales-only roles (CASHIER, CHEMICAL_CASHIER)
+    const allowedForSales = [
       'Overview',
       'Sales',
       'Expenses',
       'Refunds',
       'End of Day',
     ];
-    return allowedForAll.includes(item.label);
+    return allowedForSales.includes(item.label);
   });
 
 

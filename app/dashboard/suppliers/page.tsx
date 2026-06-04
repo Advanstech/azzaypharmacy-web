@@ -83,6 +83,8 @@ export default function SuppliersPage() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const handleAddSupplier = async () => {
     if (!newSupplier.name) return;
@@ -124,12 +126,23 @@ export default function SuppliersPage() {
 
   const handleDeleteSupplier = async () => {
     if (!confirmDelete) return;
+    setIsDeleting(true);
+    setDeleteError(null);
     try {
       await deleteSupplier(confirmDelete);
       setConfirmDelete(null);
-    } catch (err) {
-      console.error(err);
+      setDeleteError(null);
+    } catch (err: any) {
+      console.error('Delete supplier failed:', err);
+      setDeleteError(err?.message || 'Failed to delete supplier. It may have active invoices or purchases.');
+    } finally {
+      setIsDeleting(false);
     }
+  };
+
+  const closeDeleteModal = () => {
+    setConfirmDelete(null);
+    setDeleteError(null);
   };
 
   const c = {
@@ -146,6 +159,8 @@ export default function SuppliersPage() {
     divider: isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.4)',
     inputBg: isDark ? 'rgba(15,23,42,0.6)' : '#fff',
     rowHover: isDark ? 'rgba(0,217,255,0.04)' : 'rgba(14,165,233,0.04)',
+    danger: '#EF4444',
+    success: '#10B981',
   };
 
   // Enrich suppliers with computed stats
@@ -557,10 +572,21 @@ export default function SuppliersPage() {
               <Trash2 size={32} />
             </div>
             <h3 className="font-display text-xl font-bold mb-2" style={{ color: c.text }}>Delete Supplier?</h3>
-            <p className="text-sm mb-6" style={{ color: c.muted }}>This action is permanent and will remove this supplier from the directory.</p>
+            <p className="text-sm mb-2" style={{ color: c.muted }}>This action is permanent and will remove this supplier from the directory.</p>
+            <p className="text-xs mb-4" style={{ color: c.danger }}>Products will be disassociated. Invoices and purchases will remain but unlinked.</p>
+
+            {deleteError && (
+              <div className="mb-4 p-3 rounded-xl text-xs font-medium text-left" style={{ background: 'rgba(239,68,68,0.1)', color: c.danger, border: `1px solid rgba(239,68,68,0.3)` }}>
+                {deleteError}
+              </div>
+            )}
+
             <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="flex-1 py-3 rounded-xl text-sm font-bold" style={{ background: c.inputBg, color: c.text }}>Cancel</button>
-              <button onClick={handleDeleteSupplier} className="flex-1 py-3 rounded-xl text-sm font-bold bg-red-500 text-white hover:bg-red-600 transition-colors">Delete</button>
+              <button onClick={closeDeleteModal} disabled={isDeleting} className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: c.inputBg, color: c.text }}>Cancel</button>
+              <button onClick={handleDeleteSupplier} disabled={isDeleting} className="flex-1 py-3 rounded-xl text-sm font-bold bg-red-500 text-white hover:bg-red-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-60">
+                {isDeleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

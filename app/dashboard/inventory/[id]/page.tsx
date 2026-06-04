@@ -49,6 +49,8 @@ export default function ProductDetailedPaper() {
     classification: 'OTC', // 'OTC', 'POM', 'CONTROLLED'
     imageUrl: ''
   });
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const isDark = mounted && theme === 'dark';
   const isAdmin = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
@@ -187,6 +189,8 @@ export default function ProductDetailedPaper() {
   };
 
   const handleSave = async () => {
+    setIsSaving(true);
+    setSaveError(null);
     try {
       const currentStock = product?.stockQuantity || 0;
       await updateProductFull({
@@ -213,8 +217,12 @@ export default function ProductDetailedPaper() {
       }
 
       setShowEditModal(false);
-    } catch (error) {
+      setSaveError(null);
+    } catch (error: any) {
       console.error('Failed to update product:', error);
+      setSaveError(error?.message || 'Failed to save changes. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
   
@@ -649,7 +657,7 @@ export default function ProductDetailedPaper() {
                     <div className="col-span-2 border-t pt-5" style={{ borderColor: card.border }}>
                       <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Stock Quantity</label>
                       <div className="flex items-center gap-4">
-                        <input type="number" min="0" value={editForm.stockQuantity || ''} onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                        <input type="number" min="0" value={editForm.stockQuantity === undefined ? '' : editForm.stockQuantity} onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                         <p className="text-xs w-1/2" style={{ color: card.muted }}>Usually managed via Purchase Orders or Stock Adjustments.</p>
                       </div>
                     </div>
@@ -749,9 +757,17 @@ export default function ProductDetailedPaper() {
                   {editModalTab !== 'supplier' ? (
                     <button onClick={() => setEditModalTab(editModalTab === 'basic' ? 'pricing' : 'supplier')} className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl" style={{ background: card.primary, color: '#fff', boxShadow: `0 4px 15px ${card.primary}40` }}>Continue</button>
                   ) : (
-                    <button onClick={handleSave} disabled={!editForm.name || editForm.costPrice <= 0 || editForm.sellingPrice <= 0} className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center gap-2" style={{ background: '#10B981', color: '#fff', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }}>
-                      <Save size={16} /> Save Changes
-                    </button>
+                    <>
+                      {saveError && (
+                        <div className="mb-2 p-2 rounded-lg text-xs font-medium text-center" style={{ background: 'rgba(239,68,68,0.1)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                          {saveError}
+                        </div>
+                      )}
+                      <button onClick={handleSave} disabled={isSaving || !editForm.name || editForm.costPrice <= 0 || editForm.sellingPrice <= 0} className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center gap-2" style={{ background: '#10B981', color: '#fff', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }}>
+                        {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                        {isSaving ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -841,6 +857,7 @@ export default function ProductDetailedPaper() {
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Type</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Quantity</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Reason</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>User</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -862,6 +879,7 @@ export default function ProductDetailedPaper() {
                           {m.type === 'in' ? '+' : '-'}{m.quantity}
                         </td>
                         <td className="px-5 py-4" style={{ color: card.muted }}>{m.reason}</td>
+                        <td className="px-5 py-4" style={{ color: card.text }}>{m.user || 'System'}</td>
                       </tr>
                     ))}
                   </tbody>

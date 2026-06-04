@@ -1332,7 +1332,7 @@ export default function InventoryPage() {
                   <div className="col-span-2 border-t pt-5" style={{ borderColor: card.border }}>
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Initial Stock Quantity</label>
                     <div className="flex items-center gap-4">
-                      <input type="number" min="0" value={newProduct.stockQuantity || ''} onChange={e => setNewProduct({...newProduct, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                      <input type="number" min="0" value={newProduct.stockQuantity === undefined ? '' : newProduct.stockQuantity} onChange={e => setNewProduct({...newProduct, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                       <p className="text-xs w-1/2" style={{ color: card.muted }}>If you leave this at 0, you can receive stock later via Purchase Orders.</p>
                     </div>
                   </div>
@@ -1637,7 +1637,7 @@ export default function InventoryPage() {
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Current Stock Quantity</label>
                     <div className="flex items-center gap-4">
                       <input type="number" min="0" value={editForm.stockQuantity === undefined ? '' : editForm.stockQuantity} onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
-                      <p className="text-xs w-1/2" style={{ color: card.muted }}>Update the stock count manually if needed.</p>
+                      <p className="text-xs w-1/2" style={{ color: card.muted }}>Update the stock count manually if needed. 0 is allowed for out-of-stock items.</p>
                     </div>
                   </div>
                 </div>

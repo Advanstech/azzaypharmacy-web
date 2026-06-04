@@ -207,6 +207,12 @@ export const M_GENERATE_STAFF_PASSWORDS = `
   }
 `;
 
+export const M_DELETE_STAFF = `
+  mutation DeleteStaff($userId: ID!) {
+    deleteStaff(userId: $userId)
+  }
+`;
+
 export const M_CHANGE_PASSWORD = `
   mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
     changePassword(currentPassword: $currentPassword, newPassword: $newPassword)

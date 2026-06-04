@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, TrendingUp, Target, Activity, Shield, Phone, MapPin, 
-  Mail, Award, CheckCircle, XCircle, Plus, X, Key, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, ChevronRight
+  Mail, Award, CheckCircle, XCircle, Plus, X, Key, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, ChevronRight, Trash2
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useState, useMemo, useEffect } from 'react';
@@ -13,7 +13,7 @@ import { gql, Q_BRANCHES } from '@/lib/gql';
 import Link from 'next/link';
 
 export default function StaffIntelligencePage() {
-  const { staff, sales, updateDutyStatus, updateStaffProfile, createStaffAccount, me } = useStore();
+  const { staff, sales, updateDutyStatus, updateStaffProfile, createStaffAccount, me, deleteStaff } = useStore();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [mounted, setMounted] = useState(false);
@@ -37,6 +37,11 @@ export default function StaffIntelligencePage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submittingOnboard, setSubmittingOnboard] = useState(false);
   const [onboardError, setOnboardError] = useState<string | null>(null);
+
+  // Delete confirmation states
+  const [confirmDeleteStaff, setConfirmDeleteStaff] = useState<StaffMember | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => { 
     setMounted(true); 
@@ -116,6 +121,20 @@ export default function StaffIntelligencePage() {
       await updateStaffProfile({ userId, isActive: !currentStatus });
     } catch (e) {
       console.error("Failed to update active status", e);
+    }
+  };
+
+  const handleDeleteStaff = async () => {
+    if (!confirmDeleteStaff) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteStaff(confirmDeleteStaff.id);
+      setConfirmDeleteStaff(null);
+    } catch (err: any) {
+      setDeleteError(err.message || 'Failed to delete staff member');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -246,6 +265,7 @@ export default function StaffIntelligencePage() {
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: card.muted }}>Role & Branch</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-center" style={{ color: card.muted }}>On Duty</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-center" style={{ color: card.muted }}>Account Active</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-center" style={{ color: card.muted }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -319,11 +339,24 @@ export default function StaffIntelligencePage() {
                       />
                     </button>
                   </td>
+                  <td className="px-6 py-4 text-center">
+                    <button
+                      onClick={() => {
+                        setDeleteError(null);
+                        setConfirmDeleteStaff(member);
+                      }}
+                      disabled={me?.id === member.id}
+                      className="inline-flex items-center justify-center p-2 rounded-lg transition-all hover:scale-105 hover:bg-red-500/10 text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title={me?.id === member.id ? 'Cannot delete yourself' : 'Delete staff member'}
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </td>
                 </motion.tr>
               ))}
               {staff.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
                     No staff members found.
                   </td>
                 </tr>
@@ -378,6 +411,64 @@ export default function StaffIntelligencePage() {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {confirmDeleteStaff && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ type: 'spring', damping: 25 }}
+              className="w-full max-w-md rounded-3xl border shadow-2xl overflow-hidden"
+              style={{ background: card.bg, borderColor: card.border }}
+            >
+              <div className="p-6 md:p-8">
+                <div className="w-14 h-14 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center mb-5">
+                  <Trash2 size={28} />
+                </div>
+                <h2 className="text-xl font-black tracking-tight mb-2" style={{ color: card.text }}>
+                  Delete Staff Member
+                </h2>
+                <p className="text-sm leading-relaxed mb-1" style={{ color: card.muted }}>
+                  Are you sure you want to delete <strong style={{ color: card.text }}>{confirmDeleteStaff.name}</strong>? This action will:
+                </p>
+                <ul className="text-sm list-disc list-inside mb-4" style={{ color: card.muted }}>
+                  <li>Deactivate their account</li>
+                  <li>Remove them from the roster</li>
+                  <li>Disable their login access</li>
+                </ul>
+                <p className="text-xs font-bold" style={{ color: '#EF4444' }}>This action cannot be undone.</p>
+                {deleteError && (
+                  <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2 text-sm text-red-500">
+                    <AlertCircle size={16} />
+                    {deleteError}
+                  </div>
+                )}
+              </div>
+              <div className="p-6 md:p-8 shrink-0 border-t flex gap-4" style={{ borderColor: card.border, background: isDark ? '#0F172A' : '#F8FAFC' }}>
+                <button
+                  onClick={() => setConfirmDeleteStaff(null)}
+                  disabled={isDeleting}
+                  className="flex-1 py-3.5 rounded-xl font-bold text-sm transition-colors hover:bg-black/10 dark:hover:bg-white/10"
+                  style={{ color: card.text }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteStaff}
+                  disabled={isDeleting}
+                  className="flex-[2] py-3.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 disabled:opacity-70"
+                >
+                  {isDeleting ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
+                  {isDeleting ? 'Deleting...' : 'Delete Staff'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Onboard New Staff Modal */}
       <AnimatePresence>
