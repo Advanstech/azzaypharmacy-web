@@ -76,11 +76,37 @@ export default function ProductDetailedPaper() {
     try {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const imageUrl = reader.result as string;
-        setEditForm({ ...editForm, imageUrl });
-        setAiImageOptions([]);
-        setSelectedAiImage(null);
-        setUploadingImage(false);
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const max_size = 512;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > max_size) {
+              height *= max_size / width;
+              width = max_size;
+            }
+          } else {
+            if (height > max_size) {
+              width *= max_size / height;
+              height = max_size;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          const compressedUrl = canvas.toDataURL('image/jpeg', 0.82);
+          setEditForm({ ...editForm, imageUrl: compressedUrl });
+          setAiImageOptions([]);
+          setSelectedAiImage(null);
+          setUploadingImage(false);
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     } catch (error) {
@@ -99,10 +125,10 @@ export default function ProductDetailedPaper() {
     setGeneratingAIImage(true);
     try {
       // Using Pollinations AI image generation API (free, no API key needed)
-      const prompt = `Professional pharmaceutical product photo of ${editForm.name}, ${editForm.genericName || 'medication'}, white background, studio lighting, high quality medical product photography, clean composition`;
+      const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${editForm.name} ${editForm.dosageForm || ''} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
       
       // Generate 3 different variations
-      const seeds = [1234, 5678, 9012];
+      const seeds = [2468, 1357, 9876];
       const imageUrls = seeds.map(seed => 
         `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`
       );
@@ -187,8 +213,32 @@ export default function ProductDetailedPaper() {
         classification: product.isControlled ? 'CONTROLLED' : (product.requiresRx ? 'POM' : 'OTC'),
         imageUrl: product.imageUrl || ''
       });
+
+      // Background auto-generator for missing or placeholder product images
+      const isPlaceholder = !product.imageUrl || product.imageUrl.includes('ui-avatars.com');
+      if (isPlaceholder && mounted) {
+        const autoGenerateAndSaveImage = async () => {
+          try {
+            const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${product.name} ${product.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
+            const seed = Math.floor(Math.random() * 10000) + 1000;
+            const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+            
+            await updateProductFull({
+              id: productId,
+              name: product.name,
+              imageUrl: generatedUrl
+            });
+            console.log(`✨ Auto-generated and persisted stunning product image for ${product.name}`);
+          } catch (err) {
+            console.error('Failed to auto-generate and save product image:', err);
+          }
+        };
+        // Small delay to ensure smooth initial page load
+        const timer = setTimeout(autoGenerateAndSaveImage, 1000);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [product]);
+  }, [product, mounted, productId, updateProductFull]);
 
   const {
     paginatedData: paginatedMovements,
@@ -280,20 +330,119 @@ export default function ProductDetailedPaper() {
         )}
       </div>
 
-      {/* Product Image */}
-      <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: card.bg, borderColor: card.border }}>
-        {product.imageUrl && !imgError ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className="w-full h-48 object-cover"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="w-full h-48 flex items-center justify-center" style={{ background: card.primaryBg }}>
-            <ImageIcon size={48} style={{ color: card.primary }} />
+      {/* Product Hero Section (Stunning Showcase side-by-side with direct actions) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Left Card: Beautiful Premium Product Image Showcase */}
+        <div className="md:col-span-1 rounded-2xl border backdrop-blur-xl overflow-hidden flex flex-col justify-between p-4 group relative" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+          <div className="flex-1 flex items-center justify-center relative rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900/50 aspect-square">
+            {product.imageUrl && !imgError ? (
+              <img
+                src={product.imageUrl}
+                alt={product.name}
+                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                onError={() => setImgError(true)}
+              />
+            ) : (
+              <div className="text-center p-6 space-y-3">
+                <div className="w-16 h-16 rounded-full mx-auto flex items-center justify-center animate-pulse" style={{ background: card.primaryBg, color: card.primary }}>
+                  <ImageIcon size={32} />
+                </div>
+                <p className="text-xs font-semibold" style={{ color: card.text }}>Generating AI Image...</p>
+                <p className="text-[10px] leading-relaxed" style={{ color: card.muted }}>Simply stay on this page to let the AI build a stunning studio shot of your product packaging!</p>
+              </div>
+            )}
           </div>
-        )}
+          
+          <div className="mt-4 flex gap-2">
+            <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="direct-image-upload" />
+            <label htmlFor="direct-image-upload" className="flex-1 py-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all hover:bg-slate-100 dark:hover:bg-slate-800 border cursor-pointer" style={{ borderColor: card.border, color: card.text }}>
+              <Upload size={12} /> Upload Photo
+            </label>
+            <button 
+              onClick={async () => {
+                try {
+                  setGeneratingAIImage(true);
+                  const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${product.name} ${product.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
+                  const seed = Math.floor(Math.random() * 10000) + 1000;
+                  const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+                  await updateProductFull({
+                    id: productId,
+                    name: product.name,
+                    imageUrl: generatedUrl
+                  });
+                  setImgError(false);
+                } catch (error) {
+                  console.error(error);
+                } finally {
+                  setGeneratingAIImage(false);
+                }
+              }}
+              disabled={generatingAIImage}
+              className="flex-1 py-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all hover:brightness-110 disabled:opacity-50 text-white" 
+              style={{ background: card.primary }}
+            >
+              {generatingAIImage ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} AI Generate
+            </button>
+          </div>
+        </div>
+
+        {/* Right Card: Quick Overview Hero Panel with Stats */}
+        <div className="md:col-span-2 rounded-2xl border backdrop-blur-xl p-6 flex flex-col justify-between" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-[10px] px-2.5 py-1 rounded-md font-bold uppercase tracking-wider" style={{
+                background: isPOM ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+                color: isPOM ? '#EF4444' : '#10B981',
+                border: `1px solid ${isPOM ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)'}`
+              }}>
+                {isPOM ? 'POM (Prescription)' : 'OTC (Over-The-Counter)'}
+              </span>
+              {product.category && (
+                <span className="text-[10px] px-2.5 py-1 rounded-md font-bold uppercase tracking-wider" style={{ background: 'rgba(0,217,255,0.08)', color: card.primary, border: `1px solid ${card.primary}20` }}>
+                  {product.category}
+                </span>
+              )}
+            </div>
+            
+            <h1 className="font-display text-4xl font-extrabold mb-2 leading-tight" style={{ color: card.text }}>
+              {product.name}
+            </h1>
+            <p className="text-sm max-w-xl mb-6" style={{ color: card.muted }}>
+              {product.genericName ? (
+                <>Generic name: <span className="font-semibold" style={{ color: card.text }}>{product.genericName}</span></>
+              ) : 'No generic name defined for this medication.'} {product.brand ? ` · Brand: ${product.brand}` : ''}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6 border-t" style={{ borderColor: card.border }}>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/40 border" style={{ borderColor: card.border }}>
+              <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Stock Level</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xl font-display font-extrabold" style={{ color: card.text }}>{product.stockQuantity}</p>
+                {status === 'OK' && <span className="w-2 h-2 rounded-full bg-emerald-500" />}
+                {status === 'LOW' && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />}
+                {status === 'OUT' && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/40 border" style={{ borderColor: card.border }}>
+              <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Cost Price</p>
+              <p className="text-base font-mono font-extrabold" style={{ color: card.text }}>GH₵{product.costPrice.toFixed(2)}</p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/40 border" style={{ borderColor: card.border }}>
+              <p className="text-[9px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Selling Price</p>
+              <p className="text-base font-mono font-extrabold" style={{ color: card.primary }}>GH₵{product.sellingPrice.toFixed(2)}</p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+              <p className="text-[9px] font-bold uppercase tracking-wider mb-1 text-emerald-600 dark:text-emerald-400">Profit Margin</p>
+              <p className="text-base font-mono font-extrabold text-emerald-500">
+                {product.costPrice > 0 ? `${(((product.sellingPrice - product.costPrice) / product.costPrice) * 100).toFixed(0)}%` : '0%'}
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Large Edit Modal */}
@@ -312,7 +461,7 @@ export default function ProductDetailedPaper() {
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0.9, opacity: 0, y: 20 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-3xl rounded-2xl border overflow-hidden shadow-2xl transition-all"
+              className="w-full max-w-6xl h-[85vh] flex flex-col rounded-2xl border overflow-hidden shadow-2xl transition-all"
               style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}
             >
               {/* Header */}
@@ -350,7 +499,7 @@ export default function ProductDetailedPaper() {
               </div>
 
               {/* Tab Content */}
-              <div className="p-6 h-[400px] overflow-y-auto custom-scrollbar">
+              <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
                 
                 {/* Tab 1: Basic Info */}
                 {editModalTab === 'basic' && (

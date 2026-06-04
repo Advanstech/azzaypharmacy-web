@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
@@ -138,16 +139,27 @@ export default function AnalyticsPage() {
 
   // Top products
   const topProducts = useMemo(() => {
-    const map: Record<string, { name: string; qty: number; revenue: number; category: string }> = {};
+    const map: Record<string, { id: string; name: string; qty: number; revenue: number; category: string }> = {};
     periodSales.forEach(s => s.items.forEach(item => {
+      const id = item.product?.id || item.id;
       const n = item.product?.name || 'Unknown';
       const cat = item.product?.category || 'MISCELLANEOUS';
-      if (!map[n]) map[n] = { name: n, qty: 0, revenue: 0, category: cat };
-      map[n].qty += item.quantity;
-      map[n].revenue += item.total;
+      if (!map[id]) map[id] = { id, name: n, qty: 0, revenue: 0, category: cat };
+      map[id].qty += item.quantity;
+      map[id].revenue += item.total;
     }));
-    return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 10);
+    return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   }, [periodSales]);
+
+  const productInsights = useMemo(() => {
+    const totalUnits = topProducts.reduce((sum, product) => sum + product.qty, 0);
+    const topRevenue = topProducts.reduce((sum, product) => sum + product.revenue, 0);
+    const leadingProduct = topProducts[0];
+    const leadingShare = totalRevenue > 0 && leadingProduct ? (leadingProduct.revenue / totalRevenue) * 100 : 0;
+    const avgUnits = topProducts.length > 0 ? totalUnits / topProducts.length : 0;
+
+    return { totalUnits, topRevenue, leadingProduct, leadingShare, avgUnits };
+  }, [topProducts, totalRevenue]);
 
   // Category breakdown
   const categoryBreakdown = useMemo(() => {
@@ -363,7 +375,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* ── TOP PRODUCTS + STAFF PERFORMANCE ───────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Top Products */}
         <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
@@ -378,7 +390,7 @@ export default function AnalyticsPage() {
             {topProducts.length === 0 ? (
               <p className="text-xs text-center py-6" style={{ color: s.muted }}>No sales data for this period</p>
             ) : topProducts.map((p, i) => (
-              <div key={p.name} className="flex items-center gap-3 p-2.5 rounded-xl transition-colors"
+              <Link key={p.id} href={`/dashboard/inventory/${p.id}`} className="flex items-center gap-3 p-2.5 rounded-xl transition-colors hover:scale-[1.01]"
                 style={{ background: i < 3 ? `${s.primary}08` : 'transparent' }}>
                 <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
                   style={{ background: i === 0 ? `${s.primary}25` : `${s.subtle}15`, color: i === 0 ? s.primary : s.subtle }}>
@@ -389,8 +401,51 @@ export default function AnalyticsPage() {
                   <p className="text-[10px]" style={{ color: s.subtle }}>{p.qty} units · {p.category}</p>
                 </div>
                 <span className="text-xs font-mono font-bold" style={{ color: s.primary }}>GH₵{p.revenue.toFixed(2)}</span>
-              </div>
+                <ChevronRight size={14} style={{ color: s.subtle }} />
+              </Link>
             ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
+          <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: s.border }}>
+            <div>
+              <h3 className="font-display text-sm font-bold" style={{ color: s.text }}>Product Insights</h3>
+              <p className="text-[11px]" style={{ color: s.subtle }}>Top 5 concentration analysis</p>
+            </div>
+            <Activity size={16} style={{ color: s.primary }} />
+          </div>
+          <div className="p-4 space-y-4">
+            {topProducts.length === 0 ? (
+              <p className="text-xs text-center py-6" style={{ color: s.muted }}>No product insight available</p>
+            ) : (
+              <>
+                <div className="p-3 rounded-xl" style={{ background: `${s.primary}08` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: s.subtle }}>Leading SKU</p>
+                  <p className="text-sm font-bold truncate" style={{ color: s.text }}>{productInsights.leadingProduct?.name}</p>
+                  <p className="text-[11px] mt-1" style={{ color: s.muted }}>{productInsights.leadingShare.toFixed(1)}% of period revenue</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl text-center" style={{ background: isDark ? 'rgba(148,163,184,0.06)' : 'rgba(203,213,225,0.18)' }}>
+                    <p className="font-display text-lg font-bold" style={{ color: s.success }}>{productInsights.totalUnits.toLocaleString()}</p>
+                    <p className="text-[10px]" style={{ color: s.muted }}>Top 5 Units</p>
+                  </div>
+                  <div className="p-3 rounded-xl text-center" style={{ background: isDark ? 'rgba(148,163,184,0.06)' : 'rgba(203,213,225,0.18)' }}>
+                    <p className="font-display text-lg font-bold" style={{ color: s.primary }}>GH₵{productInsights.topRevenue.toFixed(0)}</p>
+                    <p className="text-[10px]" style={{ color: s.muted }}>Top 5 Revenue</p>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px]" style={{ color: s.subtle }}>Avg units per top SKU</span>
+                    <span className="text-[10px] font-mono font-bold" style={{ color: s.primary }}>{productInsights.avgUnits.toFixed(1)}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.25)' }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.min(100, productInsights.leadingShare)}%`, background: `linear-gradient(90deg, ${s.primary}, ${s.success})` }} />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -407,7 +462,7 @@ export default function AnalyticsPage() {
             <div className="p-4 space-y-2">
               {staffPerformance.length === 0 ? (
                 <p className="text-xs text-center py-6" style={{ color: s.muted }}>No staff sales data</p>
-              ) : staffPerformance.map((sp, i) => (
+              ) : staffPerformance.map((sp) => (
                 <div key={sp.name} className="flex items-center gap-3 p-2.5 rounded-xl">
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold"
                     style={{ background: `${s.primary}18`, color: s.primary }}>

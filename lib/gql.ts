@@ -235,6 +235,14 @@ export const Q_STAFF = `
   }
 `;
 
+export const Q_STAFF_ACTIVITIES = `
+  query GetStaffActivities($userId: ID!, $limit: Int) {
+    staffActivities(userId: $userId, limit: $limit) {
+      id type description timestamp amount details source
+    }
+  }
+`;
+
 export const Q_ME = `
   query Me {
     me {

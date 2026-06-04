@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/store';
 import { useToast } from '@/components/pharma-toast';
+import { gql, Q_BRANCHES, Q_STAFF_ACTIVITIES } from '@/lib/gql';
 import { 
   ArrowLeft, Mail, Phone, MapPin, Calendar, Award, Briefcase, Shield,
   Clock, Activity, Package, ShoppingCart, DollarSign, UserCheck,
@@ -54,6 +55,13 @@ type StaffDetail = StaffMember | {
   performanceScore?: number;
 };
 
+type BranchOption = {
+  id: string;
+  name: string;
+  location?: string;
+  phone?: string;
+};
+
 const STAFF: StaffMember[] = [
   { id: '1', firstName: 'Kwame', lastName: 'Asante', email: 'kwame@azzay.app', phone: '+233 24 000 0001', role: 'OWNER', branch: 'Azzay Pharmacy', status: 'active', lastLogin: '2 min ago', joinedDate: '2023-01-15', licenseNumber: 'GPhC-2023-001', address: 'Dormaa Central, Bono Region', emergencyContact: '+233 24 111 1111', shiftsThisWeek: 7, totalSales: 125000, performanceScore: 98 },
   { id: '2', firstName: 'Abena', lastName: 'Mensah', email: 'abena@azzay.app', phone: '+233 24 000 0002', role: 'PHARMACIST', branch: 'Azzay Pharmacy', status: 'active', lastLogin: '1 hr ago', joinedDate: '2023-03-10', licenseNumber: 'GPhC-2023-045', specialization: 'Clinical Pharmacy', address: 'Dormaa Ahenkro', emergencyContact: '+233 24 222 2222', shiftsThisWeek: 5, totalSales: 45000, performanceScore: 94 },
@@ -72,11 +80,12 @@ const STAFF: StaffMember[] = [
 // Activity Log Data
 interface Activity {
   id: string;
-  type: 'sale' | 'login' | 'prescription' | 'inventory' | 'shift';
+  type: 'sale' | 'login' | 'logout' | 'password' | 'prescription' | 'inventory' | 'invoice' | 'shift' | 'security';
   description: string;
   timestamp: string;
   amount?: number;
   details?: string;
+  date?: number;
 }
 
 const ACTIVITIES: Record<string, Activity[]> = {
@@ -86,6 +95,11 @@ const ACTIVITIES: Record<string, Activity[]> = {
     { id: 'a3', type: 'prescription', description: 'Verified prescription for Diabetes medication', timestamp: '2026-05-03 10:45', details: 'Patient: John Doe' },
     { id: 'a4', type: 'sale', description: 'Sold Coartem Tablets (2 packs)', timestamp: '2026-05-03 11:30', amount: 70.00 },
     { id: 'a5', type: 'shift', description: 'Started morning shift', timestamp: '2026-05-03 08:00' },
+    { id: 'a6', type: 'inventory', description: 'Adjusted stock for ALKA 5 SYRUP', timestamp: '2026-05-03 12:22', details: 'Quantity updated: +8 units' },
+    { id: 'a7', type: 'invoice', description: 'Uploaded supplier invoice', timestamp: '2026-05-03 12:41', details: 'Invoice #INV-2026-0456' },
+    { id: 'a8', type: 'password', description: 'Password changed successfully', timestamp: '2026-05-03 13:05' },
+    { id: 'a9', type: 'logout', description: 'Logged out from POS terminal', timestamp: '2026-05-03 13:11' },
+    { id: 'a10', type: 'security', description: '2FA verified for admin action', timestamp: '2026-05-03 13:18' },
   ],
   '7': [ // Otuwa Francis
     { id: 'a1', type: 'sale', description: 'Sold Paracetamol 500mg (100 tablets)', timestamp: '2026-05-03 09:45', amount: 25.00 },
@@ -105,6 +119,8 @@ const ACTIVITIES: Record<string, Activity[]> = {
     { id: 'a1', type: 'sale', description: 'Sold Cardiovascular medications', timestamp: '2026-05-03 11:20', amount: 340.00 },
     { id: 'a2', type: 'prescription', description: 'Drug interaction check completed', timestamp: '2026-05-03 09:30' },
     { id: 'a3', type: 'login', description: 'Logged in to system', timestamp: '2026-05-03 08:00' },
+    { id: 'a4', type: 'invoice', description: 'Reviewed supplier invoice upload', timestamp: '2026-05-03 12:05', details: 'Marked as received' },
+    { id: 'a5', type: 'logout', description: 'Logged out from dashboard', timestamp: '2026-05-03 16:45' },
   ],
   '11': [ // Henewaa Apraku Sandr
     { id: 'a1', type: 'inventory', description: 'Received chemical supplies shipment', timestamp: '2026-05-03 09:00', details: 'Batch #CHM-2026-042' },
@@ -138,18 +154,40 @@ const STATUS_COLORS: Record<string, { color: string; bg: string; label: string }
 const ACTIVITY_ICONS = {
   sale: ShoppingCart,
   login: UserCheck,
+  logout: ToggleLeft,
+  password: Key,
   prescription: FileText,
   inventory: Package,
+  invoice: Building,
   shift: Clock,
+  security: Shield,
 };
 
 const ACTIVITY_COLORS = {
   sale: '#10B981',
   login: '#0EA5E9',
+  logout: '#64748B',
+  password: '#F59E0B',
   prescription: '#8B5CF6',
   inventory: '#F59E0B',
+  invoice: '#14B8A6',
   shift: '#6366F1',
+  security: '#EC4899',
 };
+
+function toActivityDate(timestamp: string): number {
+  const normalized = timestamp.includes('T') ? timestamp : timestamp.replace(' ', 'T');
+  const time = new Date(normalized).getTime();
+  return Number.isNaN(time) ? 0 : time;
+}
+
+function formatActivityTime(timestamp: string): string {
+  const date = new Date(timestamp.includes('T') ? timestamp : timestamp.replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) {
+    return timestamp.split(' ')[1] || timestamp;
+  }
+  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
 
 function getNameParts(staff: StaffDetail) {
   const fullName = typeof (staff as any).name === 'string'
@@ -184,9 +222,14 @@ export default function StaffDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', role: '', position: '', branchId: '', isActive: true });
   const [isSaving, setIsSaving] = useState(false);
+  const [branches, setBranches] = useState<BranchOption[]>([]);
+  const [loadingBranches, setLoadingBranches] = useState(false);
   
   const [generatingPassword, setGeneratingPassword] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [backendActivities, setBackendActivities] = useState<Activity[]>([]);
+  const [activitiesLoaded, setActivitiesLoaded] = useState(false);
+  const [loadingActivities, setLoadingActivities] = useState(false);
   
   const [activityPage, setActivityPage] = useState(1);
   const ITEMS_PER_PAGE = 5;
@@ -208,6 +251,67 @@ export default function StaffDetailPage() {
     const frame = requestAnimationFrame(() => setMounted(true));
     return () => cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+
+    const fetchBranches = async () => {
+      setLoadingBranches(true);
+      try {
+        const data = await gql<{ branches: BranchOption[] }>(Q_BRANCHES);
+        if (!cancelled) {
+          setBranches(data.branches || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch branches', err);
+      } finally {
+        if (!cancelled) setLoadingBranches(false);
+      }
+    };
+
+    fetchBranches();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted || !staffId) return;
+    let cancelled = false;
+
+    const fetchActivities = async () => {
+      setLoadingActivities(true);
+      try {
+        const data = await gql<{ staffActivities: Activity[] }>(Q_STAFF_ACTIVITIES, { userId: staffId, limit: 100 });
+        if (!cancelled) {
+          setBackendActivities(
+            (data.staffActivities || []).map((activity) => ({
+              ...activity,
+              date: activity.date ?? toActivityDate(activity.timestamp),
+            }))
+          );
+        }
+      } catch (err) {
+        console.error('Failed to fetch staff activities', err);
+        if (!cancelled) setBackendActivities([]);
+      } finally {
+        if (!cancelled) {
+          setActivitiesLoaded(true);
+          setLoadingActivities(false);
+        }
+      }
+    };
+
+    setActivitiesLoaded(false);
+    fetchActivities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mounted, staffId]);
+
   const isDark = mounted && theme === 'dark';
 
   const liveStaffMember = liveStaff.find(s => s.id === staffId);
@@ -226,11 +330,29 @@ export default function StaffDetailPage() {
     })).sort((a, b) => b.date - a.date);
   }, [sales, staffId]);
 
-  const baseActivities = ACTIVITIES[staffId] || [];
-  const allActivities = liveActivities.length > 0 ? liveActivities : baseActivities;
+  const baseActivities = useMemo(
+    () => (ACTIVITIES[staffId] || []).map((activity) => ({
+      ...activity,
+      date: activity.date ?? toActivityDate(activity.timestamp),
+    })),
+    [staffId]
+  );
+
+  const allActivities = useMemo(() => {
+    if (activitiesLoaded) return backendActivities;
+    return [...liveActivities, ...baseActivities].sort((a, b) => (b.date || 0) - (a.date || 0));
+  }, [activitiesLoaded, backendActivities, liveActivities, baseActivities]);
   
   const totalPages = Math.max(1, Math.ceil(allActivities.length / ITEMS_PER_PAGE));
   const paginatedActivities = allActivities.slice((activityPage - 1) * ITEMS_PER_PAGE, activityPage * ITEMS_PER_PAGE);
+
+  useEffect(() => {
+    setActivityPage(1);
+  }, [staffId]);
+
+  useEffect(() => {
+    setActivityPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   if (!mounted) return null;
   if (loadingStaff && !staff) {
@@ -382,13 +504,17 @@ export default function StaffDetailPage() {
           <div className="flex flex-col gap-2 shrink-0">
             <button
               onClick={() => {
+                const branchIdFromStaff = (staff as any).branchId || (typeof staff.branch === 'object' ? (staff.branch as any)?.id : '') || '';
+                const branchNameFromStaff = typeof staff.branch === 'string' ? staff.branch : (staff.branch as any)?.name;
+                const matchedByName = branchNameFromStaff ? branches.find(b => b.name === branchNameFromStaff)?.id : '';
+
                 setEditForm({
                   name: getFullName(staff) || '',
                   email: staff.email || '',
                   phone: (staff as any).phone || '',
                   role: staff.role || '',
                   position: (staff as any).position || '',
-                  branchId: (staff as any).branchId || (typeof staff.branch === 'object' ? staff.branch?.id : '') || '',
+                  branchId: branchIdFromStaff || matchedByName || '',
                   isActive: (staff as any).isActive !== false,
                 });
                 setShowEditModal(true);
@@ -574,7 +700,12 @@ export default function StaffDetailPage() {
             </div>
 
             <div className="divide-y" style={{ borderColor: card.divider }}>
-              {paginatedActivities.length === 0 ? (
+              {loadingActivities ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <Loader2 size={30} className="animate-spin" style={{ color: card.subtle }} />
+                  <p className="mt-3 text-sm" style={{ color: card.muted }}>Loading activity timeline...</p>
+                </div>
+              ) : paginatedActivities.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Activity size={40} style={{ color: card.subtle }} />
                   <p className="mt-3 text-sm" style={{ color: card.muted }}>No activities recorded today</p>
@@ -583,7 +714,7 @@ export default function StaffDetailPage() {
                 const Icon = ACTIVITY_ICONS[activity.type];
                 const color = ACTIVITY_COLORS[activity.type];
                 return (
-                  <div key={activity.id} className="flex items-start gap-4 p-4 hover:transition-colors"
+                  <div key={`${activity.type}-${activity.id}-${activity.timestamp}`} className="flex items-start gap-4 p-4 hover:transition-colors"
                     style={{ 
                       background: index % 2 === 0 ? 'transparent' : (isDark ? 'rgba(15,23,42,0.2)' : 'rgba(248,250,252,0.5)'),
                     }}>
@@ -600,7 +731,7 @@ export default function StaffDetailPage() {
                           )}
                         </div>
                         <span className="text-xs shrink-0" style={{ color: card.subtle }}>
-                          {activity.timestamp.split(' ')[1] || activity.timestamp}
+                          {formatActivityTime(activity.timestamp)}
                         </span>
                       </div>
                       {activity.amount && (
@@ -791,19 +922,38 @@ export default function StaffDetailPage() {
                   />
                 </div>
 
-                {/* Branch ID */}
+                {/* Branch */}
                 <div>
                   <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
-                    <Building size={11} /> Branch ID
+                    <Building size={11} /> Branch
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Branch UUID"
-                    className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 font-mono"
-                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
-                    value={editForm.branchId}
-                    onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
-                  />
+                  {branches.length > 0 ? (
+                    <select
+                      className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2"
+                      style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                      value={editForm.branchId}
+                      onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
+                    >
+                      <option value="">Select branch</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name} ({branch.id})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder={loadingBranches ? 'Loading branches...' : 'Branch UUID'}
+                      className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 font-mono"
+                      style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                      value={editForm.branchId}
+                      onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
+                    />
+                  )}
+                  <p className="text-[10px] mt-1.5" style={{ color: card.muted }}>
+                    {loadingBranches ? 'Loading branch list...' : editForm.branchId ? `Selected branch ID: ${editForm.branchId}` : 'Select a branch name to set branch ID.'}
+                  </p>
                 </div>
 
                 {/* Active Status */}

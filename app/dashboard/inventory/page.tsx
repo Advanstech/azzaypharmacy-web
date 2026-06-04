@@ -234,11 +234,10 @@ export default function InventoryPage() {
     if (!newProduct.name) return;
     setIsGeneratingImage(true);
     try {
-      const { gql, M_GENERATE_PRODUCT_IMAGE } = await import('@/lib/gql');
-      const data = await gql<{ generateProductImage: string }>(M_GENERATE_PRODUCT_IMAGE, { name: newProduct.name });
-      if (data.generateProductImage) {
-        setNewProduct((prev: any) => ({ ...prev, imageUrl: data.generateProductImage }));
-      }
+      const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${newProduct.name} ${newProduct.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
+      const seed = Math.floor(Math.random() * 10000) + 1000;
+      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+      setNewProduct((prev: any) => ({ ...prev, imageUrl: generatedUrl }));
     } catch (error) {
       console.error('Failed to generate image:', error);
     } finally {
@@ -250,11 +249,10 @@ export default function InventoryPage() {
     if (!editForm.name) return;
     setIsGeneratingImage(true);
     try {
-      const { gql, M_GENERATE_PRODUCT_IMAGE } = await import('@/lib/gql');
-      const data = await gql<{ generateProductImage: string }>(M_GENERATE_PRODUCT_IMAGE, { name: editForm.name });
-      if (data.generateProductImage) {
-        setEditForm((prev: any) => ({ ...prev, imageUrl: data.generateProductImage }));
-      }
+      const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${editForm.name} ${editForm.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
+      const seed = Math.floor(Math.random() * 10000) + 1000;
+      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+      setEditForm((prev: any) => ({ ...prev, imageUrl: generatedUrl }));
     } catch (error) {
       console.error('Failed to generate image:', error);
     } finally {
@@ -1162,7 +1160,7 @@ export default function InventoryPage() {
 
       {showAddModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-3xl rounded-2xl border overflow-hidden shadow-2xl transition-all" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+          <div className="w-full max-w-6xl h-[85vh] flex flex-col rounded-2xl border overflow-hidden shadow-2xl transition-all" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
             
             {/* Header */}
             <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: card.border, background: card.primaryBg }}>
@@ -1199,7 +1197,7 @@ export default function InventoryPage() {
             </div>
 
             {/* Tab Content */}
-            <div className="p-6 h-[400px] overflow-y-auto custom-scrollbar">
+            <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
               
               {/* Tab 1: Basic Info */}
               {addModalTab === 'basic' && (
@@ -1492,7 +1490,7 @@ export default function InventoryPage() {
       {/* ── Edit Product Wizard Modal ─────────────────────────────────── */}
       {showEditModal && editingProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-3xl rounded-2xl border overflow-hidden shadow-2xl" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+          <div className="w-full max-w-6xl h-[85vh] flex flex-col rounded-2xl border overflow-hidden shadow-2xl" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
             
             {/* Header */}
             <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: card.border, background: card.primaryBg }}>
@@ -1529,7 +1527,7 @@ export default function InventoryPage() {
             </div>
 
             {/* Tab Body */}
-            <div className="p-6 h-[380px] overflow-y-auto custom-scrollbar">
+            <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
 
               {/* Tab 1: Basic Info */}
               {editModalTab === 'basic' && (

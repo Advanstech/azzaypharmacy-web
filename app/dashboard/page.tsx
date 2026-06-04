@@ -87,20 +87,32 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
     return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
   }, [sales, weekAgo]);
 
-  // Payment method breakdown by revenue (last 7 days)
+  // Payment method breakdown by revenue (all-time)
   const paymentMix = useMemo(() => {
-    const amounts: Record<string, number> = {};
-    sales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => {
-      amounts[s.paymentMethod] = (amounts[s.paymentMethod] || 0) + s.totalAmount;
+    const amounts: Record<'CASH' | 'MOMO' | 'CARD' | 'NHIS', number> = {
+      CASH: 0,
+      MOMO: 0,
+      CARD: 0,
+      NHIS: 0,
+    };
+
+    sales.forEach((s) => {
+      const method = (s.paymentMethod || '').toUpperCase().replace(/\s+/g, '_');
+      if (method === 'MOMO' || method === 'MOBILE_MONEY') {
+        amounts.MOMO += s.totalAmount;
+      } else if (method === 'CASH' || method === 'CARD' || method === 'NHIS') {
+        amounts[method] += s.totalAmount;
+      }
     });
-    const total = weekRevenue || 1;
+
+    const total = (amounts.CASH + amounts.MOMO + amounts.CARD + amounts.NHIS) || 1;
     return [
       { label: 'Cash', pct: Math.round(((amounts['CASH'] || 0) / total) * 100), color: '#0EA5E9', icon: Banknote },
       { label: 'MoMo', pct: Math.round(((amounts['MOMO'] || 0) / total) * 100), color: '#10B981', icon: Smartphone },
       { label: 'Card', pct: Math.round(((amounts['CARD'] || 0) / total) * 100), color: '#8B5CF6', icon: CreditCard },
       { label: 'NHIS', pct: Math.round(((amounts['NHIS'] || 0) / total) * 100), color: '#F59E0B', icon: ShieldAlert },
     ].filter(pm => pm.pct > 0);
-  }, [sales, weekAgo, weekRevenue]);
+  }, [sales]);
 
   // Sales by staff for manager overview
   const staffSales = useMemo(() => {
