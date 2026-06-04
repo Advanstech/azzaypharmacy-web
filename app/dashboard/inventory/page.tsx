@@ -234,12 +234,26 @@ export default function InventoryPage() {
     if (!newProduct.name) return;
     setIsGeneratingImage(true);
     try {
-      const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${newProduct.name} ${newProduct.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
-      const seed = Math.floor(Math.random() * 10000) + 1000;
-      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+      const prompt = `Professional pharmaceutical product photo of ${newProduct.name} ${newProduct.dosageForm || 'medication'} white background studio lighting high quality medical packaging clean composition`;
+      const seed = Date.now();
+      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true&enhance=true`;
+      
+      // Validate the generated image loads
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Generated image failed to load'));
+        img.src = generatedUrl;
+        setTimeout(() => reject(new Error('Image load timeout')), 10000);
+      });
+      
       setNewProduct((prev: any) => ({ ...prev, imageUrl: generatedUrl }));
     } catch (error) {
-      console.error('Failed to generate image:', error);
+      console.error('Failed to generate image, using fallback:', error);
+      // Fallback to initials placeholder
+      const initials = newProduct.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+      const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
+      setNewProduct((prev: any) => ({ ...prev, imageUrl: fallbackUrl }));
     } finally {
       setIsGeneratingImage(false);
     }
@@ -249,12 +263,26 @@ export default function InventoryPage() {
     if (!editForm.name) return;
     setIsGeneratingImage(true);
     try {
-      const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${editForm.name} ${editForm.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
-      const seed = Math.floor(Math.random() * 10000) + 1000;
-      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+      const prompt = `Professional pharmaceutical product photo of ${editForm.name} ${editForm.dosageForm || 'medication'} white background studio lighting high quality medical packaging clean composition`;
+      const seed = Date.now();
+      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true&enhance=true`;
+      
+      // Validate the generated image loads
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Generated image failed to load'));
+        img.src = generatedUrl;
+        setTimeout(() => reject(new Error('Image load timeout')), 10000);
+      });
+      
       setEditForm((prev: any) => ({ ...prev, imageUrl: generatedUrl }));
     } catch (error) {
-      console.error('Failed to generate image:', error);
+      console.error('Failed to generate image, using fallback:', error);
+      // Fallback to initials placeholder
+      const initials = editForm.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+      const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
+      setEditForm((prev: any) => ({ ...prev, imageUrl: fallbackUrl }));
     } finally {
       setIsGeneratingImage(false);
     }

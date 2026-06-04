@@ -115,7 +115,7 @@ export default function ProductDetailedPaper() {
     }
   };
 
-  // AI Image Generation using product name
+  // AI Image Generation using product name - with validation and fallback
   const generateAIImages = async () => {
     if (!editForm.name) {
       alert('Please enter a product name first');
@@ -123,20 +123,59 @@ export default function ProductDetailedPaper() {
     }
 
     setGeneratingAIImage(true);
+    setAiImageOptions([]); // Clear previous options
+    
     try {
       // Using Pollinations AI image generation API (free, no API key needed)
-      const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${editForm.name} ${editForm.dosageForm || ''} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
+      const prompt = `Professional pharmaceutical product photo of ${editForm.name} ${editForm.dosageForm || 'medication'} white background studio lighting high quality medical packaging clean composition`;
       
-      // Generate 3 different variations
-      const seeds = [2468, 1357, 9876];
+      // Generate 3 different variations with different seeds
+      const seeds = [Date.now(), Date.now() + 1, Date.now() + 2];
       const imageUrls = seeds.map(seed => 
-        `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`
+        `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true&enhance=true`
       );
       
-      setAiImageOptions(imageUrls);
-      setSelectedAiImage(null);
+      // Validate images by attempting to load them
+      const validatedUrls: string[] = [];
+      
+      await Promise.all(
+        imageUrls.map(async (url) => {
+          try {
+            // Create a promise that resolves when image loads or rejects on error
+            const img = new Image();
+            await new Promise<void>((resolve, reject) => {
+              img.onload = () => resolve();
+              img.onerror = () => reject(new Error('Image failed to load'));
+              img.src = url;
+              // Timeout after 10 seconds
+              setTimeout(() => reject(new Error('Image load timeout')), 10000);
+            });
+            validatedUrls.push(url);
+          } catch (err) {
+            console.warn('AI image validation failed for URL:', url, err);
+          }
+        })
+      );
+      
+      if (validatedUrls.length > 0) {
+        setAiImageOptions(validatedUrls);
+        // Auto-select the first valid image
+        selectAiImage(validatedUrls[0]);
+      } else {
+        // Fallback: use a simple placeholder with product initials
+        const initials = editForm.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+        const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
+        setAiImageOptions([fallbackUrl]);
+        selectAiImage(fallbackUrl);
+        console.log('AI generation fallback used - using avatar placeholder');
+      }
     } catch (error) {
       console.error('AI generation error:', error);
+      // Fallback on error
+      const initials = editForm.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
+      const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
+      setAiImageOptions([fallbackUrl]);
+      selectAiImage(fallbackUrl);
     } finally {
       setGeneratingAIImage(false);
     }
@@ -619,7 +658,8 @@ export default function ProductDetailedPaper() {
 
                 {/* Tab 3: Supplier & Media */}
                 {editModalTab === 'supplier' && (
-                  <div className="grid grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="grid grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4 duration-300 h-full">
+                    {/* Left Column - Supplier Info */}
                     <div className="space-y-5">
                       <div>
                         <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Supplier</label>
@@ -640,41 +680,58 @@ export default function ProductDetailedPaper() {
                       </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Product Media</label>
-                      <div className="aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center relative overflow-hidden group" style={{ borderColor: card.border, background: card.inputBg }}>
-                        {editForm.imageUrl ? (
-                          <>
-                            <img src={editForm.imageUrl} className="w-full h-full object-cover" alt="Product Preview" />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <button onClick={() => setEditForm({...editForm, imageUrl: ''})} className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-bold">Remove</button>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="text-center p-4">
-                            <Sparkles size={32} className="mx-auto mb-2 opacity-50" style={{ color: card.primary }} />
-                            <p className="text-[10px] opacity-70" style={{ color: card.text }}>No image selected</p>
-                          </div>
-                        )}
-                        {generatingAIImage && <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-cyan-500 text-[10px] font-bold tracking-widest animate-pulse">GENERATING...</div>}
-                      </div>
-                      <div className="grid grid-cols-2 gap-2">
+                    {/* Right Column - Product Media */}
+                    <div className="flex flex-col h-full">
+                      <label className="text-[10px] font-bold uppercase tracking-wider mb-2 block" style={{ color: card.subtle }}>Product Media</label>
+                      
+                      {/* Action Buttons - AT THE TOP */}
+                      <div className="grid grid-cols-2 gap-2 mb-3">
                          <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" id="edit-image-upload" />
-                         <label htmlFor="edit-image-upload" className="w-full py-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all hover:opacity-80 cursor-pointer" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', border: `1px solid ${card.border}`, color: card.text }}>
-                           {uploadingImage ? <RefreshCw size={12} className="animate-spin" /> : <Upload size={12} />} Upload
+                         <label htmlFor="edit-image-upload" className="w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all hover:opacity-80 cursor-pointer border" style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', borderColor: card.border, color: card.text }}>
+                           {uploadingImage ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />} Upload Photo
                          </label>
-                         <button onClick={generateAIImages} disabled={generatingAIImage} className="w-full py-2.5 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all hover:brightness-110 disabled:opacity-50" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBg}` }}>
-                           {generatingAIImage ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} AI Generated
+                         <button onClick={generateAIImages} disabled={generatingAIImage} className="w-full py-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all hover:brightness-110 disabled:opacity-50 border" style={{ background: card.primaryBg, color: card.primary, borderColor: card.primary }}>
+                           {generatingAIImage ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} AI Generate
                          </button>
                       </div>
-                      {/* AI Options */}
+
+                      {/* Image Preview - Smaller to fit without scroll */}
+                      <div className="flex-1 min-h-0">
+                        <div className="h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center relative overflow-hidden group" style={{ borderColor: card.border, background: card.inputBg }}>
+                          {editForm.imageUrl ? (
+                            <>
+                              <img src={editForm.imageUrl} className="w-full h-full object-contain" alt="Product Preview" onError={() => setEditForm({...editForm, imageUrl: ''})} />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <button onClick={() => setEditForm({...editForm, imageUrl: ''})} className="px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-bold">Remove</button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-center p-4">
+                              <Sparkles size={32} className="mx-auto mb-2 opacity-50" style={{ color: card.primary }} />
+                              <p className="text-[10px] opacity-70" style={{ color: card.text }}>No image selected</p>
+                              <p className="text-[9px] mt-1 opacity-50" style={{ color: card.muted }}>Upload or generate above</p>
+                            </div>
+                          )}
+                          {generatingAIImage && (
+                            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center text-cyan-500">
+                              <Loader2 size={24} className="animate-spin mb-2" />
+                              <span className="text-[10px] font-bold tracking-widest animate-pulse">GENERATING...</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* AI Options - Below preview */}
                       {aiImageOptions.length > 0 && (
-                        <div className="grid grid-cols-3 gap-2 mt-2">
-                          {aiImageOptions.map((url, idx) => (
-                            <button key={idx} onClick={() => selectAiImage(url)} className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${selectedAiImage === url ? 'border-primary opacity-100' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-                              <img src={url} alt={`AI Option ${idx}`} className="w-full h-full object-cover" />
-                            </button>
-                          ))}
+                        <div className="mt-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.subtle }}>Select AI Image</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            {aiImageOptions.map((url, idx) => (
+                              <button key={idx} onClick={() => selectAiImage(url)} className={`h-16 rounded-lg overflow-hidden border-2 transition-all ${selectedAiImage === url ? 'border-primary opacity-100 ring-2 ring-primary/20' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                <img src={url} alt={`AI Option ${idx}`} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
