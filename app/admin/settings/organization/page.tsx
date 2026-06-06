@@ -5,8 +5,8 @@ import { useTheme } from 'next-themes';
 import { Building2, MapPin, Phone, Mail, FileText, Save, AlertCircle } from 'lucide-react';
 
 export default function OrganizationPage() {
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark' || theme === 'dark';
 
   const [formData, setFormData] = useState({
     name: 'Azzay Pharmacy',

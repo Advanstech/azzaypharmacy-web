@@ -29,7 +29,7 @@ const FALLBACK_SUPPLIERS = [
 export default function SupplierProductsPage() {
   const params = useParams();
   const router = useRouter();
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { products: allProducts, suppliers: storeSuppliers, getProductsBySupplier, updateProductPrices, updateProductSupplier, updateProductFull, adjustProductStock, deleteProduct, refetchProducts, loadingProducts, createProduct, updateSupplier, deleteSupplier, me } = useStore();
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
@@ -48,7 +48,7 @@ export default function SupplierProductsPage() {
   });
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState<any>({
-    name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', cost: 0, sell: 0, qty: 0, supplierId: supplierId, requiresRx: false
+    name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', cost: 0, sell: 0, qty: 0, supplierId: supplierId, requiresRx: false, expiryDate: ''
   });
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [moveProduct, setMoveProduct] = useState<any>(null);
@@ -109,7 +109,7 @@ export default function SupplierProductsPage() {
     }
   };
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.7)' : 'rgba(255,255,255,0.95)',
     border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.6)',
@@ -205,7 +205,7 @@ export default function SupplierProductsPage() {
 
   const openAddModal = () => {
     setAddForm({
-      name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', cost: 0, sell: 0, qty: 0, supplierId: supplierId, requiresRx: false
+      name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', cost: 0, sell: 0, qty: 0, supplierId: supplierId, requiresRx: false, expiryDate: ''
     });
     setShowAddModal(true);
   };
@@ -224,6 +224,7 @@ export default function SupplierProductsPage() {
         supplierId: addForm.supplierId || undefined,
         requiresRx: addForm.requiresRx,
         dosageForm: 'TABLET',
+        expiryDate: addForm.expiryDate || undefined,
       });
       setShowAddModal(false);
       refetchProducts();
@@ -717,9 +718,20 @@ export default function SupplierProductsPage() {
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Selling Price (GH₵)</label>
                   <input type="number" step="0.01" value={addForm.sell || ''} onChange={e => setAddForm({...addForm, sell: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
                 </div>
-                <div className="col-span-2 space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Initial Stock Quantity</label>
-                  <input type="number" value={addForm.qty || ''} onChange={e => setAddForm({...addForm, qty: parseInt(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                <div className="col-span-2 border-t pt-5" style={{ borderColor: c.border }}>
+                  <div className="grid grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Initial Stock Quantity</label>
+                      <input type="number" min="0" value={addForm.qty || ''} onChange={e => setAddForm({...addForm, qty: parseInt(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 block">Expiry Date</label>
+                      <input type="date" value={addForm.expiryDate} onChange={e => setAddForm({...addForm, expiryDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs" style={{ color: c.muted }}>If you leave quantity at 0, you can receive stock later via Purchase Orders.</p>
+                    </div>
+                  </div>
                 </div>
                 <div className="col-span-2 pt-2 border-t flex items-center justify-between" style={{ borderColor: c.border }}>
                   <div>
@@ -735,7 +747,7 @@ export default function SupplierProductsPage() {
             </div>
             <div className="p-4 border-t flex gap-2" style={{ borderColor: c.border }}>
               <button onClick={() => setShowAddModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800" style={{ color: c.muted }}>Cancel</button>
-              <button onClick={saveAdd} disabled={isUpdating || !addForm.name || addForm.cost <= 0 || addForm.sell <= 0} className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center justify-center gap-2" style={{ background: c.primary, color: '#fff' }}>
+              <button onClick={saveAdd} disabled={isUpdating || !addForm.name} className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center justify-center gap-2" style={{ background: c.primary, color: '#fff' }}>
                 {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                 {isUpdating ? 'Creating...' : 'Add Product'}
               </button>

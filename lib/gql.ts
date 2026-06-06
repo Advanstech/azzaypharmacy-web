@@ -144,6 +144,7 @@ export const Q_PRODUCTS = `
     products {
       id name genericName brand category sellingPrice costPrice
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
+      stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
 `;
@@ -153,6 +154,7 @@ export const Q_PRODUCTS_BY_SUPPLIER = `
     productsBySupplier(supplierId: $supplierId) {
       id name genericName brand category sellingPrice costPrice
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
+      stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
 `;
@@ -548,6 +550,7 @@ export const Q_SEARCH_PRODUCTS = `
       strength dosageForm sellingPrice costPrice
       stockQuantity supplierId imageUrl
       barcode nafdacNo requiresRx isControlled isActive
+      stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
 `;
@@ -630,6 +633,7 @@ export const M_CREATE_PRODUCT = `
     $requiresRx: Boolean
     $isControlled: Boolean
     $imageUrl: String
+    $expiryDate: String
   ) {
     createProduct(
       name: $name
@@ -647,9 +651,11 @@ export const M_CREATE_PRODUCT = `
       requiresRx: $requiresRx
       isControlled: $isControlled
       imageUrl: $imageUrl
+      expiryDate: $expiryDate
     ) {
       id name brand category sellingPrice costPrice
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
+      stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
 `;
@@ -685,6 +691,7 @@ export const M_UPDATE_PRODUCT = `
     $strength: String
     $barcode: String
     $nafdacNo: String
+    $expiryDate: String
   ) {
     updateProduct(
       id: $id
@@ -702,9 +709,11 @@ export const M_UPDATE_PRODUCT = `
       strength: $strength
       barcode: $barcode
       nafdacNo: $nafdacNo
+      expiryDate: $expiryDate
     ) {
       id name genericName brand category sellingPrice costPrice
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled barcode nafdacNo
+      stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
 `;
@@ -868,6 +877,24 @@ export const Q_BRANCHES = `
   query GetBranches {
     branches {
       id name location phone
+    }
+  }
+`;
+
+export const Q_NOTIFICATION_LOGS = `
+  query NotificationLogs($limit: Int, $offset: Int, $type: String, $status: String) {
+    notificationLogs(limit: $limit, offset: $offset, type: $type, status: $status) {
+      id userId type channel recipientEmail recipientPhone subject content status
+      emailStatus smsStatus smsProvider errorMessage createdAt
+    }
+  }
+`;
+
+export const Q_NOTIFICATION_STATS = `
+  query NotificationStats($days: Int) {
+    notificationStats(days: $days) {
+      total emailSent smsSent failed
+      byType { type count }
     }
   }
 `;

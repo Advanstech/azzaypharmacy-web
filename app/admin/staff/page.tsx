@@ -14,8 +14,8 @@ import Link from 'next/link';
 
 export default function StaffIntelligencePage() {
   const { staff, sales, updateDutyStatus, updateStaffProfile, createStaffAccount, me, deleteStaff } = useStore();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark' || theme === 'dark';
   const [mounted, setMounted] = useState(false);
 
   // Pagination states

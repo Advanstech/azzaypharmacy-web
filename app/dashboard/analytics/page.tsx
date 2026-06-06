@@ -32,10 +32,10 @@ function useCardStyles(isDark: boolean) {
 }
 
 export default function AnalyticsPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const [period, setPeriod] = useState('7 Days');
 
   const { sales, products, staff, customers, loadingSales } = useStore();

@@ -24,7 +24,7 @@ const STATUS_CONFIG = {
 };
 
 export default function InventoryPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { 
     products: storeProducts, 
@@ -72,7 +72,8 @@ export default function InventoryPage() {
     barcode: '',
     nafdacNo: '',
     classification: 'OTC', // 'OTC', 'POM', 'CONTROLLED'
-    imageUrl: ''
+    imageUrl: '',
+    expiryDate: ''
   });
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [addModalFromInvoice, setAddModalFromInvoice] = useState(false);
@@ -94,7 +95,8 @@ export default function InventoryPage() {
     barcode: '',
     nafdacNo: '',
     classification: 'OTC',
-    imageUrl: ''
+    imageUrl: '',
+    expiryDate: ''
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -106,6 +108,7 @@ export default function InventoryPage() {
 
   // Delete Confirmation
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Selection & Bulk Actions
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -152,7 +155,7 @@ export default function InventoryPage() {
     return () => clearTimeout(timer);
   }, [invoiceNumber, invoices]);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
@@ -416,6 +419,7 @@ export default function InventoryPage() {
         requiresRx: newProduct.classification === 'POM' || newProduct.classification === 'CONTROLLED',
         isControlled: newProduct.classification === 'CONTROLLED',
         imageUrl: newProduct.imageUrl || undefined,
+        expiryDate: newProduct.expiryDate || undefined,
       });
       if (addModalFromInvoice && created?.id) {
         setInvoiceItems(prev => [...prev, {
@@ -438,7 +442,7 @@ export default function InventoryPage() {
       setShowAddModal(false);
       setAddModalFromInvoice(false);
       setAddModalTab('basic');
-      setNewProduct({ name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', costPrice: 0, sellingPrice: 0, stockQuantity: 0, supplierId: '', strength: '', dosageForm: 'TABLET', barcode: '', nafdacNo: '', classification: 'OTC', imageUrl: '' });
+      setNewProduct({ name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', costPrice: 0, sellingPrice: 0, stockQuantity: 0, supplierId: '', strength: '', dosageForm: 'TABLET', barcode: '', nafdacNo: '', classification: 'OTC', imageUrl: '', expiryDate: '' });
     } catch (error) {
       console.error('Failed to create product:', error);
     } finally {
@@ -1302,12 +1306,12 @@ export default function InventoryPage() {
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Cost Price (GH₵) *</label>
+                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Cost Price (GH₵)</label>
                     <input type="number" min="0" step="0.01" value={newProduct.costPrice || ''} onChange={e => setNewProduct({...newProduct, costPrice: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                   </div>
 
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Selling Price (GH₵) *</label>
+                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Selling Price (GH₵)</label>
                     <input type="number" min="0" step="0.01" value={newProduct.sellingPrice || ''} onChange={e => setNewProduct({...newProduct, sellingPrice: parseFloat(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                   </div>
 
@@ -1330,10 +1334,18 @@ export default function InventoryPage() {
                   </div>
 
                   <div className="col-span-2 border-t pt-5" style={{ borderColor: card.border }}>
-                    <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Initial Stock Quantity</label>
-                    <div className="flex items-center gap-4">
-                      <input type="number" min="0" value={newProduct.stockQuantity === undefined ? '' : newProduct.stockQuantity} onChange={e => setNewProduct({...newProduct, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
-                      <p className="text-xs w-1/2" style={{ color: card.muted }}>If you leave this at 0, you can receive stock later via Purchase Orders.</p>
+                    <div className="grid grid-cols-2 gap-5">
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Initial Stock Quantity</label>
+                        <input type="number" min="0" value={newProduct.stockQuantity === undefined ? '' : newProduct.stockQuantity} onChange={e => setNewProduct({...newProduct, stockQuantity: parseInt(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Expiry Date</label>
+                        <input type="date" value={newProduct.expiryDate} onChange={e => setNewProduct({...newProduct, expiryDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                      </div>
+                      <div className="col-span-2">
+                        <p className="text-xs" style={{ color: card.muted }}>If you leave quantity at 0, you can receive stock later via Purchase Orders.</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1417,7 +1429,7 @@ export default function InventoryPage() {
                     Continue
                   </button>
                 ) : (
-                  <button onClick={handleAddProduct} disabled={isCreatingProduct || !newProduct.name || newProduct.costPrice <= 0 || newProduct.sellingPrice <= 0} className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center gap-2" style={{ background: '#10B981', color: '#fff', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }}>
+                  <button onClick={handleAddProduct} disabled={isCreatingProduct || !newProduct.name} className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center gap-2" style={{ background: '#10B981', color: '#fff', boxShadow: '0 4px 15px rgba(16,185,129,0.3)' }}>
                     {isCreatingProduct ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
                     {isCreatingProduct ? 'Saving...' : 'Save Product'}
                   </button>
@@ -2302,8 +2314,11 @@ export default function InventoryPage() {
             <h3 className="font-display text-xl font-bold mb-2" style={{ color: card.text }}>Delete Product?</h3>
             <p className="text-sm mb-6" style={{ color: card.muted }}>This action is permanent and will remove this product from all inventory records.</p>
             <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="flex-1 py-3 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>Cancel</button>
-              <button onClick={async () => { if (confirmDelete) { await deleteProduct(confirmDelete); setConfirmDelete(null); } }} className="flex-1 py-3 rounded-xl text-sm font-bold bg-red-500 text-white hover:bg-red-600 transition-colors">Delete</button>
+              <button onClick={() => setConfirmDelete(null)} disabled={deleting} className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: card.inputBg, color: card.text }}>Cancel</button>
+              <button onClick={async () => { if (confirmDelete) { setDeleting(true); try { await deleteProduct(confirmDelete); } finally { setDeleting(false); setConfirmDelete(null); } } }} disabled={deleting} className="flex-1 py-3 rounded-xl text-sm font-bold bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-60 flex items-center justify-center gap-2">
+                {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

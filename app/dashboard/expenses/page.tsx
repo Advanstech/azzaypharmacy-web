@@ -13,13 +13,13 @@ import { gql } from '@/lib/gql';
 import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
 
 export default function ExpensesPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const { user } = useAuth();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { me } = useStore();
+  const { me, expenses: storeExpenses } = useStore();
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
@@ -122,27 +122,46 @@ export default function ExpensesPage() {
         </button>
       </div>
 
-      {isManager && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Month', value: 'GH₵ 8,240', sub: 'vs 7.5k last month', icon: DollarSign, color: '#EF4444' },
-          { label: 'Utilities', value: 'GH₵ 1,200', sub: 'Electricity & Water', icon: Landmark, color: '#0EA5E9' },
-          { label: 'Logistics', value: 'GH₵ 2,450', sub: 'Supplier deliveries', icon: CreditCard, color: '#F59E0B' },
-          { label: 'Staff Perks', value: 'GH₵ 850', sub: 'Lunch & Transport', icon: Wallet, color: '#10B981' },
-        ].map(k => (
-          <div key={k.label} className="rounded-2xl border p-4 backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl" style={{ background: `${k.color}15`, color: k.color }}><k.icon size={18} /></div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: c.muted }}>{k.label}</p>
-                <p className="text-lg font-black" style={{ color: c.text }}>{k.value}</p>
-                <p className="text-[10px]" style={{ color: c.muted }}>{k.sub}</p>
+      {isManager && (() => {
+        // Calculate real KPIs from storeExpenses
+        const now = new Date();
+        const thisMonthExp = storeExpenses.filter(e => {
+          const d = new Date(e.date);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && e.status === 'APPROVED';
+        });
+        
+        const totalMonth = thisMonthExp.reduce((sum, e) => sum + Number(e.amount), 0);
+        
+        const getCatSum = (keywords: string[]) => thisMonthExp
+          .filter(e => keywords.some(k => (e.category?.name || '').toLowerCase().includes(k) || (e.description || '').toLowerCase().includes(k)))
+          .reduce((sum, e) => sum + Number(e.amount), 0);
+          
+        const utilities = getCatSum(['util', 'water', 'electric']);
+        const logistics = getCatSum(['logistic', 'delivery', 'transport', 'fuel']);
+        const staffPerks = getCatSum(['staff', 'perk', 'lunch', 'food', 'allowance']);
+
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Month', value: `GH₵ ${totalMonth.toFixed(2)}`, sub: 'Approved expenses', icon: DollarSign, color: '#EF4444' },
+            { label: 'Utilities', value: `GH₵ ${utilities.toFixed(2)}`, sub: 'Electricity & Water', icon: Landmark, color: '#0EA5E9' },
+            { label: 'Logistics', value: `GH₵ ${logistics.toFixed(2)}`, sub: 'Supplier deliveries & Fuel', icon: CreditCard, color: '#F59E0B' },
+            { label: 'Staff Perks', value: `GH₵ ${staffPerks.toFixed(2)}`, sub: 'Lunch & Allowances', icon: Wallet, color: '#10B981' },
+          ].map(k => (
+            <div key={k.label} className="rounded-2xl border p-4 backdrop-blur-xl" style={{ background: c.bg, borderColor: c.border }}>
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl" style={{ background: `${k.color}15`, color: k.color }}><k.icon size={18} /></div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: c.muted }}>{k.label}</p>
+                  <p className="text-lg font-black" style={{ color: c.text }}>{k.value}</p>
+                  <p className="text-[10px]" style={{ color: c.muted }}>{k.sub}</p>
+                </div>
               </div>
             </div>
+          ))}
           </div>
-        ))}
-        </div>
-      )}
+        );
+      })()}
 
       <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
         <div className="p-4 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>

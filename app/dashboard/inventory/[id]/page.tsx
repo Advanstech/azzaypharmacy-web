@@ -17,7 +17,7 @@ export default function ProductDetailedPaper() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   
   const productId = params?.id as string;
@@ -47,12 +47,13 @@ export default function ProductDetailedPaper() {
     barcode: '',
     nafdacNo: '',
     classification: 'OTC', // 'OTC', 'POM', 'CONTROLLED'
-    imageUrl: ''
+    imageUrl: '',
+    expiryDate: ''
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const isAdmin = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
   const canEdit = isAdmin;
 
@@ -209,6 +210,7 @@ export default function ProductDetailedPaper() {
         requiresRx: editForm.classification === 'POM' || editForm.classification === 'CONTROLLED',
         isControlled: editForm.classification === 'CONTROLLED',
         imageUrl: editForm.imageUrl || undefined,
+        expiryDate: editForm.expiryDate || undefined,
       });
 
       if (editForm.stockQuantity !== currentStock) {
@@ -258,7 +260,10 @@ export default function ProductDetailedPaper() {
         barcode: (product as any).barcode || '',
         nafdacNo: (product as any).nafdacNo || '',
         classification: product.isControlled ? 'CONTROLLED' : (product.requiresRx ? 'POM' : 'OTC'),
-        imageUrl: product.imageUrl || ''
+        imageUrl: product.imageUrl || '',
+        expiryDate: product.stockItems?.[0]?.expiryDate
+          ? new Date(product.stockItems[0].expiryDate).toISOString().split('T')[0]
+          : ''
       });
 
       // Background auto-generator for missing or placeholder product images
@@ -327,6 +332,13 @@ export default function ProductDetailedPaper() {
   const isPOM = product.requiresRx;
   const status = product.stockQuantity === 0 ? 'OUT' : product.stockQuantity <= 10 ? 'LOW' : 'OK';
   const potentialProfit = (product.sellingPrice - product.costPrice) * product.stockQuantity;
+
+  const activeStockItems = product?.stockItems?.filter(item => item.quantity > 0) || [];
+  const earliestExpiry = activeStockItems.length > 0
+    ? new Date(Math.min(...activeStockItems.map(i => new Date(i.expiryDate).getTime())))
+    : null;
+  const isExpired = earliestExpiry ? earliestExpiry < new Date() : false;
+  const isExpiringSoon = earliestExpiry ? (earliestExpiry.getTime() - new Date().getTime()) / (1000 * 3600 * 24) < 90 : false; // 90 days threshold
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 max-w-6xl mx-auto">
@@ -658,8 +670,21 @@ export default function ProductDetailedPaper() {
                       <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Stock Quantity</label>
                       <div className="flex items-center gap-4">
                         <input type="number" min="0" value={editForm.stockQuantity === undefined ? '' : editForm.stockQuantity} onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
-                        <p className="text-xs w-1/2" style={{ color: card.muted }}>Usually managed via Purchase Orders or Stock Adjustments.</p>
+                        <div className="w-1/2">
+                          <p className="text-xs" style={{ color: card.muted }}>Usually managed via Purchase Orders or Stock Adjustments.</p>
+                          {earliestExpiry && (
+                            <p className={`text-[10px] mt-1 font-bold ${isExpired ? 'text-red-500' : isExpiringSoon ? 'text-amber-500' : ''}`} style={!isExpired && !isExpiringSoon ? { color: card.subtle } : {}}>
+                              Earliest Expiry: {earliestExpiry.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </p>
+                          )}
+                        </div>
                       </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Expiry Date</label>
+                      <input type="date" value={editForm.expiryDate} onChange={e => setEditForm({...editForm, expiryDate: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                      <p className="text-xs mt-1.5" style={{ color: card.muted }}>Applies to the first stock batch. Create a new batch via Purchase Order for different dates.</p>
                     </div>
                   </div>
                 )}
@@ -785,7 +810,7 @@ export default function ProductDetailedPaper() {
               Detailed Paper
             </h2>
             
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Category</p>
                 <p className="text-sm font-semibold px-3 py-1.5 rounded-lg inline-block" style={{ background: 'rgba(0,0,0,0.05)', color: card.text }}>{product.category || 'Uncategorized'}</p>
@@ -798,6 +823,20 @@ export default function ProductDetailedPaper() {
                   {status === 'LOW' && <AlertCircle size={16} color="#F59E0B" />}
                   {status === 'OUT' && <AlertCircle size={16} color="#EF4444" />}
                 </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Expiry Date</p>
+                {earliestExpiry ? (
+                  <div className="flex items-center gap-2">
+                    <p className={`text-sm font-bold ${isExpired ? 'text-red-500' : isExpiringSoon ? 'text-amber-500' : ''}`} style={!isExpired && !isExpiringSoon ? { color: card.text } : {}}>
+                      {earliestExpiry.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                    {isExpired && <AlertCircle size={14} color="#EF4444" />}
+                    {isExpiringSoon && !isExpired && <AlertCircle size={14} color="#F59E0B" />}
+                  </div>
+                ) : (
+                  <p className="text-sm font-bold" style={{ color: card.muted }}>N/A</p>
+                )}
               </div>
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Cost Price</p>

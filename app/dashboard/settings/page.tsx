@@ -7,7 +7,7 @@ import { Sun, Moon, Monitor, Shield, Building, Globe, Zap, Bell, Palette, Lock, 
 import { gql, M_CHANGE_PASSWORD } from '@/lib/gql';
 
 export default function SettingsPage() {
-  const { setTheme, theme } = useTheme();
+  const { setTheme, theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -21,7 +21,7 @@ export default function SettingsPage() {
   const [success, setSuccess] = useState(false);
   
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

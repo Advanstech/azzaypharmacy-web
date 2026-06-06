@@ -51,16 +51,17 @@ function StockHealthBar({ out, low, ok, total }: { out: number; low: number; ok:
 }
 
 export default function SuppliersPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { 
     suppliers: storeSuppliers, 
     loadingSuppliers, 
-    products, 
+    products,
     createSupplier, 
     updateSupplier, 
     deleteSupplier,
+    purchases,
     me
   } = useStore();
 
@@ -68,7 +69,7 @@ export default function SuppliersPage() {
     setMounted(true);
   }, []);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
 
   const [search, setSearch] = useState('');
@@ -165,19 +166,31 @@ export default function SuppliersPage() {
 
   // Enrich suppliers with computed stats
   const suppliers = storeSuppliers.map(s => {
-    const supplierProducts = products.filter(p => p.supplierId === s.id);
-    const totalPurchases = supplierProducts.reduce((sum, p) => sum + p.costPrice * p.stockQuantity, 0);
+    const supplierProducts = products.filter(p => p.supplierId === s.id || (p as any).supplier?.id === s.id);
+    const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
+    const totalPurchases = supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
     
     const stockOut = supplierProducts.filter(p => p.stockQuantity === 0).length;
     const stockLow = supplierProducts.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10).length;
     const stockOk = supplierProducts.filter(p => p.stockQuantity > 10).length;
     
+    // Find the most recent purchase date
+    let lastOrder = 'No orders yet';
+    if (supplierPurchases.length > 0) {
+      const sorted = [...supplierPurchases]
+        .filter(p => p.createdAt)
+        .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+      if (sorted.length > 0 && sorted[0].createdAt) {
+        lastOrder = new Date(sorted[0].createdAt).toISOString().split('T')[0];
+      }
+    }
+    
     return {
       ...s,
-      totalPurchases: totalPurchases || Math.floor(Math.random() * 20000) + 5000,
-      onTimeRate: Math.floor((s.aiScore || 85)),
-      lastOrder: '2026-05-01',
-      paymentTerms: 'Net 30',
+      totalPurchases,
+      onTimeRate: Math.floor((s as any).onTimeRate ?? 0),
+      lastOrder,
+      paymentTerms: (s as any).paymentTerms || 'Net 30',
       stockOut,
       stockLow,
       stockOk,

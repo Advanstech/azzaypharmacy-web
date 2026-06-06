@@ -5,10 +5,10 @@ import { useTheme } from 'next-themes';
 import { Database, Server, HardDrive, RefreshCw, CheckCircle, AlertTriangle, Clock, Zap } from 'lucide-react';
 
 export default function SystemPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

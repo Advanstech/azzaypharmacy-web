@@ -13,7 +13,7 @@ import { useStore } from '@/lib/store';
 import { gql, Q_MY_SHIFT_RECONCILIATIONS } from '@/lib/gql';
 
 export default function EndOfDayDashboardPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const { user } = useAuth();
   const [mounted, setMounted] = useState(false);
   const { closeTerminal, todaySales, todayRevenue, todayTransactions, me, staff } = useStore();
@@ -190,7 +190,7 @@ export default function EndOfDayDashboardPage() {
     setHistoryPage(1);
   }, [historyStatusFilter, historyDateFilter, historySearch]);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
     border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)',

@@ -12,7 +12,7 @@ type TerminalMessage = {
 };
 
 export default function AdminTerminalPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<TerminalMessage[]>([]);
@@ -31,7 +31,7 @@ export default function AdminTerminalPage() {
     }
   }, [messages]);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

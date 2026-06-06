@@ -32,7 +32,7 @@ const SALES_METRICS = {
 };
 
 export default function EnhancedSalesPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { sales, loadingSales, refetchSales, me, products, customers, requestRefund } = useStore();
@@ -67,7 +67,7 @@ export default function EnhancedSalesPage() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const handlePrint = (sale: any) => {
     const printWindow = window.open('', '_blank');

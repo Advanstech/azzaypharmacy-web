@@ -10,7 +10,7 @@ import {
 
 export default function ProfilePage() {
   const { user } = useAuth();
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -23,7 +23,7 @@ export default function ProfilePage() {
 
   useEffect(() => setMounted(true), []);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.7)' : 'rgba(255,255,255,0.95)',
     border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.6)',

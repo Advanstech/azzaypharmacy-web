@@ -8,7 +8,7 @@ import { gql } from '@/lib/gql';
 import { Q_AUTHORIZATIONS_SHIFT, Q_AUTHORIZATIONS_EXPENSE, M_APPROVE_SHIFT, M_REJECT_SHIFT, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
 
 export default function AdminAuthorizationsPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<'SHIFTS' | 'EXPENSES'>('SHIFTS');
   
@@ -106,7 +106,7 @@ export default function AdminAuthorizationsPage() {
     }
   };
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
     border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)',

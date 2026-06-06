@@ -21,10 +21,10 @@ function downloadCSV(filename: string, rows: (string | number | boolean | null |
 }
 
 export default function ReportsPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { sales, products, staff } = useStore();
   const [activeCategory, setActiveCategory] = useState('All');

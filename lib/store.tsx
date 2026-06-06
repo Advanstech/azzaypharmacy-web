@@ -25,6 +25,16 @@ import { saveToCache, getFromCache } from './offline';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface StockItem {
+  id: string;
+  batchNo: string;
+  expiryDate: string;
+  quantity: number;
+  costPrice: number;
+  receivedAt: string;
+  isExpired: boolean;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -40,6 +50,7 @@ export interface Product {
   dosageForm?: string;
   requiresRx?: boolean;
   isControlled?: boolean;
+  stockItems?: StockItem[];
 }
 
 export interface Supplier {
@@ -437,6 +448,7 @@ interface StoreState {
     requiresRx?: boolean;
     isControlled?: boolean;
     imageUrl?: string;
+    expiryDate?: string;
   }) => Promise<Product>;
 
   deleteProduct: (productId: string) => Promise<void>;
@@ -999,7 +1011,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     name: string; genericName?: string; brand?: string; category: string;
     costPrice: number; sellingPrice: number; stockQuantity: number;
     supplierId?: string; strength?: string; dosageForm?: string;
-    barcode?: string; nafdacNo?: string; requiresRx?: boolean; isControlled?: boolean; imageUrl?: string;
+    barcode?: string; nafdacNo?: string; requiresRx?: boolean; isControlled?: boolean;
+    imageUrl?: string;
+    expiryDate?: string;
   }): Promise<Product> => {
     const data = await gql<{ createProduct: Product }>(M_CREATE_PRODUCT, args);
     const newProduct = data.createProduct;

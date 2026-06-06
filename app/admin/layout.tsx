@@ -23,6 +23,7 @@ import {
   Truck,
   Settings as SettingsIcon,
   ShieldCheck,
+  Bell,
   Menu
 } from 'lucide-react';
 
@@ -33,6 +34,7 @@ const adminItems = [
   { label: 'Supplier Invoices', href: '/admin/invoices', icon: Truck, color: '#F59E0B' },
   { label: 'Financials', href: '/admin/financials', icon: CreditCard, color: '#A855F7' },
   { label: 'Reports', href: '/admin/reports', icon: FileText, color: '#3B82F6' },
+  { label: 'Notifications', href: '/admin/notifications', icon: Bell, color: '#0EA5E9' },
   { label: 'System Settings', href: '/admin/settings', icon: SettingsIcon, color: '#94A3B8' },
   { label: 'Super Terminal', href: '/admin/terminal', icon: Activity, color: '#00D9FF' },
 ];
@@ -41,7 +43,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { user, session, loading, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -89,7 +91,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (!user) return null;
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const role = user.user_metadata?.role as string;
 
   // Role Categories

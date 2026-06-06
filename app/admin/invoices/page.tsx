@@ -18,8 +18,8 @@ const APPROVAL_CONFIG: Record<string, { label: string; color: string; bg: string
 
 export default function SupplierInvoicesPage() {
   const { invoices, suppliers, recordSupplierPayment, deleteInvoice, me, refetchInvoices } = useStore() as any;
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark' || theme === 'dark';
   const { addToast } = useToast();
 
   const canApprove = ['OWNER', 'ROOT', 'SE_ADMIN'].includes(me?.role || '');

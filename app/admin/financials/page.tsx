@@ -14,10 +14,10 @@ import { useAuth } from '@/lib/auth-context';
 // No hardcoded data — all figures come from the live store
 
 export default function FinancialsPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { user } = useAuth();
   const { sales, products, ledger, purchases, invoices, expenses, expenseCategories, createExpense, refetchLedger, refetchInvoices, me } = useStore();

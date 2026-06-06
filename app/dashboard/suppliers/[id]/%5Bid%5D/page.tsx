@@ -46,7 +46,7 @@ async function fetchGraphQL(query: string, variables: any = {}) {
 export default function SupplierProductsPage() {
   const params = useParams();
   const router = useRouter();
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   
   const supplierId = params.id as string;
@@ -114,7 +114,7 @@ export default function SupplierProductsPage() {
     }
   };
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.7)' : 'rgba(255,255,255,0.95)',
     border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.6)',

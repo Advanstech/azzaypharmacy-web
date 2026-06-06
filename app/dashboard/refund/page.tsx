@@ -10,11 +10,11 @@ import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
 
 export default function RefundPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const { user } = useAuth();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests } = useStore();
   const role = user?.user_metadata?.role || me?.role;

@@ -30,7 +30,7 @@ const PAYMENT_STATUS = {
 };
 
 export default function InvoicesPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { suppliers, products, me, refetchPurchases, createSupplier, createProduct } = useStore();
   const { addToast } = useToast();
@@ -88,7 +88,7 @@ export default function InvoicesPage() {
     fetchInvoices();
   }, [me?.branchId]);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

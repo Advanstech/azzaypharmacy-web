@@ -31,7 +31,7 @@ const REPORT_TYPES = {
 };
 
 export default function EnhancedAccountingPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { sales, products, ledger, purchases, refetchLedger, me } = useStore();
   const { user } = useAuth();
@@ -65,7 +65,7 @@ export default function EnhancedAccountingPage() {
   useEffect(() => setMounted(true), []);
   useEffect(() => { refetchLedger(); }, [refetchLedger]);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');

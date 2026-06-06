@@ -26,12 +26,7 @@ export default function RootLayout({
         />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#00D9FF" />
-        {/* Migrate any hard-coded stored theme to 'system' so OS preference is respected by default */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var k='theme';var v=localStorage.getItem(k);if(v==='dark'||v==='light'){var m=window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.setAttribute('data-theme',m?'dark':'light');localStorage.setItem(k,'system');}}catch(e){}})();`,
-          }}
-        />
+
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Azzay NEXUS" />
@@ -39,7 +34,7 @@ export default function RootLayout({
       <body className="antialiased" suppressHydrationWarning>
         <ServiceWorkerRegister />
         <ThemeProvider
-          attribute="data-theme"
+          attribute="class"
           defaultTheme="system"
           enableSystem={true}
           disableTransitionOnChange

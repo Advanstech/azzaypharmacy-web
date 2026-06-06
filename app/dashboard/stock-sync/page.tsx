@@ -97,11 +97,11 @@ function ConfidencePill({ value }: { value: number }) {
 }
 
 export default function StockSyncPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const { refetchProducts, suppliers: storeSuppliers, me } = useStore();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);

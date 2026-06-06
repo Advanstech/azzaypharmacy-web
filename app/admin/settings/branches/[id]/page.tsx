@@ -118,7 +118,7 @@ const generateMockData = (branchId: string) => ({
 });
 
 export default function BranchDashboardPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const params = useParams();
   const [mounted, setMounted] = useState(false);
@@ -126,7 +126,7 @@ export default function BranchDashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const branch = useMemo(() => {
     return BRANCHES.find(b => b.id === params.id) || BRANCHES[0];

@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
   --color-space-black: var(--space-black);
@@ -64,7 +64,7 @@
     --foreground: var(--text-primary);
   }
 
-  [data-theme='dark'] {
+  .dark {
     --space-black: #060B14;
     --deep-navy: #0A1628;
     --navy: #0F2044;

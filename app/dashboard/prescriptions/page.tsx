@@ -20,7 +20,7 @@ const STATUS_CONFIG: Record<RxStatus, { label: string; icon: React.FC<{ size?: n
 };
 
 export default function PrescriptionsPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { prescriptions, loadingPrescriptions, refetchPrescriptions, me, products } = useStore();
 
@@ -29,7 +29,7 @@ export default function PrescriptionsPage() {
     refetchPrescriptions();
   }, [refetchPrescriptions]);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');

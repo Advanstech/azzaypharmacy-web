@@ -854,10 +854,10 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
 //  MAIN EXPORT — Role Router
 // ═══════════════════════════════════════════════════════════════
 export default function DashboardOverview() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { isManagement, isClinical } = useRole();
   const s = useCardStyles(isDark);

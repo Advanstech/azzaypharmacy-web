@@ -212,7 +212,7 @@ function getFullName(staff: StaffDetail) {
 const ROLES = ['OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'PHARMACIST', 'TECHNICIAN', 'CASHIER', 'INTERN', 'SE_ADMIN'];
 
 export default function StaffDetailPage() {
-  const { theme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const params = useParams();
   const staffId = params.id as string;
@@ -332,7 +332,7 @@ export default function StaffDetailPage() {
     };
   }, [mounted, staffId]);
 
-  const isDark = mounted && theme === 'dark';
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const liveStaffMember = liveStaff.find(s => s.id === staffId);
   const staff = liveStaffMember ?? STAFF.find(s => s.id === staffId);

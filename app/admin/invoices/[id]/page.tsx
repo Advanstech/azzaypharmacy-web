@@ -17,8 +17,8 @@ export default function InvoiceDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const { invoices, recordSupplierPayment, refetchInvoices, refetchProducts } = useStore() as any;
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
+  const { theme, resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark' || theme === 'dark';
   const { addToast } = useToast();
 
   // Selling price editing state: { [itemId]: { value: number, saving: boolean } }
