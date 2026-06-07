@@ -41,8 +41,13 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
           <img 
             src={productImage} 
             alt={product.name}
-            className="w-16 h-16 rounded-lg object-cover border"
+            className="w-16 h-16 rounded-lg object-cover border bg-white"
             style={{ borderColor: border }}
+            onError={(e) => {
+              const initials = product.name ? product.name.substring(0, 2).toUpperCase() : 'RX';
+              const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#dcfce7"/><text x="50" y="50" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="bold" font-size="36" fill="#15803d">${initials}</text></svg>`;
+              e.currentTarget.src = `data:image/svg+xml;base64,${btoa(svg)}`;
+            }}
           />
         ) : (
           <div 
@@ -87,12 +92,16 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
         </div>
       </div>
 
+      {/* Top right tag */}
+      <div className="absolute top-3 right-4">
+        <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase ${product.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
+          {product.requiresRx ? 'POM' : 'OTC'}
+        </span>
+      </div>
+
       {/* Add to Cart Button */}
       {onAddToCart && (
         <div className="flex flex-col items-end gap-1.5">
-          <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase ${product.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
-            {product.requiresRx ? 'POM' : 'OTC'}
-          </span>
           <button
             onClick={(e) => {
               e.preventDefault();

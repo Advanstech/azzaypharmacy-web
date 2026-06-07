@@ -586,6 +586,11 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                           src={getProductImage(p)} 
                           alt={p.name} 
                           className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                          onError={(e) => {
+                            const initials = p.name ? p.name.substring(0, 2).toUpperCase() : 'RX';
+                            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f1f5f9"/><text x="50" y="50" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="bold" font-size="36" fill="#94a3b8">${initials}</text></svg>`;
+                            e.currentTarget.src = `data:image/svg+xml;base64,${btoa(svg)}`;
+                          }}
                         />
                       </div>
                       
@@ -611,11 +616,15 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                       </div>
                     </div>
 
-                    {/* Rightmost Add Button - Positioned absolute to match design */}
-                    <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
+                    {/* Top right tag */}
+                    <div className="absolute top-3 right-3">
                       <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase ${p.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
                         {p.requiresRx ? 'POM' : 'OTC'}
                       </span>
+                    </div>
+
+                    {/* Rightmost Add Button - Positioned absolute to match design */}
+                    <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
                       <div className="px-3 py-1.5 rounded-full bg-[#059669] text-white flex items-center gap-1 group-hover:bg-[#047857] transition-colors shadow-sm">
                         {cart.find(i => i.product.id === p.id) ? (
                           <span className="font-bold text-xs">{cart.find(i => i.product.id === p.id)?.quantity}</span>
