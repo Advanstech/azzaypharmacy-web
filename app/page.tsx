@@ -175,7 +175,7 @@ function ParticleField({ isDark }: { isDark: boolean }) {
 }
 
 // ── DNA Double Helix ────────────────────────────────────────────────────────
-function DNAHelix({ isDark }: { isDark: boolean }) {
+function DNAHelix({ isDark, pos, scale = 1 }: { isDark: boolean, pos: [number, number, number], scale?: number }) {
   const group = useRef<THREE.Group>(null);
   const elapsed = useRef(0);
   const N = 60;
@@ -186,7 +186,7 @@ function DNAHelix({ isDark }: { isDark: boolean }) {
     elapsed.current += s.delta;
     if (group.current) {
       group.current.rotation.y = elapsed.current * 0.15;
-      group.current.position.y = Math.sin(elapsed.current * 0.3) * 0.15;
+      group.current.position.y = pos[1] + Math.sin(elapsed.current * 0.3) * 0.5;
     }
   });
 
@@ -215,7 +215,7 @@ function DNAHelix({ isDark }: { isDark: boolean }) {
       );
     }
   }
-  return <group ref={group}>{nodes}</group>;
+  return <group ref={group} position={pos} scale={scale}>{nodes}</group>;
 }
 
 // ── Orbiting Molecules ──────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ function Molecule({ pos, color, speed, distort }: { pos: [number,number,number];
 }
 
 // ── Rotating Torus (pill shape) ─────────────────────────────────────────────
-function PillRing({ isDark }: { isDark: boolean }) {
+function PillRing({ isDark, pos, scale = 1 }: { isDark: boolean, pos: [number, number, number], scale?: number }) {
   const ref = useRef<THREE.Mesh>(null);
   const elapsed = useRef(0);
   useFrame((s: any) => {
@@ -241,30 +241,93 @@ function PillRing({ isDark }: { isDark: boolean }) {
     }
   });
   return (
-    <mesh ref={ref} position={[-4, 2, -2]}>
-      <torusGeometry args={[1.1, 0.12, 16, 60]} />
-      <meshStandardMaterial color={isDark ? '#F472B6' : '#EC4899'} emissive={isDark ? '#F472B6' : '#EC4899'} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={0.7} roughness={0.2} wireframe />
-    </mesh>
+    <Float speed={1.5} rotationIntensity={0.5} floatIntensity={1}>
+      <mesh ref={ref} position={pos} scale={scale}>
+        <torusGeometry args={[1.1, 0.12, 16, 60]} />
+        <meshStandardMaterial color={isDark ? '#F472B6' : '#EC4899'} emissive={isDark ? '#F472B6' : '#EC4899'} emissiveIntensity={isDark ? 0.5 : 0.4} metalness={isDark ? 0.7 : 0.3} roughness={isDark ? 0.2 : 0.4} wireframe />
+      </mesh>
+    </Float>
   );
 }
 
 // ── Cross / Plus (medical symbol) ──────────────────────────────────────────
-function MedicalCross({ isDark }: { isDark: boolean }) {
+function MedicalCross({ isDark, pos, scale = 1, rotationSpeed = 1 }: { isDark: boolean, pos: [number, number, number], scale?: number, rotationSpeed?: number }) {
   const ref = useRef<THREE.Group>(null);
   const elapsed = useRef(0);
   useFrame((s: any) => {
     elapsed.current += s.delta;
     if (ref.current) {
-      ref.current.rotation.z = elapsed.current * 0.2;
-      ref.current.position.y = 2 + Math.sin(elapsed.current * 0.5) * 0.3;
+      ref.current.rotation.z = elapsed.current * 0.2 * rotationSpeed;
+      ref.current.rotation.x = elapsed.current * 0.1 * rotationSpeed;
     }
   });
-  const mat = <meshStandardMaterial color={isDark ? '#34D399' : '#059669'} emissive={isDark ? '#34D399' : '#059669'} emissiveIntensity={isDark ? 0.7 : 0.25} metalness={0.6} roughness={0.2} />;
+  const mat = <meshStandardMaterial color={isDark ? '#34D399' : '#059669'} emissive={isDark ? '#34D399' : '#059669'} emissiveIntensity={isDark ? 0.7 : 0.4} metalness={isDark ? 0.6 : 0.3} roughness={isDark ? 0.2 : 0.4} />;
   return (
-    <group ref={ref} position={[5, 2, -1]}>
-      <mesh><boxGeometry args={[0.18, 1.2, 0.18]} />{mat}</mesh>
-      <mesh><boxGeometry args={[1.2, 0.18, 0.18]} />{mat}</mesh>
-    </group>
+    <Float speed={1.2 * rotationSpeed} rotationIntensity={0.3} floatIntensity={1.5}>
+      <group ref={ref} position={pos} scale={scale}>
+        <mesh><boxGeometry args={[0.18, 1.2, 0.18]} />{mat}</mesh>
+        <mesh><boxGeometry args={[1.2, 0.18, 0.18]} />{mat}</mesh>
+      </group>
+    </Float>
+  );
+}
+
+// ── Main Scene ──────────────────────────────────────────────────────────────
+function Capsule3D({ pos, color1, color2, speed, isDark, scale = 1, rotation = [0,0,0] }: { pos: [number,number,number]; color1: string; color2: string; speed: number; isDark: boolean, scale?: number, rotation?: [number,number,number] }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame((s: any) => {
+    if (ref.current) {
+      ref.current.rotation.x += s.delta * 0.2 * speed;
+      ref.current.rotation.y += s.delta * 0.3 * speed;
+    }
+  });
+
+  return (
+    <Float speed={speed} rotationIntensity={0.8} floatIntensity={1}>
+      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
+        <mesh position={[0, 0.35, 0]}>
+          <cylinderGeometry args={[0.25, 0.25, 0.7, 16]} />
+          <meshStandardMaterial color={color1} emissive={color1} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+        </mesh>
+        <mesh position={[0, 0.7, 0]}>
+          <sphereGeometry args={[0.25, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color={color1} emissive={color1} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+        </mesh>
+        
+        <mesh position={[0, -0.35, 0]}>
+          <cylinderGeometry args={[0.25, 0.25, 0.7, 16]} />
+          <meshStandardMaterial color={color2} emissive={color2} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+        </mesh>
+        <mesh position={[0, -0.7, 0]} rotation={[Math.PI, 0, 0]}>
+          <sphereGeometry args={[0.25, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial color={color2} emissive={color2} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+        </mesh>
+      </group>
+    </Float>
+  );
+}
+
+// ── Tablet ──────────────────────────────────────────────────────────────────
+function Tablet3D({ pos, color, speed, isDark, scale = 1, rotation = [0,0,0] }: { pos: [number,number,number]; color: string; speed: number; isDark: boolean, scale?: number, rotation?: [number,number,number] }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame((s: any) => {
+    if (ref.current) {
+      ref.current.rotation.x += s.delta * 0.4 * speed;
+      ref.current.rotation.z += s.delta * 0.2 * speed;
+    }
+  });
+
+  return (
+    <Float speed={speed} rotationIntensity={1} floatIntensity={1}>
+      <mesh ref={ref} position={pos} scale={scale} rotation={rotation}>
+        <cylinderGeometry args={[0.4, 0.4, 0.15, 32]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isDark ? 0.4 : 0.2} metalness={isDark ? 0.2 : 0.1} roughness={isDark ? 0.3 : 0.4} />
+        <mesh position={[0, 0.08, 0]} rotation={[0, 0, Math.PI / 2]}>
+           <cylinderGeometry args={[0.02, 0.02, 0.7, 8]} />
+           <meshStandardMaterial color={isDark ? "#000" : "#fff"} opacity={0.15} transparent />
+        </mesh>
+      </mesh>
+    </Float>
   );
 }
 
@@ -275,21 +338,39 @@ function Scene({ isDark }: { isDark: boolean }) {
       <color attach="background" args={[isDark ? '#060B14' : '#EFF6FF']} />
       <fog attach="fog" args={[isDark ? '#060B14' : '#EFF6FF', 8, 28]} />
 
-      <ambientLight intensity={isDark ? 0.25 : 0.9} />
-      <pointLight position={[8, 8, 8]}   intensity={isDark ? 3 : 2}   color={isDark ? '#00D9FF' : '#0EA5E9'} />
-      <pointLight position={[-8,-6,-4]}  intensity={isDark ? 2 : 1.5} color={isDark ? '#A78BFA' : '#8B5CF6'} />
-      <pointLight position={[0, 12, 0]}  intensity={isDark ? 2.5 : 1.5} color={isDark ? '#10B981' : '#059669'} />
-      <pointLight position={[-5, 0, 5]}  intensity={isDark ? 1.5 : 1} color={isDark ? '#F472B6' : '#EC4899'} />
+      <ambientLight intensity={isDark ? 0.25 : 1.2} />
+      <pointLight position={[8, 8, 8]}   intensity={isDark ? 3 : 2.5}   color={isDark ? '#00D9FF' : '#0EA5E9'} />
+      <pointLight position={[-8,-6,-4]}  intensity={isDark ? 2 : 1.8} color={isDark ? '#A78BFA' : '#8B5CF6'} />
+      <pointLight position={[0, 12, 0]}  intensity={isDark ? 2.5 : 2} color={isDark ? '#10B981' : '#059669'} />
+      <pointLight position={[-5, 0, 5]}  intensity={isDark ? 1.5 : 1.5} color={isDark ? '#F472B6' : '#EC4899'} />
 
       <ParticleField isDark={isDark} />
-      <DNAHelix isDark={isDark} />
-      <PillRing isDark={isDark} />
-      <MedicalCross isDark={isDark} />
+      
+      {/* Spread DNA Helix to the left so it's not hidden */}
+      <DNAHelix isDark={isDark} pos={[-7, 0, -5]} scale={0.8} />
+      
+      {/* Pills and Medical Crosses placed around the outer edges */}
+      <PillRing isDark={isDark} pos={[-5.5, 3.5, -2]} scale={0.7} />
+      <PillRing isDark={isDark} pos={[6, -2, -3]} scale={0.9} />
+      
+      <MedicalCross isDark={isDark} pos={[5, 2.5, -1]} scale={0.6} />
+      <MedicalCross isDark={isDark} pos={[-6, -3, 1]} scale={0.5} rotationSpeed={1.5} />
 
-      <Molecule pos={[4.5, 1.5, 0]}   color={isDark ? '#F472B6' : '#EC4899'} speed={1.8} distort={0.35} />
-      <Molecule pos={[-4.5,-1, 2]}    color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.4} distort={0.4}  />
-      <Molecule pos={[3.5,-2.5,-2]}   color={isDark ? '#34D399' : '#10B981'} speed={2.1} distort={0.3}  />
-      <Molecule pos={[-3, 3, -3]}     color={isDark ? '#60A5FA' : '#3B82F6'} speed={1.6} distort={0.45} />
+      {/* New Capsules */}
+      <Capsule3D isDark={isDark} pos={[-5, 0.5, 2]} color1={isDark ? '#00D9FF' : '#0EA5E9'} color2="#ffffff" speed={1.2} scale={0.8} />
+      <Capsule3D isDark={isDark} pos={[4.5, -1.5, 3]} color1={isDark ? '#A78BFA' : '#8B5CF6'} color2={isDark ? '#F472B6' : '#EC4899'} speed={1.5} scale={0.6} rotation={[Math.PI/4, 0, 0]} />
+      <Capsule3D isDark={isDark} pos={[6.5, 4, -4]} color1={isDark ? '#34D399' : '#10B981'} color2="#ffffff" speed={1.8} scale={0.5} />
+
+      {/* New Tablets */}
+      <Tablet3D isDark={isDark} pos={[-4, 4, -1]} color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.1} scale={0.8} />
+      <Tablet3D isDark={isDark} pos={[5.5, 0.5, 2]} color={isDark ? '#60A5FA' : '#3B82F6'} speed={1.4} scale={0.7} rotation={[0, Math.PI/3, 0]} />
+      <Tablet3D isDark={isDark} pos={[-4.5, -2.5, -1]} color={isDark ? '#F472B6' : '#EC4899'} speed={1.7} scale={0.6} />
+
+      {/* Scattered Molecules */}
+      <Molecule pos={[6, 1.5, 0]}   color={isDark ? '#F472B6' : '#EC4899'} speed={1.8} distort={0.35} />
+      <Molecule pos={[-5,-1.5, 3]}  color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.4} distort={0.4}  />
+      <Molecule pos={[4.5,-3.5,-2]} color={isDark ? '#34D399' : '#10B981'} speed={2.1} distort={0.3}  />
+      <Molecule pos={[-5, 2.5, -3]} color={isDark ? '#60A5FA' : '#3B82F6'} speed={1.6} distort={0.45} />
 
       {isDark && <Stars radius={80} depth={40} count={3000} factor={3} saturation={0} fade speed={0.8} />}
 

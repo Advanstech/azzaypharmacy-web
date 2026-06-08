@@ -353,6 +353,14 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     primary: isDark ? '#00D9FF' : '#0EA5E9',
   };
 
+  const formatCategory = (cat: string) => {
+    if (cat === 'All') return cat;
+    return cat.replace(/_/g, ' ')
+              .split(' ')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ');
+  };
+
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: c.bg, color: c.text }}>
       {/* Custom Header - EXACT Match */}
@@ -434,7 +442,12 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                 className="w-full pl-12 pr-12 py-3 rounded-xl border focus:outline-none focus:border-[#059669] transition-colors text-sm"
                 style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.9)' : '#fff', color: c.text }}
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => {
+                  setSearch(e.target.value);
+                  if (activeCategory !== 'All' && e.target.value.trim() !== '') {
+                    setActiveCategory('All');
+                  }
+                }}
                 autoFocus
               />
               {search && (
@@ -490,6 +503,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                   {categories.filter(cat => cat !== 'All').map(cat => (
                     <button
                       key={cat}
+                      data-category={cat}
                       onClick={() => handleCategoryClick(cat)}
                       className={`flex-shrink-0 h-9 px-3 rounded-full text-xs font-bold whitespace-nowrap transition-all duration-200 border flex items-center gap-1.5 ${
                         activeCategory === cat
@@ -503,7 +517,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                       }}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${activeCategory === cat ? 'bg-white' : 'bg-slate-400'}`} />
-                      {cat}
+                      {formatCategory(cat)}
                     </button>
                   ))}
                 </div>

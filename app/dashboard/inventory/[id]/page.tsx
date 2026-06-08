@@ -118,7 +118,7 @@ export default function ProductDetailedPaper() {
     }
   };
 
-  // AI Image Generation using product name - with validation and fallback
+  // AI Image Generation using local canvas composite - fast, reliable, and looks great
   const generateAIImages = async () => {
     if (!editForm.name) {
       alert('Please enter a product name first');
@@ -129,52 +129,91 @@ export default function ProductDetailedPaper() {
     setAiImageOptions([]); // Clear previous options
     
     try {
-      // Using Pollinations AI image generation API (free, no API key needed)
-      const prompt = `Professional pharmaceutical product photo of ${editForm.name} ${editForm.dosageForm || 'medication'} white background studio lighting high quality medical packaging clean composition`;
+      const getBaseImage = (dosageForm: string) => {
+        const form = (dosageForm || '').toUpperCase();
+        if (form.includes('CAPSULE')) return '/pharma/capsules.png';
+        if (form.includes('CREAM') || form.includes('OINTMENT')) return '/pharma/cream.png';
+        if (form.includes('DROP')) return '/pharma/eyedrops.png';
+        if (form.includes('INJECTION')) return '/pharma/injection.png';
+        if (form.includes('SYRUP') || form.includes('SUSPENSION')) return '/pharma/syrup.png';
+        if (form.includes('TABLET')) return '/pharma/tablets.png';
+        return '/pharma/default.png';
+      };
+
+      const generateVariation = (themeColor: string, labelY: number): Promise<string> => {
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject('No context');
+            
+            // Draw base image
+            const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+            const x = (canvas.width / 2) - (img.width / 2) * scale;
+            const y = (canvas.height / 2) - (img.height / 2) * scale;
+            ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+            
+            // Draw a subtle darkening overlay for better contrast
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw label
+            const labelHeight = 130;
+            
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.shadowColor = 'rgba(0,0,0,0.15)';
+            ctx.shadowBlur = 30;
+            ctx.shadowOffsetY = 15;
+            
+            // Safe rounded rectangle
+            ctx.beginPath();
+            ctx.roundRect ? ctx.roundRect(40, labelY, canvas.width - 80, labelHeight, 20) : ctx.fillRect(40, labelY, canvas.width - 80, labelHeight);
+            ctx.fill();
+            
+            ctx.shadowColor = 'transparent';
+            
+            // Product Name
+            ctx.fillStyle = '#0F172A';
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 32px "Inter", sans-serif';
+            let displayName = editForm.name.toUpperCase();
+            if (displayName.length > 22) displayName = displayName.substring(0, 20) + '...';
+            ctx.fillText(displayName, canvas.width / 2, labelY + 55);
+            
+            // Dosage / Category
+            ctx.fillStyle = themeColor;
+            ctx.font = 'bold 16px "Inter", sans-serif';
+            ctx.fillText((editForm.dosageForm || 'MEDICATION').toUpperCase() + (editForm.strength ? ` • ${editForm.strength}` : ''), canvas.width / 2, labelY + 85);
+            
+            // Decorative line / barcode
+            ctx.fillStyle = '#CBD5E1';
+            for(let i=0; i<18; i++) {
+              const w = Math.random() * 4 + 2;
+              ctx.fillRect(canvas.width / 2 - 50 + i*6, labelY + 105, w, 8);
+            }
+            
+            resolve(canvas.toDataURL('image/jpeg', 0.9));
+          };
+          img.onerror = () => reject('Failed to load base image');
+          img.src = getBaseImage(editForm.dosageForm || '');
+        });
+      };
       
-      // Generate 3 different variations with different seeds
-      const seeds = [Date.now(), Date.now() + 1, Date.now() + 2];
-      const imageUrls = seeds.map(seed => 
-        `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true&enhance=true`
-      );
+      const images = await Promise.all([
+        generateVariation('#0EA5E9', 340), // Bottom blue theme
+        generateVariation('#059669', 40),  // Top green theme
+        generateVariation('#F59E0B', 190), // Middle orange theme
+      ]);
       
-      // Validate images by attempting to load them
-      const validatedUrls: string[] = [];
-      
-      await Promise.all(
-        imageUrls.map(async (url) => {
-          try {
-            // Create a promise that resolves when image loads or rejects on error
-            const img = new Image();
-            await new Promise<void>((resolve, reject) => {
-              img.onload = () => resolve();
-              img.onerror = () => reject(new Error('Image failed to load'));
-              img.src = url;
-              // Timeout after 10 seconds
-              setTimeout(() => reject(new Error('Image load timeout')), 10000);
-            });
-            validatedUrls.push(url);
-          } catch (err) {
-            console.warn('AI image validation failed for URL:', url, err);
-          }
-        })
-      );
-      
-      if (validatedUrls.length > 0) {
-        setAiImageOptions(validatedUrls);
-        // Auto-select the first valid image
-        selectAiImage(validatedUrls[0]);
-      } else {
-        // Fallback: use a simple placeholder with product initials
-        const initials = editForm.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
-        const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
-        setAiImageOptions([fallbackUrl]);
-        selectAiImage(fallbackUrl);
-        console.log('AI generation fallback used - using avatar placeholder');
-      }
+      setAiImageOptions(images);
+      selectAiImage(images[0]);
     } catch (error) {
       console.error('AI generation error:', error);
-      // Fallback on error
+      // Ultimate fallback
       const initials = editForm.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
       const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
       setAiImageOptions([fallbackUrl]);
@@ -271,9 +310,71 @@ export default function ProductDetailedPaper() {
       if (isPlaceholder && mounted) {
         const autoGenerateAndSaveImage = async () => {
           try {
-            const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${product.name} ${product.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
-            const seed = Math.floor(Math.random() * 10000) + 1000;
-            const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+            const getBaseImage = (dosageForm: string) => {
+              const form = (dosageForm || '').toUpperCase();
+              if (form.includes('CAPSULE')) return '/pharma/capsules.png';
+              if (form.includes('CREAM') || form.includes('OINTMENT')) return '/pharma/cream.png';
+              if (form.includes('DROP')) return '/pharma/eyedrops.png';
+              if (form.includes('INJECTION')) return '/pharma/injection.png';
+              if (form.includes('SYRUP') || form.includes('SUSPENSION')) return '/pharma/syrup.png';
+              if (form.includes('TABLET')) return '/pharma/tablets.png';
+              return '/pharma/default.png';
+            };
+
+            const generatedUrl = await new Promise<string>((resolve, reject) => {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject('No context');
+                
+                const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+                const x = (canvas.width / 2) - (img.width / 2) * scale;
+                const y = (canvas.height / 2) - (img.height / 2) * scale;
+                ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                
+                ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                const labelHeight = 130;
+                const labelY = 340; // Default bottom position
+                
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                ctx.shadowColor = 'rgba(0,0,0,0.15)';
+                ctx.shadowBlur = 30;
+                ctx.shadowOffsetY = 15;
+                
+                ctx.beginPath();
+                ctx.roundRect ? ctx.roundRect(40, labelY, canvas.width - 80, labelHeight, 20) : ctx.fillRect(40, labelY, canvas.width - 80, labelHeight);
+                ctx.fill();
+                
+                ctx.shadowColor = 'transparent';
+                
+                ctx.fillStyle = '#0F172A';
+                ctx.textAlign = 'center';
+                ctx.font = 'bold 32px "Inter", sans-serif';
+                let displayName = product.name.toUpperCase();
+                if (displayName.length > 22) displayName = displayName.substring(0, 20) + '...';
+                ctx.fillText(displayName, canvas.width / 2, labelY + 55);
+                
+                ctx.fillStyle = '#0EA5E9'; // Blue theme
+                ctx.font = 'bold 16px "Inter", sans-serif';
+                ctx.fillText((product.dosageForm || 'MEDICATION').toUpperCase() + (product.strength ? ` • ${product.strength}` : ''), canvas.width / 2, labelY + 85);
+                
+                ctx.fillStyle = '#CBD5E1';
+                for(let i=0; i<18; i++) {
+                  const w = Math.random() * 4 + 2;
+                  ctx.fillRect(canvas.width / 2 - 50 + i*6, labelY + 105, w, 8);
+                }
+                
+                resolve(canvas.toDataURL('image/jpeg', 0.9));
+              };
+              img.onerror = () => reject('Failed to load base image');
+              img.src = getBaseImage(product.dosageForm || '');
+            });
             
             await updateProductFull({
               id: productId,
@@ -421,9 +522,72 @@ export default function ProductDetailedPaper() {
               onClick={async () => {
                 try {
                   setGeneratingAIImage(true);
-                  const prompt = `Professional high-end pharmaceutical studio lighting product shot of ${product.name} ${product.dosageForm || 'medication'} box packaging, clean white medical laboratory background, realistic medical and product photography, 8k resolution, crisp details`;
-                  const seed = Math.floor(Math.random() * 10000) + 1000;
-                  const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true`;
+                  const getBaseImage = (dosageForm: string) => {
+                    const form = (dosageForm || '').toUpperCase();
+                    if (form.includes('CAPSULE')) return '/pharma/capsules.png';
+                    if (form.includes('CREAM') || form.includes('OINTMENT')) return '/pharma/cream.png';
+                    if (form.includes('DROP')) return '/pharma/eyedrops.png';
+                    if (form.includes('INJECTION')) return '/pharma/injection.png';
+                    if (form.includes('SYRUP') || form.includes('SUSPENSION')) return '/pharma/syrup.png';
+                    if (form.includes('TABLET')) return '/pharma/tablets.png';
+                    return '/pharma/default.png';
+                  };
+
+                  const generatedUrl = await new Promise<string>((resolve, reject) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                      const canvas = document.createElement('canvas');
+                      canvas.width = 512;
+                      canvas.height = 512;
+                      const ctx = canvas.getContext('2d');
+                      if (!ctx) return reject('No context');
+                      
+                      const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+                      const x = (canvas.width / 2) - (img.width / 2) * scale;
+                      const y = (canvas.height / 2) - (img.height / 2) * scale;
+                      ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                      
+                      ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                      ctx.fillRect(0, 0, canvas.width, canvas.height);
+                      
+                      const labelHeight = 130;
+                      const labelY = 340;
+                      
+                      ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                      ctx.shadowColor = 'rgba(0,0,0,0.15)';
+                      ctx.shadowBlur = 30;
+                      ctx.shadowOffsetY = 15;
+                      
+                      ctx.beginPath();
+                      ctx.roundRect ? ctx.roundRect(40, labelY, canvas.width - 80, labelHeight, 20) : ctx.fillRect(40, labelY, canvas.width - 80, labelHeight);
+                      ctx.fill();
+                      
+                      ctx.shadowColor = 'transparent';
+                      
+                      ctx.fillStyle = '#0F172A';
+                      ctx.textAlign = 'center';
+                      ctx.font = 'bold 32px "Inter", sans-serif';
+                      let displayName = product.name.toUpperCase();
+                      if (displayName.length > 22) displayName = displayName.substring(0, 20) + '...';
+                      ctx.fillText(displayName, canvas.width / 2, labelY + 55);
+                      
+                      ctx.fillStyle = '#0EA5E9';
+                      ctx.font = 'bold 16px "Inter", sans-serif';
+                      ctx.fillText((product.dosageForm || 'MEDICATION').toUpperCase() + (product.strength ? ` • ${product.strength}` : ''), canvas.width / 2, labelY + 85);
+                      
+                      ctx.fillStyle = '#CBD5E1';
+                      for(let i=0; i<18; i++) {
+                        const w = Math.random() * 4 + 2;
+                        ctx.fillRect(canvas.width / 2 - 50 + i*6, labelY + 105, w, 8);
+                      }
+                      
+                      resolve(canvas.toDataURL('image/jpeg', 0.9));
+                    };
+                    img.onerror = () => reject('Failed to load base image');
+                    img.src = getBaseImage(product.dosageForm || '');
+                  });
+
                   await updateProductFull({
                     id: productId,
                     name: product.name,

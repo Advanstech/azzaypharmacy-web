@@ -71,15 +71,28 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
       </div>
 
       <div className="flex-1 min-w-0">
-        <Link href={`/dashboard/inventory/${product.id}`} className="font-bold hover:underline block truncate" style={{ color: textDark }}>
+        <span 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onPreviewProduct?.(product); }}
+          className="font-bold hover:underline block truncate cursor-pointer" 
+          style={{ color: textDark }}
+        >
           {product.name}
-        </Link>
-        <p className="text-xs truncate" style={{ color: textLight }}>
-          {product.genericName || product.brand || 'No brand'} · In stock
+        </span>
+        <div className="text-xs truncate flex items-center gap-1 flex-wrap mt-0.5" style={{ color: textLight }}>
+          <span>{product.genericName || product.brand || 'No brand'}</span>
+          <span>·</span>
+          <span>In stock</span>
           {product.supplierId && (
-            <> · Supplier: {supplier?.name || 'Unknown'}</>
+            <>
+              <span>·</span>
+              <span>Supplier: <Link href={`/dashboard/suppliers/${product.supplierId}`} className="hover:underline ml-0.5" onClick={e => e.stopPropagation()}>{supplier?.name || 'Unknown'}</Link></span>
+            </>
           )}
-        </p>
+          <span>·</span>
+          <Link href={`/dashboard/inventory/${product.id}`} className="hover:underline font-semibold ml-0.5" onClick={e => e.stopPropagation()}>
+            View Details
+          </Link>
+        </div>
         <div className="flex items-center gap-2 mt-1">
           <span className="font-bold text-sm" style={{ color: textDark }}>
             GH¢{product.sellingPrice || product.price || 0}
