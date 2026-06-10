@@ -24,14 +24,34 @@ const STATUS_CONFIG = {
   EXPIRED: { label: 'Expired', color: '#8B5CF6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)' },
 };
 
-// All product categories including new ones
+// All product categories - must match backend DrugCategory enum exactly
 const PRODUCT_CATEGORIES = [
-  'ANTIBIOTICS', 'CARDIOVASCULAR', 'ANTIMALARIALS', 'ANALGESICS_NSAIDS',
-  'VITAMINS', 'DIABETES', 'RESPIRATORY', 'GASTROINTESTINAL',
-  'DERMATOLOGY', 'EYE_EAR', 'VACCINES', 'MEDICAL_DEVICES',
-  'ENDOCRINE_DIABETES', 'RESPIRATORY_ANTIHISTAMINES', 'CNS_NEUROLOGY',
-  'ANTIFUNGALS_ANTIVIRALS', 'DERMATOLOGICALS', 'OPHTHALMIC_OTIC_DROPS',
-  'GENITOURINARY', 'MISCELLANEOUS', 'OTHER'
+  'ANTIBIOTICS',
+  'ANTIMALARIALS',
+  'ANALGESICS_NSAIDS',
+  'CARDIOVASCULAR',
+  'DIABETES',
+  'RESPIRATORY_COUGH',
+  'VITAMINS_SUPPLEMENTS',
+  'DERMATOLOGY_TOPICAL',
+  'EYE_ENT',
+  'ANTIFUNGALS',
+  'ANTIVIRALS',
+  'ANTIPARASITICS',
+  'WOMENS_HEALTH',
+  'NEUROLOGY_CNS',
+  'GASTROINTESTINAL',
+  'STARTINGS',
+  'UROLOGY',
+  'HORMONES_ENDOCRINE',
+  'ANTIHISTAMINES_ALLERGY',
+  'WOUND_CARE',
+  'HERBAL_TRADITIONAL',
+  'CONTRACEPTIVES',
+  'PAEDIATRICS',
+  'DEVICES_MONITORING',
+  'INFUSIONS_INJECTIONS',
+  'MISCELLANEOUS'
 ];
 
 export default function InventoryPage() {
@@ -45,6 +65,8 @@ export default function InventoryPage() {
     stockMovements,
     loadingProducts, 
     refetchProducts, 
+    refetchPurchases,
+    refetchInvoices,
     updateProductPrices,
     updateProductFull,
     bulkUpdateProductSupplier,
@@ -1054,6 +1076,13 @@ export default function InventoryPage() {
 
       await gql(M_RECEIVE_INVOICE, payload);
       
+      // Refresh all relevant data to sync across all modules
+      await Promise.all([
+        refetchProducts(),
+        refetchPurchases(),
+        refetchInvoices(),
+      ]);
+      
       setShowUploadModal(false);
       setInvoiceStep('type');
       setInvoiceItems([]);
@@ -1067,12 +1096,10 @@ export default function InventoryPage() {
       setInvoiceFile(null);
       setFilePreview(null);
       
-      // Refresh inventory data
-      await refetchProducts();
       addToast({
         type: 'success',
         title: 'Invoice Received',
-        message: 'Inventory and Accounts Payable updated successfully.',
+        message: 'Inventory, Purchase Orders, and Accounts Payable synced successfully.',
         duration: 5000,
       });
     } catch (error: any) {
