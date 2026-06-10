@@ -118,7 +118,7 @@ export default function ProductDetailedPaper() {
     }
   };
 
-  // AI Image Generation using local canvas composite - fast, reliable, and looks great
+  // AI Image Generation - creates realistic pharmaceutical product images
   const generateAIImages = async () => {
     if (!editForm.name) {
       alert('Please enter a product name first');
@@ -126,21 +126,21 @@ export default function ProductDetailedPaper() {
     }
 
     setGeneratingAIImage(true);
-    setAiImageOptions([]); // Clear previous options
+    setAiImageOptions([]);
     
     try {
       const getBaseImage = (dosageForm: string) => {
         const form = (dosageForm || '').toUpperCase();
         if (form.includes('CAPSULE')) return '/pharma/capsules.png';
-        if (form.includes('CREAM') || form.includes('OINTMENT')) return '/pharma/cream.png';
+        if (form.includes('CREAM') || form.includes('OINTMENT') || form.includes('GEL')) return '/pharma/cream.png';
         if (form.includes('DROP')) return '/pharma/eyedrops.png';
-        if (form.includes('INJECTION')) return '/pharma/injection.png';
-        if (form.includes('SYRUP') || form.includes('SUSPENSION')) return '/pharma/syrup.png';
-        if (form.includes('TABLET')) return '/pharma/tablets.png';
+        if (form.includes('INJECTION') || form.includes('INFUSION')) return '/pharma/injection.png';
+        if (form.includes('SYRUP') || form.includes('SUSPENSION') || form.includes('SOLUTION')) return '/pharma/syrup.png';
+        if (form.includes('TABLET') || form.includes('PILL')) return '/pharma/tablets.png';
         return '/pharma/default.png';
       };
 
-      const generateVariation = (themeColor: string, labelY: number): Promise<string> => {
+      const generateProductImage = (variant: 'classic' | 'modern' | 'premium'): Promise<string> => {
         return new Promise((resolve, reject) => {
           const img = new Image();
           img.crossOrigin = 'anonymous';
@@ -151,52 +151,99 @@ export default function ProductDetailedPaper() {
             const ctx = canvas.getContext('2d');
             if (!ctx) return reject('No context');
             
-            // Draw base image
+            // Color schemes for different variants
+            const schemes = {
+              classic: { primary: '#1E3A5F', accent: '#0EA5E9', labelBg: 'rgba(255,255,255,0.98)' },
+              modern: { primary: '#059669', accent: '#10B981', labelBg: 'rgba(240,253,244,0.98)' },
+              premium: { primary: '#7C3AED', accent: '#A855F7', labelBg: 'rgba(250,245,255,0.98)' }
+            };
+            const scheme = schemes[variant];
+            
+            // Draw base image (the actual product photo)
             const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
             const x = (canvas.width / 2) - (img.width / 2) * scale;
             const y = (canvas.height / 2) - (img.height / 2) * scale;
             ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
             
-            // Draw a subtle darkening overlay for better contrast
-            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            // Add gradient overlay for depth
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+            gradient.addColorStop(0.6, 'rgba(0,0,0,0)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0.4)');
+            ctx.fillStyle = gradient;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Draw label
-            const labelHeight = 130;
+            // Draw product label/badge at bottom
+            const labelHeight = 140;
+            const labelY = canvas.height - labelHeight - 20;
             
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-            ctx.shadowColor = 'rgba(0,0,0,0.15)';
-            ctx.shadowBlur = 30;
-            ctx.shadowOffsetY = 15;
+            // Label shadow
+            ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetY = 20;
             
-            // Safe rounded rectangle
+            // Label background with rounded corners
+            ctx.fillStyle = scheme.labelBg;
             ctx.beginPath();
-            ctx.roundRect ? ctx.roundRect(40, labelY, canvas.width - 80, labelHeight, 20) : ctx.fillRect(40, labelY, canvas.width - 80, labelHeight);
+            if (ctx.roundRect) {
+              ctx.roundRect(30, labelY, canvas.width - 60, labelHeight, 16);
+            } else {
+              ctx.fillRect(30, labelY, canvas.width - 60, labelHeight);
+            }
             ctx.fill();
             
             ctx.shadowColor = 'transparent';
             
-            // Product Name
-            ctx.fillStyle = '#0F172A';
+            // Border accent
+            ctx.strokeStyle = scheme.accent;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+              ctx.roundRect(30, labelY, canvas.width - 60, labelHeight, 16);
+            }
+            ctx.stroke();
+            
+            // Left accent bar
+            ctx.fillStyle = scheme.accent;
+            ctx.fillRect(30, labelY, 6, labelHeight);
+            
+            // Product Name - Main
+            ctx.fillStyle = scheme.primary;
             ctx.textAlign = 'center';
-            ctx.font = 'bold 32px "Inter", sans-serif';
+            ctx.font = 'bold 28px "Inter", -apple-system, sans-serif';
             let displayName = editForm.name.toUpperCase();
-            if (displayName.length > 22) displayName = displayName.substring(0, 20) + '...';
-            ctx.fillText(displayName, canvas.width / 2, labelY + 55);
+            if (displayName.length > 25) displayName = displayName.substring(0, 23) + '...';
+            ctx.fillText(displayName, canvas.width / 2, labelY + 45);
             
-            // Dosage / Category
-            ctx.fillStyle = themeColor;
-            ctx.font = 'bold 16px "Inter", sans-serif';
-            ctx.fillText((editForm.dosageForm || 'MEDICATION').toUpperCase() + (editForm.strength ? ` • ${editForm.strength}` : ''), canvas.width / 2, labelY + 85);
+            // Dosage Form & Strength
+            ctx.fillStyle = scheme.accent;
+            ctx.font = 'bold 14px "Inter", -apple-system, sans-serif';
+            const formText = (editForm.dosageForm || 'Medication').toUpperCase();
+            const strengthText = editForm.strength ? `  ${editForm.strength}` : '';
+            ctx.fillText(formText + strengthText, canvas.width / 2, labelY + 70);
             
-            // Decorative line / barcode
-            ctx.fillStyle = '#CBD5E1';
-            for(let i=0; i<18; i++) {
-              const w = Math.random() * 4 + 2;
-              ctx.fillRect(canvas.width / 2 - 50 + i*6, labelY + 105, w, 8);
+            // Brand/Company line
+            ctx.fillStyle = '#64748B';
+            ctx.font = '12px "Inter", -apple-system, sans-serif';
+            ctx.fillText('PHARMACEUTICAL GRADE • QUALITY ASSURED', canvas.width / 2, labelY + 90);
+            
+            // Decorative elements - small dots pattern
+            ctx.fillStyle = scheme.accent;
+            for (let i = 0; i < 5; i++) {
+              ctx.beginPath();
+              ctx.arc(canvas.width - 60 + i * 8, labelY + 115, 2, 0, Math.PI * 2);
+              ctx.fill();
             }
             
-            resolve(canvas.toDataURL('image/jpeg', 0.9));
+            // Rx symbol if prescription
+            if (editForm.classification === 'POM' || editForm.classification === 'CONTROLLED') {
+              ctx.fillStyle = '#EF4444';
+              ctx.font = 'bold 16px "Inter", sans-serif';
+              ctx.textAlign = 'left';
+              ctx.fillText('℞', 45, labelY + 115);
+            }
+            
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
           };
           img.onerror = () => reject('Failed to load base image');
           img.src = getBaseImage(editForm.dosageForm || '');
@@ -204,9 +251,9 @@ export default function ProductDetailedPaper() {
       };
       
       const images = await Promise.all([
-        generateVariation('#0EA5E9', 340), // Bottom blue theme
-        generateVariation('#059669', 40),  // Top green theme
-        generateVariation('#F59E0B', 190), // Middle orange theme
+        generateProductImage('classic'),
+        generateProductImage('modern'),
+        generateProductImage('premium'),
       ]);
       
       setAiImageOptions(images);
@@ -833,7 +880,16 @@ export default function ProductDetailedPaper() {
                     <div className="col-span-2 border-t pt-5" style={{ borderColor: card.border }}>
                       <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Stock Quantity</label>
                       <div className="flex items-center gap-4">
-                        <input type="number" min="0" value={editForm.stockQuantity === undefined ? '' : editForm.stockQuantity} onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                        <input 
+                          type="number" 
+                          min="0" 
+                          placeholder="0"
+                          value={editForm.stockQuantity === 0 ? '' : (editForm.stockQuantity ?? '')} 
+                          onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} 
+                          onFocus={e => e.target.select()}
+                          className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" 
+                          style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} 
+                        />
                         <div className="w-1/2">
                           <p className="text-xs" style={{ color: card.muted }}>Usually managed via Purchase Orders or Stock Adjustments.</p>
                           {earliestExpiry && (

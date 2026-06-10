@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { useStore } from '@/lib/store';
 import { Plus, Image as ImageIcon } from 'lucide-react';
+import { PharmaProductImage } from './PharmaProductImage';
 
 interface TopResultPillProps {
   product: any;
@@ -10,19 +11,9 @@ interface TopResultPillProps {
   isDark?: boolean;
 }
 
-// Helper to get product image (same as in POS page)
-const getProductImage = (product: any) => {
-  if (product.imageUrl) return product.imageUrl;
-  if (product.images?.[0]?.url) return product.images[0].url;
-  if (product.image) return product.image;
-  if (product.photoUrl) return product.photoUrl;
-  return null;
-};
-
 export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewProduct, onPreviewSupplier }: TopResultPillProps) {
   const { suppliers } = useStore();
   const supplier = product.supplier || suppliers.find(s => s.id === product.supplierId);
-  const productImage = getProductImage(product);
 
   // We use the exact light green colors from the screenshot
   const bg = '#f0fdf4'; // green-50
@@ -36,27 +27,14 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
       style={{ background: bg, borderColor: border }}
     >
       {/* Product Image */}
-      <div className="relative flex-shrink-0">
-        {productImage ? (
-          <img 
-            src={productImage} 
-            alt={product.name}
-            className="w-16 h-16 rounded-lg object-cover border bg-white"
-            style={{ borderColor: border }}
-            onError={(e) => {
-              const initials = product.name ? product.name.substring(0, 2).toUpperCase() : 'RX';
-              const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#dcfce7"/><text x="50" y="50" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="bold" font-size="36" fill="#15803d">${initials}</text></svg>`;
-              e.currentTarget.src = `data:image/svg+xml;base64,${btoa(svg)}`;
-            }}
-          />
-        ) : (
-          <div 
-            className="w-16 h-16 rounded-lg flex items-center justify-center border"
-            style={{ background: '#dcfce7', borderColor: border }}
-          >
-            <ImageIcon size={24} style={{ color: textLight }} />
-          </div>
-        )}
+      <div className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border bg-white" style={{ borderColor: border }}>
+        <PharmaProductImage
+          name={product.name}
+          dosageForm={product.dosageForm}
+          strength={product.strength}
+          imageUrl={product.imageUrl}
+          className="w-full h-full object-cover"
+        />
         {/* Stock indicator */}
         <div 
           className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2"

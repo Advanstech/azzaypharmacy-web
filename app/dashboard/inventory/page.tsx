@@ -180,11 +180,12 @@ export default function InventoryPage() {
 
   const products = storeProducts.map((p: any) => {
     const isPOM = ['ANTIBIOTICS', 'CARDIOVASCULAR', 'ANTIMALARIALS'].includes(p.category);
+    const dbClass = p.isControlled ? 'CONTROLLED' : (p.requiresRx ? 'POM' : 'OTC');
     return {
       id: p.id,
       name: p.name,
       brand: p.brand || '',
-      medClass: isPOM ? 'POM' : 'OTC',
+      medClass: p.isControlled !== undefined || p.requiresRx !== undefined ? dbClass : (isPOM ? 'POM' : 'OTC'),
       generic: p.strength || p.dosageForm || '',
       cat: p.category || 'OTC',
       stock: p.stockQuantity,
@@ -237,23 +238,112 @@ export default function InventoryPage() {
     if (!newProduct.name) return;
     setIsGeneratingImage(true);
     try {
-      const prompt = `Professional pharmaceutical product photo of ${newProduct.name} ${newProduct.dosageForm || 'medication'} white background studio lighting high quality medical packaging clean composition`;
-      const seed = Date.now();
-      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true&enhance=true`;
-      
-      // Validate the generated image loads
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Generated image failed to load'));
-        img.src = generatedUrl;
-        setTimeout(() => reject(new Error('Image load timeout')), 10000);
+      const getBaseImage = (df: string) => {
+        const form = (df || '').toUpperCase();
+        if (form.includes('CAPSULE')) return '/pharma/capsules.png';
+        if (form.includes('CREAM') || form.includes('OINTMENT') || form.includes('GEL') || form.includes('LOTION')) return '/pharma/cream.png';
+        if (form.includes('DROP')) return '/pharma/eyedrops.png';
+        if (form.includes('INJECTION') || form.includes('INFUSION')) return '/pharma/injection.png';
+        if (form.includes('SYRUP') || form.includes('SUSPENSION') || form.includes('SOLUTION')) return '/pharma/syrup.png';
+        if (form.includes('TABLET') || form.includes('PILL')) return '/pharma/tablets.png';
+        return '/pharma/default.png';
+      };
+
+      const generatedUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject('No context');
+            
+            // Color scheme - classic pharmaceutical blue
+            const scheme = { primary: '#1E3A5F', accent: '#0EA5E9', labelBg: 'rgba(255,255,255,0.98)' };
+            
+            // Draw base product image
+            const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+            const x = (canvas.width / 2) - (img.width / 2) * scale;
+            const y = (canvas.height / 2) - (img.height / 2) * scale;
+            ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+            
+            // Add gradient overlay for depth
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+            gradient.addColorStop(0.6, 'rgba(0,0,0,0)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0.4)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw product label at bottom
+            const labelHeight = 140;
+            const labelY = canvas.height - labelHeight - 20;
+            
+            // Label shadow
+            ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetY = 20;
+            
+            // Label background
+            ctx.fillStyle = scheme.labelBg;
+            ctx.beginPath();
+            ctx.roundRect ? ctx.roundRect(30, labelY, canvas.width - 60, labelHeight, 16) : ctx.fillRect(30, labelY, canvas.width - 60, labelHeight);
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+            
+            // Border accent
+            ctx.strokeStyle = scheme.accent;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(30, labelY, canvas.width - 60, labelHeight, 16);
+            ctx.stroke();
+            
+            // Left accent bar
+            ctx.fillStyle = scheme.accent;
+            ctx.fillRect(30, labelY, 6, labelHeight);
+            
+            // Product Name
+            ctx.fillStyle = scheme.primary;
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 28px "Inter", -apple-system, sans-serif';
+            let displayName = newProduct.name.toUpperCase();
+            if (displayName.length > 25) displayName = displayName.substring(0, 23) + '...';
+            ctx.fillText(displayName, canvas.width / 2, labelY + 45);
+            
+            // Dosage Form & Strength
+            ctx.fillStyle = scheme.accent;
+            ctx.font = 'bold 14px "Inter", -apple-system, sans-serif';
+            const formText = (newProduct.dosageForm || 'Medication').toUpperCase();
+            const strengthText = newProduct.strength ? `  ${newProduct.strength}` : '';
+            ctx.fillText(formText + strengthText, canvas.width / 2, labelY + 70);
+            
+            // Quality line
+            ctx.fillStyle = '#64748B';
+            ctx.font = '12px "Inter", -apple-system, sans-serif';
+            ctx.fillText('PHARMACEUTICAL GRADE • QUALITY ASSURED', canvas.width / 2, labelY + 90);
+            
+            // Rx symbol for prescription
+            if (newProduct.classification === 'POM' || newProduct.classification === 'CONTROLLED') {
+              ctx.fillStyle = '#EF4444';
+              ctx.font = 'bold 16px "Inter", sans-serif';
+              ctx.textAlign = 'left';
+              ctx.fillText('℞', 45, labelY + 115);
+            }
+            
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
+          } catch (e) {
+            reject(e);
+          }
+        };
+        img.onerror = () => reject('Failed to load base image');
+        img.src = getBaseImage(newProduct.dosageForm);
       });
       
       setNewProduct((prev: any) => ({ ...prev, imageUrl: generatedUrl }));
     } catch (error) {
       console.error('Failed to generate image, using fallback:', error);
-      // Fallback to initials placeholder
       const initials = newProduct.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
       const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
       setNewProduct((prev: any) => ({ ...prev, imageUrl: fallbackUrl }));
@@ -266,23 +356,112 @@ export default function InventoryPage() {
     if (!editForm.name) return;
     setIsGeneratingImage(true);
     try {
-      const prompt = `Professional pharmaceutical product photo of ${editForm.name} ${editForm.dosageForm || 'medication'} white background studio lighting high quality medical packaging clean composition`;
-      const seed = Date.now();
-      const generatedUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?seed=${seed}&width=512&height=512&nologo=true&enhance=true`;
-      
-      // Validate the generated image loads
-      const img = new Image();
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Generated image failed to load'));
-        img.src = generatedUrl;
-        setTimeout(() => reject(new Error('Image load timeout')), 10000);
+      const getBaseImage = (df: string) => {
+        const form = (df || '').toUpperCase();
+        if (form.includes('CAPSULE')) return '/pharma/capsules.png';
+        if (form.includes('CREAM') || form.includes('OINTMENT') || form.includes('GEL') || form.includes('LOTION')) return '/pharma/cream.png';
+        if (form.includes('DROP')) return '/pharma/eyedrops.png';
+        if (form.includes('INJECTION') || form.includes('INFUSION')) return '/pharma/injection.png';
+        if (form.includes('SYRUP') || form.includes('SUSPENSION') || form.includes('SOLUTION')) return '/pharma/syrup.png';
+        if (form.includes('TABLET') || form.includes('PILL')) return '/pharma/tablets.png';
+        return '/pharma/default.png';
+      };
+
+      const generatedUrl = await new Promise<string>((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject('No context');
+            
+            // Color scheme - classic pharmaceutical blue
+            const scheme = { primary: '#1E3A5F', accent: '#0EA5E9', labelBg: 'rgba(255,255,255,0.98)' };
+            
+            // Draw base product image
+            const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+            const x = (canvas.width / 2) - (img.width / 2) * scale;
+            const y = (canvas.height / 2) - (img.height / 2) * scale;
+            ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+            
+            // Add gradient overlay for depth
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(0,0,0,0)');
+            gradient.addColorStop(0.6, 'rgba(0,0,0,0)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0.4)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw product label at bottom
+            const labelHeight = 140;
+            const labelY = canvas.height - labelHeight - 20;
+            
+            // Label shadow
+            ctx.shadowColor = 'rgba(0,0,0,0.3)';
+            ctx.shadowBlur = 40;
+            ctx.shadowOffsetY = 20;
+            
+            // Label background
+            ctx.fillStyle = scheme.labelBg;
+            ctx.beginPath();
+            ctx.roundRect ? ctx.roundRect(30, labelY, canvas.width - 60, labelHeight, 16) : ctx.fillRect(30, labelY, canvas.width - 60, labelHeight);
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+            
+            // Border accent
+            ctx.strokeStyle = scheme.accent;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            if (ctx.roundRect) ctx.roundRect(30, labelY, canvas.width - 60, labelHeight, 16);
+            ctx.stroke();
+            
+            // Left accent bar
+            ctx.fillStyle = scheme.accent;
+            ctx.fillRect(30, labelY, 6, labelHeight);
+            
+            // Product Name
+            ctx.fillStyle = scheme.primary;
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 28px "Inter", -apple-system, sans-serif';
+            let displayName = editForm.name.toUpperCase();
+            if (displayName.length > 25) displayName = displayName.substring(0, 23) + '...';
+            ctx.fillText(displayName, canvas.width / 2, labelY + 45);
+            
+            // Dosage Form & Strength
+            ctx.fillStyle = scheme.accent;
+            ctx.font = 'bold 14px "Inter", -apple-system, sans-serif';
+            const formText = (editForm.dosageForm || 'Medication').toUpperCase();
+            const strengthText = editForm.strength ? `  ${editForm.strength}` : '';
+            ctx.fillText(formText + strengthText, canvas.width / 2, labelY + 70);
+            
+            // Quality line
+            ctx.fillStyle = '#64748B';
+            ctx.font = '12px "Inter", -apple-system, sans-serif';
+            ctx.fillText('PHARMACEUTICAL GRADE • QUALITY ASSURED', canvas.width / 2, labelY + 90);
+            
+            // Rx symbol for prescription
+            if (editForm.classification === 'POM' || editForm.classification === 'CONTROLLED') {
+              ctx.fillStyle = '#EF4444';
+              ctx.font = 'bold 16px "Inter", sans-serif';
+              ctx.textAlign = 'left';
+              ctx.fillText('℞', 45, labelY + 115);
+            }
+            
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
+          } catch (e) {
+            reject(e);
+          }
+        };
+        img.onerror = () => reject('Failed to load base image');
+        img.src = getBaseImage(editForm.dosageForm);
       });
       
       setEditForm((prev: any) => ({ ...prev, imageUrl: generatedUrl }));
     } catch (error) {
       console.error('Failed to generate image, using fallback:', error);
-      // Fallback to initials placeholder
       const initials = editForm.name.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase();
       const fallbackUrl = `https://ui-avatars.com/api/?name=${initials}&background=0EA5E9&color=fff&size=512&bold=true&format=svg`;
       setEditForm((prev: any) => ({ ...prev, imageUrl: fallbackUrl }));
@@ -1067,8 +1246,16 @@ export default function InventoryPage() {
                     </td>
                     <td className="px-5 py-4">
                       <span className="text-[10px] font-bold px-2 py-1 rounded-md" style={{ 
-                        background: p.medClass === 'OTC' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', 
-                        color: p.medClass === 'OTC' ? '#10B981' : '#F59E0B' 
+                        background: p.medClass === 'OTC' 
+                          ? 'rgba(16,185,129,0.1)' 
+                          : p.medClass === 'CONTROLLED'
+                            ? 'rgba(239,68,68,0.1)' 
+                            : 'rgba(245,158,11,0.1)', 
+                        color: p.medClass === 'OTC' 
+                          ? '#10B981' 
+                          : p.medClass === 'CONTROLLED'
+                            ? '#EF4444' 
+                            : '#F59E0B' 
                       }}>
                         {p.medClass}
                       </span>
@@ -1280,7 +1467,7 @@ export default function InventoryPage() {
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Classification *</label>
                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
                       {['OTC', 'POM', 'CONTROLLED'].map(c => (
-                        <button key={c} onClick={() => setNewProduct({...newProduct, classification: c})} 
+                        <button key={c} type="button" onClick={e => { e.preventDefault(); setNewProduct({...newProduct, classification: c}); }} 
                           className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${newProduct.classification === c ? 'shadow-sm' : 'opacity-60 hover:opacity-100'}`}
                           style={{ 
                             background: newProduct.classification === c ? (isDark ? card.primaryBg : '#fff') : 'transparent',
@@ -1337,7 +1524,16 @@ export default function InventoryPage() {
                     <div className="grid grid-cols-2 gap-5">
                       <div>
                         <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Initial Stock Quantity</label>
-                        <input type="number" min="0" value={newProduct.stockQuantity === undefined ? '' : newProduct.stockQuantity} onChange={e => setNewProduct({...newProduct, stockQuantity: parseInt(e.target.value) || 0})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                        <input 
+                          type="number" 
+                          min="0" 
+                          placeholder="0"
+                          value={newProduct.stockQuantity === 0 ? '' : (newProduct.stockQuantity ?? '')} 
+                          onChange={e => setNewProduct({...newProduct, stockQuantity: parseInt(e.target.value) || 0})} 
+                          onFocus={e => e.target.select()}
+                          className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" 
+                          style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} 
+                        />
                       </div>
                       <div>
                         <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Expiry Date</label>
@@ -1604,7 +1800,7 @@ export default function InventoryPage() {
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Classification</label>
                     <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
                       {['OTC', 'POM', 'CONTROLLED'].map(c => (
-                        <button key={c} onClick={() => setEditForm({...editForm, classification: c})}
+                        <button key={c} type="button" onClick={e => { e.preventDefault(); setEditForm({...editForm, classification: c}); }}
                           className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all ${editForm.classification === c ? 'shadow-sm' : 'opacity-60 hover:opacity-100'}`}
                           style={{ background: editForm.classification === c ? (isDark ? card.primaryBg : '#fff') : 'transparent', color: editForm.classification === c ? card.primary : card.text }}>
                           {c}
@@ -1648,7 +1844,16 @@ export default function InventoryPage() {
                   <div className="col-span-2 border-t pt-5 mt-2" style={{ borderColor: card.border }}>
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Current Stock Quantity</label>
                     <div className="flex items-center gap-4">
-                      <input type="number" min="0" value={editForm.stockQuantity === undefined ? '' : editForm.stockQuantity} onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                      <input 
+                        type="number" 
+                        min="0" 
+                        placeholder="0"
+                        value={editForm.stockQuantity === 0 ? '' : (editForm.stockQuantity ?? '')} 
+                        onChange={e => setEditForm({...editForm, stockQuantity: parseInt(e.target.value) || 0})} 
+                        onFocus={e => e.target.select()}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-mono" 
+                        style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} 
+                      />
                       <p className="text-xs w-1/2" style={{ color: card.muted }}>Update the stock count manually if needed. 0 is allowed for out-of-stock items.</p>
                     </div>
                   </div>

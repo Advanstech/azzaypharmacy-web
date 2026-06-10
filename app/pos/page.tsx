@@ -15,6 +15,7 @@ import { StoreProvider, useStore } from '@/lib/store';
 import { supabase, getSessionSafe } from '@/lib/supabase';
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
+import { PharmaProductImage } from '@/components/PharmaProductImage';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -595,16 +596,13 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                   >
                     <div className="flex w-full h-full p-2.5 gap-4 items-center">
                       {/* Left: Image Container */}
-                      <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden" style={{ background: isDark ? 'rgba(30,41,59,0.7)' : '#F1F5F9' }}>
-                        <img 
-                          src={getProductImage(p)} 
-                          alt={p.name} 
+                      <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border bg-white dark:bg-slate-950" style={{ borderColor: c.border }}>
+                        <PharmaProductImage
+                          name={p.name}
+                          dosageForm={p.dosageForm}
+                          strength={p.strength}
+                          imageUrl={p.imageUrl}
                           className="w-full h-full object-cover transition-transform group-hover:scale-110"
-                          onError={(e) => {
-                            const initials = p.name ? p.name.substring(0, 2).toUpperCase() : 'RX';
-                            const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#f1f5f9"/><text x="50" y="50" dominant-baseline="middle" text-anchor="middle" font-family="system-ui, sans-serif" font-weight="bold" font-size="36" fill="#94a3b8">${initials}</text></svg>`;
-                            e.currentTarget.src = `data:image/svg+xml;base64,${btoa(svg)}`;
-                          }}
                         />
                       </div>
                       
@@ -872,7 +870,13 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
                     {/* Product Image */}
                     <div className="relative z-10 w-full h-32 rounded-xl overflow-hidden mt-2 bg-slate-900 border border-white/10">
-                      <img src={getProductImage(previewProduct)} alt={previewProduct.name} className="w-full h-full object-cover opacity-80" />
+                      <PharmaProductImage
+                        name={previewProduct.name}
+                        dosageForm={previewProduct.dosageForm}
+                        strength={previewProduct.strength}
+                        imageUrl={previewProduct.imageUrl}
+                        className="w-full h-full object-cover opacity-80"
+                      />
                     </div>
 
                     {/* Indications (Always visible) */}
