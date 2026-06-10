@@ -8,7 +8,8 @@ import {
   Search, Plus, Package, AlertCircle, TrendingUp, DollarSign, Upload,
   History, Receipt, Truck, X, BarChart3, Sparkles, Phone, Mail, Building,
   Edit2, Trash2, ChevronRight, RefreshCw, Save, Loader2, FileText,
-  MoreHorizontal, Move, Check, ChevronDown, CheckCircle, Scan, CreditCard
+  MoreHorizontal, Move, Check, ChevronDown, CheckCircle, Scan, CreditCard,
+  Download
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
@@ -22,6 +23,16 @@ const STATUS_CONFIG = {
   OUT: { label: 'Out of Stock', color: '#EF4444', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.25)' },
   EXPIRED: { label: 'Expired', color: '#8B5CF6', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.25)' },
 };
+
+// All product categories including new ones
+const PRODUCT_CATEGORIES = [
+  'ANTIBIOTICS', 'CARDIOVASCULAR', 'ANTIMALARIALS', 'ANALGESICS_NSAIDS',
+  'VITAMINS', 'DIABETES', 'RESPIRATORY', 'GASTROINTESTINAL',
+  'DERMATOLOGY', 'EYE_EAR', 'VACCINES', 'MEDICAL_DEVICES',
+  'ENDOCRINE_DIABETES', 'RESPIRATORY_ANTIHISTAMINES', 'CNS_NEUROLOGY',
+  'ANTIFUNGALS_ANTIVIRALS', 'DERMATOLOGICALS', 'OPHTHALMIC_OTIC_DROPS',
+  'GENITOURINARY', 'MISCELLANEOUS', 'OTHER'
+];
 
 export default function InventoryPage() {
   const { theme, resolvedTheme } = useTheme();
@@ -1111,19 +1122,64 @@ export default function InventoryPage() {
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Inventory & Stock Management</h1>
           <p className="text-sm" style={{ color: card.muted }}>Real-time tracking, purchase orders, and financial valuation</p>
         </div>
-        {isManager && (
-          <div className="flex gap-2">
-            <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
-              <Upload size={16} />
-              Upload Invoice
-            </button>
-            <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
-              style={{ background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)', color: isDark ? '#060B14' : '#fff', boxShadow: isDark ? '0 8px 25px rgba(0,217,255,0.3)' : '0 8px 25px rgba(14,165,233,0.3)' }}>
-              <Plus size={18} />
-              Add Product
-            </button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <button 
+            onClick={() => {
+              // Export products to CSV
+              const rows = [
+                ['Name', 'Generic Name', 'Category', 'Dosage Form', 'Strength', 'Stock', 'Cost Price', 'Selling Price', 'Supplier', 'Status'],
+                ...products.map((p: any) => [
+                  p.name, p.genericName || '', p.category, p.dosageForm || '', p.strength || '',
+                  String(p.stock || p.stockQuantity || 0),
+                  String(p.costPrice || p.cost || 0),
+                  String(p.sellingPrice || p.price || 0),
+                  suppliers.find((s: any) => s.id === p.supplierId)?.name || 'N/A',
+                  p.status || 'OK'
+                ])
+              ];
+              const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `inventory-export-${new Date().toISOString().split('T')[0]}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+              addToast?.({ type: 'success', title: 'Export Complete', message: `${products.length} products exported to CSV` });
+            }}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-sm"
+            style={{ background: card.bg, color: card.text, border: `1px solid ${card.border}` }}
+          >
+            <FileText size={16} />
+            Export
+          </button>
+          <button 
+            onClick={async () => {
+              addToast?.({ type: 'info', title: 'Syncing...', message: 'Refreshing inventory data' });
+              await refetchProducts();
+              addToast?.({ type: 'success', title: 'Sync Complete', message: 'Inventory data is up to date' });
+            }}
+            disabled={loadingProducts}
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-sm disabled:opacity-50"
+            style={{ background: card.bg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}
+          >
+            <RefreshCw size={16} className={loadingProducts ? 'animate-spin' : ''} />
+            {loadingProducts ? 'Syncing...' : 'Sync'}
+          </button>
+          {isManager && (
+            <>
+              <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+                <Upload size={16} />
+                Upload Invoice
+              </button>
+              <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+                style={{ background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)', color: isDark ? '#060B14' : '#fff', boxShadow: isDark ? '0 8px 25px rgba(0,217,255,0.3)' : '0 8px 25px rgba(14,165,233,0.3)' }}>
+                <Plus size={18} />
+                Add Product
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {storeError && (
@@ -1377,6 +1433,203 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {/* STOCK MOVEMENTS TAB */}
+      {activeTab === 'movements' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-lg" style={{ color: card.text }}>Stock Movement History</h3>
+            <span className="text-xs px-3 py-1 rounded-full" style={{ background: card.primaryBg, color: card.primary }}>
+              {stockMovements?.length || 0} Records
+            </span>
+          </div>
+          {(!stockMovements || stockMovements.length === 0) ? (
+            <div className="py-12 text-center rounded-2xl border-2 border-dashed" style={{ borderColor: card.border }}>
+              <History size={48} className="mx-auto mb-4 opacity-20" style={{ color: card.muted }} />
+              <p className="text-lg font-bold" style={{ color: card.muted }}>No Stock Movements</p>
+              <p className="text-sm" style={{ color: card.subtle }}>Movements are recorded when sales happen or stock is adjusted</p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border overflow-hidden" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC' }}>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Date/Time</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Product</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Type</th>
+                      <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Quantity</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Reason/Ref</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(stockMovements || []).slice(0, 50).map((mv: any, idx: number) => (
+                      <tr key={mv.id || idx} className="border-t" style={{ borderColor: card.border }}>
+                        <td className="px-4 py-3 text-xs font-mono" style={{ color: card.text }}>
+                          {new Date(mv.timestamp || mv.createdAt || Date.now()).toLocaleString('en-GB', { 
+                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
+                          })}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-sm font-medium" style={{ color: card.text }}>{mv.productName || 'Unknown'}</p>
+                          <p className="text-[10px]" style={{ color: card.subtle }}>{mv.productId?.slice(0, 8)}...</p>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="text-xs font-bold px-2 py-1 rounded" 
+                            style={{ 
+                              background: mv.type === 'IN' ? 'rgba(16,185,129,0.1)' : mv.type === 'SALE' ? 'rgba(14,165,233,0.1)' : 'rgba(245,158,11,0.1)',
+                              color: mv.type === 'IN' ? '#10B981' : mv.type === 'SALE' ? '#0EA5E9' : '#F59E0B'
+                            }}>
+                            {mv.type || 'ADJUST'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center font-mono font-bold" style={{ color: mv.quantity < 0 ? '#EF4444' : '#10B981' }}>
+                          {mv.quantity > 0 ? '+' : ''}{mv.quantity}
+                        </td>
+                        <td className="px-4 py-3 text-xs" style={{ color: card.muted }}>
+                          {mv.reason || mv.reference || '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* PURCHASE ORDERS TAB */}
+      {activeTab === 'orders' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-bold text-lg" style={{ color: card.text }}>Purchase Orders</h3>
+            <span className="text-xs px-3 py-1 rounded-full" style={{ background: card.primaryBg, color: card.primary }}>
+              {(purchases || []).length} Orders
+            </span>
+          </div>
+          {(!purchases || purchases.length === 0) ? (
+            <div className="py-12 text-center rounded-2xl border-2 border-dashed" style={{ borderColor: card.border }}>
+              <Receipt size={48} className="mx-auto mb-4 opacity-20" style={{ color: card.muted }} />
+              <p className="text-lg font-bold" style={{ color: card.muted }}>No Purchase Orders</p>
+              <p className="text-sm" style={{ color: card.subtle }}>Create purchase orders from invoices or manually</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(purchases || []).map((po: any) => {
+                const statusColors: Record<string, { bg: string; color: string }> = {
+                  'DRAFT': { bg: 'rgba(148,163,184,0.1)', color: '#64748B' },
+                  'PENDING': { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B' },
+                  'RECEIVED': { bg: 'rgba(16,185,129,0.1)', color: '#10B981' },
+                  'CANCELLED': { bg: 'rgba(239,68,68,0.1)', color: '#EF4444' },
+                };
+                const statusStyle = statusColors[po.status] || statusColors['DRAFT'];
+                return (
+                  <div key={po.id} className="rounded-2xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-mono px-2 py-1 rounded" style={{ background: card.inputBg, color: card.text }}>
+                        #{po.invoiceNumber || po.id?.slice(-6)}
+                      </span>
+                      <span className="text-xs font-bold px-2 py-1 rounded" style={{ background: statusStyle.bg, color: statusStyle.color }}>
+                        {po.status}
+                      </span>
+                    </div>
+                    <p className="font-bold text-sm mb-1" style={{ color: card.text }}>{po.supplier?.name || 'Unknown Supplier'}</p>
+                    <p className="text-xs mb-3" style={{ color: card.subtle }}>{po.items?.length || 0} items • {new Date(po.invoiceDate || po.createdAt).toLocaleDateString('en-GB')}</p>
+                    <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: card.border }}>
+                      <span className="font-display font-bold" style={{ color: card.primary }}>GH₵ {po.total?.toFixed(2) || '0.00'}</span>
+                      <span className="text-[10px]" style={{ color: card.subtle }}>Due: {po.dueDate ? new Date(po.dueDate).toLocaleDateString('en-GB') : 'N/A'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* FINANCIAL VALUATION TAB */}
+      {activeTab === 'valuation' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Investment', value: `GH₵ ${totalValue.toFixed(2)}`, sub: `${products.length} products`, icon: DollarSign, color: '#0EA5E9' },
+              { label: 'Retail Value', value: `GH₵ ${retailValue.toFixed(2)}`, sub: `Potential: GH₵ ${potentialProfit.toFixed(2)}`, icon: TrendingUp, color: '#10B981' },
+              { label: 'Avg Margin', value: `${totalValue > 0 ? ((potentialProfit / totalValue) * 100).toFixed(1) : '0'}%`, sub: 'Profit margin', icon: BarChart3, color: '#8B5CF6' },
+              { label: 'Pending PO Value', value: `GH₵ ${(purchases || []).filter((p: any) => p.status !== 'RECEIVED').reduce((sum: number, p: any) => sum + (p.total || 0), 0).toFixed(2)}`, sub: 'On order', icon: Receipt, color: '#F59E0B' },
+            ].map((s, i) => {
+              const Icon = s.icon;
+              return (
+                <div key={i} className="rounded-2xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="p-1.5 rounded-lg" style={{ background: s.color + '20' }}>
+                      <Icon size={14} style={{ color: s.color }} />
+                    </div>
+                    <span className="text-xs font-medium" style={{ color: card.subtle }}>{s.label}</span>
+                  </div>
+                  <p className="font-display text-xl font-bold" style={{ color: card.text }}>{s.value}</p>
+                  <p className="text-[10px] mt-1" style={{ color: card.muted }}>{s.sub}</p>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Category Breakdown */}
+          <div className="rounded-2xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+            <h4 className="font-bold text-sm mb-4" style={{ color: card.text }}>Inventory Value by Category</h4>
+            {(() => {
+              const byCategory: Record<string, { cost: number; retail: number; count: number }> = {};
+              products.forEach((p: any) => {
+                const cat = p.category || 'Uncategorized';
+                if (!byCategory[cat]) byCategory[cat] = { cost: 0, retail: 0, count: 0 };
+                byCategory[cat].cost += (p.stock || 0) * (p.costPrice || p.cost || 0);
+                byCategory[cat].retail += (p.stock || 0) * (p.sellingPrice || p.price || 0);
+                byCategory[cat].count += 1;
+              });
+              const sorted = Object.entries(byCategory).sort((a, b) => b[1].retail - a[1].retail);
+              return sorted.length === 0 ? (
+                <p className="text-sm" style={{ color: card.muted }}>No data available</p>
+              ) : (
+                <div className="space-y-3">
+                  {sorted.map(([cat, data]) => {
+                    const profit = data.retail - data.cost;
+                    const margin = data.cost > 0 ? (profit / data.cost) * 100 : 0;
+                    return (
+                      <div key={cat} className="flex items-center justify-between py-2 border-b last:border-0" style={{ borderColor: card.border }}>
+                        <div className="flex-1">
+                          <p className="text-sm font-bold" style={{ color: card.text }}>{cat}</p>
+                          <p className="text-[10px]" style={{ color: card.subtle }}>{data.count} products</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-mono font-bold" style={{ color: card.text }}>GH₵ {data.retail.toFixed(2)}</p>
+                          <p className="text-[10px]" style={{ color: margin > 30 ? '#10B981' : '#F59E0B' }}>+{margin.toFixed(1)}% margin</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Stock Status Summary */}
+          <div className="rounded-2xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+            <h4 className="font-bold text-sm mb-4" style={{ color: card.text }}>Stock Status Overview</h4>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: 'In Stock', count: products.filter((p: any) => (p.stock || p.stockQuantity || 0) > 10).length, color: '#10B981' },
+                { label: 'Low Stock', count: lowCount, color: '#F59E0B' },
+                { label: 'Out of Stock', count: outCount, color: '#EF4444' },
+              ].map((s) => (
+                <div key={s.label} className="text-center p-3 rounded-xl" style={{ background: s.color + '10' }}>
+                  <p className="font-display text-2xl font-bold" style={{ color: s.color }}>{s.count}</p>
+                  <p className="text-xs" style={{ color: card.muted }}>{s.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
           <div className="w-full max-w-6xl h-[85vh] flex flex-col rounded-2xl border overflow-hidden shadow-2xl transition-all" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
@@ -1439,7 +1692,7 @@ export default function InventoryPage() {
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Category *</label>
                     <select value={newProduct.category} onChange={e => setNewProduct({...newProduct, category: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}>
-                      {categories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                      {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
                     </select>
                   </div>
 
@@ -1783,7 +2036,7 @@ export default function InventoryPage() {
                   <div>
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Category</label>
                     <select value={editForm.category} onChange={e => setEditForm({...editForm, category: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}>
-                      {categories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+                      {PRODUCT_CATEGORIES.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
                     </select>
                   </div>
                   <div>

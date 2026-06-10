@@ -112,4 +112,7 @@ export const CATEGORIES = [
   'Diabetes','Respiratory','Vitamins','Antifungals','Gastrointestinal',
   'Neurology','Hormones','Haematology','Antiparasitics','OTC',
   'Injections','Surgical','Dermatology','Contraceptives','Paediatrics',
+  'ENDOCRINE_DIABETES','RESPIRATORY_ANTIHISTAMINES','CNS_NEUROLOGY',
+  'ANTIFUNGALS_ANTIVIRALS','DERMATOLOGICALS','OPHTHALMIC_OTIC_DROPS',
+  'GENITOURINARY',
 ];

@@ -2,9 +2,10 @@
 
 import { motion } from 'framer-motion';
 import { Finance3DChart } from '@/components/3d-finance-chart';
-import { TrendingUp, Users, Package, AlertTriangle, ArrowUpRight, ArrowDownRight, Activity } from 'lucide-react';
+import { TrendingUp, Users, Package, AlertTriangle, ArrowUpRight, ArrowDownRight, Activity, RefreshCw, Loader2 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
+import { useToast } from '@/components/pharma-toast';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -22,7 +23,20 @@ const itemVariants: any = {
 };
 
 export default function AdminDashboardPage() {
-  const { sales, invoices, staff, products } = useStore();
+  const { sales, invoices, staff, products, refetchSales, refetchInvoices, refetchStaff, refetchProducts, loadingSales, loadingInvoices } = useStore();
+  const { addToast } = useToast();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Ensure data is loaded on mount
+  useEffect(() => {
+    const loadData = async () => {
+      if (sales.length === 0) await refetchSales();
+      if (invoices.length === 0) await refetchInvoices();
+      if (staff.length === 0) await refetchStaff();
+      if (products.length === 0) await refetchProducts();
+    };
+    loadData();
+  }, []);
 
   const chartData = useMemo(() => {
     // Generate data for the last 7 days
@@ -106,13 +120,30 @@ export default function AdminDashboardPage() {
       className="space-y-8"
     >
       {/* Header Section */}
-      <motion.div variants={itemVariants} className="flex flex-col gap-2">
-        <h1 className="text-4xl font-display font-black bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-orange-500 dark:from-teal-400 dark:to-emerald-400">
-          Command Center
-        </h1>
-        <p className="text-slate-500 dark:text-slate-400 font-medium max-w-2xl">
-          High-level operational intelligence. Syncing real-time pharmaceutical sales with core financial revenue for total visibility.
-        </p>
+      <motion.div variants={itemVariants} className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-4xl font-display font-black bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-orange-500 dark:from-teal-400 dark:to-emerald-400">
+            Command Center
+          </h1>
+          <p className="text-slate-500 dark:text-slate-400 font-medium max-w-2xl">
+            High-level operational intelligence. Syncing real-time pharmaceutical sales with core financial revenue for total visibility.
+          </p>
+        </div>
+        <button
+          onClick={async () => {
+            setIsSyncing(true);
+            addToast?.({ type: 'info', title: 'Syncing...', message: 'Refreshing all dashboard data' });
+            await Promise.all([refetchSales(), refetchInvoices(), refetchStaff(), refetchProducts()]);
+            setIsSyncing(false);
+            addToast?.({ type: 'success', title: 'Sync Complete', message: 'All data is up to date' });
+          }}
+          disabled={isSyncing}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all disabled:opacity-50 self-start"
+          style={{ background: 'rgba(14,165,233,0.1)', color: '#0EA5E9', border: '1px solid rgba(14,165,233,0.3)' }}
+        >
+          {isSyncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+          {isSyncing ? 'Syncing...' : 'Sync Data'}
+        </button>
       </motion.div>
 
       {/* 3D Visualization Section */}
@@ -138,7 +169,9 @@ export default function AdminDashboardPage() {
             </div>
           </div>
           <h3 className="text-slate-500 dark:text-slate-400 text-sm font-bold uppercase tracking-wider mb-1">Total Revenue</h3>
-          <p className="text-3xl font-display font-black text-slate-800 dark:text-white">{formatCurrency(totalRevenue)}</p>
+          <p className="text-3xl font-display font-black text-slate-800 dark:text-white">
+            {loadingSales ? <Loader2 size={24} className="animate-spin" /> : formatCurrency(totalRevenue)}
+          </p>
         </motion.div>
 
         {/* KPI 2 */}
@@ -160,7 +193,9 @@ export default function AdminDashboardPage() {
             </div>
           </div>
           <h3 className="text-slate-500 dark:text-slate-400 text-sm font-bold uppercase tracking-wider mb-1">Pending Invoices</h3>
-          <p className="text-3xl font-display font-black text-slate-800 dark:text-white">{pendingInvoices}</p>
+          <p className="text-3xl font-display font-black text-slate-800 dark:text-white">
+            {loadingInvoices ? <Loader2 size={24} className="animate-spin" /> : pendingInvoices}
+          </p>
         </motion.div>
 
         {/* KPI 3 */}
