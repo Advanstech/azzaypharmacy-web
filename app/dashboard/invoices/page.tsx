@@ -32,7 +32,7 @@ const PAYMENT_STATUS = {
 export default function InvoicesPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { suppliers, products, me, refetchPurchases, createSupplier, createProduct } = useStore();
+  const { suppliers, products, me, refetchPurchases, createSupplier, createProduct, purchases } = useStore();
   const { addToast } = useToast();
 
   const [search, setSearch] = useState('');
@@ -61,6 +61,7 @@ export default function InvoicesPage() {
   const [manualCreateSupplierOnSubmit, setManualCreateSupplierOnSubmit] = useState(false);
   const [manualLineItems, setManualLineItems] = useState<any[]>([]);
   const [isProcessingManual, setIsProcessingManual] = useState(false);
+  const [manualInvoiceDuplicateStatus, setManualInvoiceDuplicateStatus] = useState<'idle' | 'checking' | 'duplicate' | 'ok'>('idle');
 
   // Invoice Details Modal
   const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
@@ -87,6 +88,20 @@ export default function InvoicesPage() {
 
     fetchInvoices();
   }, [me?.branchId]);
+
+  // Live duplicate invoice number check for manual ledger
+  useEffect(() => {
+    const trimmed = manualData.invoiceNumber.trim();
+    if (!trimmed) { setManualInvoiceDuplicateStatus('idle'); return; }
+    setManualInvoiceDuplicateStatus('checking');
+    const timer = setTimeout(() => {
+      const exists = purchases.some(
+        inv => inv.invoiceNo?.toLowerCase() === trimmed.toLowerCase()
+      );
+      setManualInvoiceDuplicateStatus(exists ? 'duplicate' : 'ok');
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [manualData.invoiceNumber, purchases]);
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
@@ -958,7 +973,34 @@ export default function InvoicesPage() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Invoice Number</label>
-                  <input type="text" value={manualData.invoiceNumber} onChange={e => setManualData({ ...manualData, invoiceNumber: e.target.value })} placeholder="INV-2026-001" className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }} />
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      value={manualData.invoiceNumber} 
+                      onChange={e => setManualData({ ...manualData, invoiceNumber: e.target.value })} 
+                      placeholder="INV-2026-001" 
+                      className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none pr-10"
+                      style={{ 
+                        background: card.inputBg, 
+                        borderColor: manualInvoiceDuplicateStatus === 'duplicate' ? '#ef4444' : card.border, 
+                        color: card.text 
+                      }} 
+                    />
+                    {manualInvoiceDuplicateStatus === 'checking' && (
+                      <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin" style={{ color: card.muted }} />
+                    )}
+                    {manualInvoiceDuplicateStatus === 'ok' && (
+                      <CheckCircle size={16} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#10b981' }} />
+                    )}
+                    {manualInvoiceDuplicateStatus === 'duplicate' && (
+                      <AlertCircle size={16} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#ef4444' }} />
+                    )}
+                  </div>
+                  {manualInvoiceDuplicateStatus === 'duplicate' && (
+                    <p className="text-[10px] mt-1" style={{ color: '#ef4444' }}>
+                      Invoice <span className="font-bold font-mono">{manualData.invoiceNumber}</span> already exists. Please use a different number.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Issue Date</label>
@@ -1110,6 +1152,7 @@ export default function InvoicesPage() {
                   isProcessingManual ||
                   (!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) ||
                   !manualData.invoiceNumber ||
+                  manualInvoiceDuplicateStatus === 'duplicate' ||
                   manualLineItems.length === 0
                 }
                 className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2" 
@@ -1119,6 +1162,7 @@ export default function InvoicesPage() {
                     isProcessingManual ||
                     (!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) ||
                     !manualData.invoiceNumber ||
+                    manualInvoiceDuplicateStatus === 'duplicate' ||
                     manualLineItems.length === 0
                   ) ? 0.5 : 1
                 }}
@@ -1126,6 +1170,97 @@ export default function InvoicesPage() {
                 {isProcessingManual ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
                 {isProcessingManual ? 'Processing...' : 'Create Invoice'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Details Modal */}
+      {showDetailsModal && selectedInvoice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
+          <div className="w-full max-w-2xl rounded-2xl border overflow-hidden" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+            <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: card.border }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: card.primary, color: '#fff' }}>
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <h2 className="font-display text-lg font-bold" style={{ color: card.text }}>Invoice Details</h2>
+                  <p className="text-xs" style={{ color: card.muted }}>{selectedInvoice.invoiceNumber}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDetailsModal(false)} className="text-slate-400 hover:text-red-500 transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl" style={{ background: card.inputBg }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Total Amount</p>
+                  <p className="font-mono text-lg font-bold" style={{ color: card.text }}>GH₵ {selectedInvoice.totalAmount.toLocaleString()}</p>
+                </div>
+                <div className="p-4 rounded-xl" style={{ background: card.inputBg }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Paid Amount</p>
+                  <p className="font-mono text-lg font-bold" style={{ color: card.success }}>GH₵ {selectedInvoice.paidAmount.toLocaleString()}</p>
+                </div>
+                <div className="p-4 rounded-xl" style={{ background: card.inputBg }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Remaining Balance</p>
+                  <p className="font-mono text-lg font-bold" style={{ color: selectedInvoice.balance > 0 ? card.warning : card.success }}>
+                    GH₵ {selectedInvoice.balance.toLocaleString()}
+                  </p>
+                </div>
+                <div className="p-4 rounded-xl" style={{ background: card.inputBg }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Payment Status</p>
+                  <p className="text-sm font-bold" style={{ color: selectedInvoice.balance === 0 ? card.success : card.warning }}>
+                    {selectedInvoice.balance === 0 ? 'PAID' : selectedInvoice.paidAmount > 0 ? 'PARTIAL' : 'UNPAID'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl" style={{ background: card.inputBg }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Invoice Information</p>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span style={{ color: card.muted }}>Issue Date:</span>
+                    <span className="ml-2 font-medium" style={{ color: card.text }}>{selectedInvoice.issueDate}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: card.muted }}>Due Date:</span>
+                    <span className="ml-2 font-medium" style={{ color: card.text }}>{selectedInvoice.dueDate}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: card.muted }}>Type:</span>
+                    <span className="ml-2 font-medium" style={{ color: card.text }}>{selectedInvoice.type}</span>
+                  </div>
+                  <div>
+                    <span style={{ color: card.muted }}>Status:</span>
+                    <span className="ml-2 font-medium" style={{ color: card.text }}>{selectedInvoice.status}</span>
+                  </div>
+                </div>
+              </div>
+
+              {selectedInvoice.notes && (
+                <div className="p-4 rounded-xl" style={{ background: card.inputBg }}>
+                  <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Notes</p>
+                  <p className="text-sm" style={{ color: card.text }}>{selectedInvoice.notes}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t flex gap-2" style={{ borderColor: card.border }}>
+              <button onClick={() => setShowDetailsModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>
+                Close
+              </button>
+              {selectedInvoice.balance > 0 && (
+                <button 
+                  onClick={() => { setShowDetailsModal(false); setShowPaymentModal(true); setPaymentAmount(selectedInvoice.balance); }} 
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all" 
+                  style={{ background: card.success }}
+                >
+                  Make Payment
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -1172,11 +1307,23 @@ export default function InvoicesPage() {
                   type="number" 
                   value={paymentAmount} 
                   onChange={e => setPaymentAmount(parseFloat(e.target.value))} 
-                  max={selectedInvoice.balance} 
                   className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" 
                   style={{ background: card.inputBg, borderColor: card.border, color: card.text }} 
                 />
               </div>
+
+              {/* Credit Balance Indicator */}
+              {paymentAmount > selectedInvoice.balance && (
+                <div className="p-3 rounded-xl flex items-center gap-2" style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                  <CheckCircle size={16} style={{ color: '#10B981' }} />
+                  <div className="flex-1">
+                    <p className="text-xs font-bold" style={{ color: '#10B981' }}>Credit Balance</p>
+                    <p className="text-[10px]" style={{ color: card.muted }}>
+                      GH₵ {(paymentAmount - selectedInvoice.balance).toFixed(2)} will be available as credit
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Payment Method</label>
@@ -1198,7 +1345,7 @@ export default function InvoicesPage() {
               <button onClick={() => setShowPaymentModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>
                 Cancel
               </button>
-              <button onClick={handlePayment} disabled={paymentAmount <= 0 || paymentAmount > selectedInvoice.balance} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all" style={{ background: card.success, opacity: (paymentAmount <= 0 || paymentAmount > selectedInvoice.balance) ? 0.5 : 1 }}>
+              <button onClick={handlePayment} disabled={paymentAmount <= 0} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all" style={{ background: card.success, opacity: paymentAmount <= 0 ? 0.5 : 1 }}>
                 Process Payment
               </button>
             </div>

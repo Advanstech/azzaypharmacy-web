@@ -95,7 +95,7 @@ export default function InventoryPage() {
     name: '',
     genericName: '',
     brand: '',
-    category: 'ANTIBIOTICS',
+    category: PRODUCT_CATEGORIES[0],
     costPrice: 0,
     sellingPrice: 0,
     stockQuantity: 0,
@@ -558,11 +558,12 @@ export default function InventoryPage() {
         return;
       }
 
+      const itemSellingPrice = Number(target.sellingPrice) || 0;
       const createdProduct = await createProduct({
         name: productName,
         category: 'MISCELLANEOUS',
         costPrice: Math.max(0, Number(target.unitCost) || 0),
-        sellingPrice: Math.max(0, Number(target.unitCost) || 0) * 1.3,
+        sellingPrice: itemSellingPrice > 0 ? itemSellingPrice : Math.max(0, Number(target.unitCost) || 0) * 1.3,
         stockQuantity: 0,
         supplierId: resolvedSupplierId,
         dosageForm: 'OTHER',
@@ -654,7 +655,7 @@ export default function InventoryPage() {
       setShowAddModal(false);
       setAddModalFromInvoice(false);
       setAddModalTab('basic');
-      setNewProduct({ name: '', genericName: '', brand: '', category: 'ANTIBIOTICS', costPrice: 0, sellingPrice: 0, stockQuantity: 0, supplierId: '', strength: '', dosageForm: 'TABLET', barcode: '', nafdacNo: '', classification: 'OTC', imageUrl: '', expiryDate: '' });
+      setNewProduct({ name: '', genericName: '', brand: '', category: PRODUCT_CATEGORIES[0], costPrice: 0, sellingPrice: 0, stockQuantity: 0, supplierId: '', strength: '', dosageForm: 'TABLET', barcode: '', nafdacNo: '', classification: 'OTC', imageUrl: '', expiryDate: '' });
     } catch (error) {
       console.error('Failed to create product:', error);
     } finally {
@@ -1029,11 +1030,12 @@ export default function InventoryPage() {
 
         if (!item.exists || !item.productId) {
           console.log(`📦 [AI_SYNC] Auto-creating missing product: ${name}`);
+          const itemSellingPrice = Number(item.sellingPrice) || 0;
           const newProductResponse = await runGql<{ createProduct: { id: string } }>(M_CREATE_PRODUCT, {
             name,
             category: 'MISCELLANEOUS',
             costPrice: unitCost,
-            sellingPrice: unitCost * 1.3,
+            sellingPrice: itemSellingPrice > 0 ? itemSellingPrice : unitCost * 1.3,
             stockQuantity: 0,
             supplierId: resolvedSupplierId,
             dosageForm: 'OTHER',
@@ -1043,6 +1045,7 @@ export default function InventoryPage() {
             name,
             quantity,
             unitCost,
+            sellingPrice: itemSellingPrice > 0 ? itemSellingPrice : unitCost * 1.3,
             productId: newProductResponse.createProduct.id,
             exists: true,
           });
