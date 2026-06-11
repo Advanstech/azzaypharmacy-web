@@ -298,7 +298,11 @@ export const M_CREATE_SALE = `
       customerPhone: $customerPhone
       customerEmail: $customerEmail
     ) {
-      id totalAmount amountPaid change paymentMethod customerName createdAt
+      id totalAmount amountPaid change paymentMethod
+      customerName customerPhone receiptNo subtotal discountAmt discountReason
+      nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
+      customerType notes isRefunded refundReason refundedAt createdAt cashierId
+      user { id name role }
       items {
         id quantity unitPrice total batchNo
         product { id name category }
@@ -872,6 +876,13 @@ export const M_DELETE_INVOICE = `
     deleteInvoice(invoiceId: $invoiceId)
   }
 `;
+
+export const M_DELETE_SALE = `
+  mutation DeleteSale($saleId: ID!) {
+    deleteSale(saleId: $saleId)
+  }
+`;
+
 
 export const Q_BRANCHES = `
   query GetBranches {

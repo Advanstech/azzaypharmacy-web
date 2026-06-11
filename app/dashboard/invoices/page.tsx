@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
-import { gql, M_RECEIVE_INVOICE, Q_INVOICES } from '@/lib/gql';
+import { gql, M_RECEIVE_INVOICE, Q_INVOICES, M_RECORD_SUPPLIER_PAYMENT } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
 
 const INVOICE_STATUS = {
@@ -46,6 +46,7 @@ export default function InvoicesPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadData, setUploadData] = useState({
     file: null as File | null,
+    aiConfidence: 0,
   });
   const [isUploading, setIsUploading] = useState(false);
 
@@ -72,6 +73,8 @@ export default function InvoicesPage() {
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [paymentNote, setPaymentNote] = useState('');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -240,6 +243,25 @@ export default function InvoicesPage() {
     }
   };
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      setUploadData({ ...uploadData, file });
+    }
+  };
+
   const handleUploadSubmit = async () => {
     if (!uploadData.file) {
       addToast({
@@ -307,6 +329,7 @@ export default function InvoicesPage() {
       }
 
       console.log('✅ [AI_UPLOAD] AI Analysis result:', data);
+      console.log(`📊 [AI_UPLOAD] Confidence Score: ${data.confidence || 0}%`);
 
       if (data.supplierName) {
         extractedSupplierName = String(data.supplierName || '').trim();
@@ -325,6 +348,10 @@ export default function InvoicesPage() {
       if (data.total) {
         extractedTotal = Number(data.total) || 0;
       }
+
+      // Store confidence score for display
+      const aiConfidence = data.confidence || 0;
+      setUploadData({ ...uploadData, aiConfidence });
 
       if (data.items && data.items.length > 0) {
         items = data.items.map((i: any) => ({
@@ -404,7 +431,7 @@ export default function InvoicesPage() {
       });
 
       setShowUploadModal(false);
-      setUploadData({ file: null });
+      setUploadData({ file: null, aiConfidence: 0 });
       setShowManualLedger(true);
     } catch (error: any) {
       console.error('❌ [AI_UPLOAD] Upload failed:', error);
@@ -607,29 +634,58 @@ export default function InvoicesPage() {
   const handlePayment = async () => {
     if (!selectedInvoice || paymentAmount <= 0) return;
 
+    setIsProcessingPayment(true);
     try {
-      const newPayment = {
+      const result = await gql<{ recordSupplierPayment: any }>(M_RECORD_SUPPLIER_PAYMENT, {
         invoiceId: selectedInvoice.id,
         amount: paymentAmount,
         method: paymentMethod,
-        note: paymentNote,
-        date: new Date().toISOString().split('T')[0],
-      };
+        reference: `PAY-${Date.now()}`,
+        notes: paymentNote,
+      });
 
-      // await updateInvoice({
-      //   id: selectedInvoice.id,
-      //   paidAmount: selectedInvoice.paidAmount + paymentAmount,
-      //   balance: selectedInvoice.balance - paymentAmount,
-      //   status: selectedInvoice.balance - paymentAmount <= 0 ? 'PAID' : 'PENDING',
-      //   paymentStatus: selectedInvoice.balance - paymentAmount <= 0 ? 'PAID' : 'PARTIAL',
-      // });
-      console.log('Invoice payment disabled - enhanced modules not yet enabled');
+      // Update the invoice in the local state
+      setInvoiceRecords(prev => prev.map(inv => 
+        inv.id === selectedInvoice.id 
+          ? { 
+              ...inv, 
+              paidAmount: result.recordSupplierPayment.paidAmount,
+              balance: result.recordSupplierPayment.balance,
+              paymentStatus: result.recordSupplierPayment.paymentStatus,
+              payments: result.recordSupplierPayment.payments
+            }
+          : inv
+      ));
+
+      // Update selected invoice
+      setSelectedInvoice({
+        ...selectedInvoice,
+        paidAmount: result.recordSupplierPayment.paidAmount,
+        balance: result.recordSupplierPayment.balance,
+        paymentStatus: result.recordSupplierPayment.paymentStatus,
+        payments: result.recordSupplierPayment.payments
+      });
+
+      addToast({
+        type: 'success',
+        title: 'Payment Recorded',
+        message: `GH₵ ${paymentAmount.toFixed(2)} payment has been recorded successfully.`,
+        duration: 4000,
+      });
 
       setShowPaymentModal(false);
       setPaymentAmount(0);
       setPaymentNote('');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Payment failed:', error);
+      addToast({
+        type: 'error',
+        title: 'Payment Failed',
+        message: error?.message || 'Failed to record payment. Please try again.',
+        duration: 5000,
+      });
+    } finally {
+      setIsProcessingPayment(false);
     }
   };
 
@@ -869,7 +925,13 @@ export default function InvoicesPage() {
 
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Invoice File</label>
-                <div className="border-2 border-dashed rounded-xl p-6 text-center" style={{ borderColor: card.border }}>
+                <div 
+                  className={`border-2 border-dashed rounded-xl p-6 text-center transition-all ${isDragging ? 'border-primary bg-primary/5' : ''}`}
+                  style={{ borderColor: isDragging ? card.primary : card.border }}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
                   <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={handleFileUpload} className="hidden" id="invoice-file" />
                   <label htmlFor="invoice-file" className="cursor-pointer">
                     {uploadData.file ? (
@@ -880,7 +942,7 @@ export default function InvoicesPage() {
                     ) : (
                       <div>
                         <Upload size={32} className="mx-auto mb-2" style={{ color: card.subtle }} />
-                        <p className="text-sm" style={{ color: card.text }}>Click to upload invoice file</p>
+                        <p className="text-sm" style={{ color: card.text }}>Click to upload or drag and drop</p>
                         <p className="text-xs" style={{ color: card.subtle }}>PDF, JPG, PNG up to 10MB</p>
                       </div>
                     )}
@@ -896,6 +958,11 @@ export default function InvoicesPage() {
                   <p>Supplier Action: Auto-detect and match existing supplier</p>
                   <p>Product Action: Auto-detect and map to existing products</p>
                   <p>{uploadData.file ? 'Mode: AI extraction + auto-submit' : 'Mode: Waiting for file selection'}</p>
+                  {uploadData.aiConfidence > 0 && (
+                    <p className="font-bold" style={{ color: uploadData.aiConfidence >= 80 ? card.success : uploadData.aiConfidence >= 60 ? card.warning : card.danger }}>
+                      AI Confidence Score: {uploadData.aiConfidence}/100
+                    </p>
+                  )}
                 </div>
                 {!uploadHasBranch && (
                   <p className="mt-2 text-[11px] font-semibold" style={{ color: card.danger }}>
@@ -1342,11 +1409,12 @@ export default function InvoicesPage() {
             </div>
 
             <div className="p-4 border-t flex gap-2" style={{ borderColor: card.border }}>
-              <button onClick={() => setShowPaymentModal(false)} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text }}>
+              <button onClick={() => setShowPaymentModal(false)} disabled={isProcessingPayment} className="flex-1 py-2.5 rounded-xl text-sm font-bold" style={{ background: card.inputBg, color: card.text, opacity: isProcessingPayment ? 0.5 : 1 }}>
                 Cancel
               </button>
-              <button onClick={handlePayment} disabled={paymentAmount <= 0} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all" style={{ background: card.success, opacity: paymentAmount <= 0 ? 0.5 : 1 }}>
-                Process Payment
+              <button onClick={handlePayment} disabled={paymentAmount <= 0 || isProcessingPayment} className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all flex items-center justify-center gap-2" style={{ background: card.success, opacity: (paymentAmount <= 0 || isProcessingPayment) ? 0.5 : 1 }}>
+                {isProcessingPayment ? <Loader2 size={18} className="animate-spin" /> : <CreditCard size={18} />}
+                {isProcessingPayment ? 'Processing...' : 'Process Payment'}
               </button>
             </div>
           </div>

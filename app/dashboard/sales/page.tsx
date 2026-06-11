@@ -35,11 +35,12 @@ export default function EnhancedSalesPage() {
   const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const { sales, loadingSales, refetchSales, me, products, customers, requestRefund } = useStore();
+  const { sales, loadingSales, refetchSales, me, products, customers, requestRefund, deleteSale } = useStore();
   const { user } = useAuth();
 
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const canDeleteSales = ['ROOT', 'SE_ADMIN', 'OWNER'].includes(role || '');
 
   const [search, setSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -56,6 +57,7 @@ export default function EnhancedSalesPage() {
   // Redesigned Detail Modal refund states
   const [refundReason, setRefundReason] = useState('');
   const [processingRefund, setProcessingRefund] = useState(false);
+  const [processingDelete, setProcessingDelete] = useState(false);
   const [showRefundInline, setShowRefundInline] = useState(false);
 
   useEffect(() => {
@@ -169,6 +171,163 @@ export default function EnhancedSalesPage() {
     printWindow.document.close();
   };
 
+  const handleDownloadPdf = (sale: any) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    
+    const itemsHtml = sale.items.map((item: any) => `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 12px 10px; color: #333;">
+          <div style="font-weight: 600;">${item.product?.name || 'Item'}</div>
+          <div style="font-size: 11px; color: #777;">Code: ${item.product?.sku || 'N/A'}</div>
+        </td>
+        <td style="text-align: center; padding: 12px 10px; color: #555;">${item.quantity}</td>
+        <td style="text-align: right; padding: 12px 10px; color: #555;">GH₵ ${item.unitPrice.toFixed(2)}</td>
+        <td style="text-align: right; padding: 12px 10px; font-weight: 600; color: #111;">GH₵ ${(item.total || (item.quantity * item.unitPrice)).toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Invoice - ${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+            @page { size: A4; margin: 0; }
+            body { font-family: 'Inter', sans-serif; background: #f8fafc; margin: 0; padding: 40px; color: #333; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .invoice-container { max-width: 800px; margin: 0 auto; background: #fff; padding: 50px; border: 1px solid #eaeaea; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 2px solid #f0f0f0; padding-bottom: 30px; }
+            .brand { display: flex; flex-direction: column; }
+            .brand h1 { font-size: 32px; font-weight: 800; color: #0284C7; margin: 0; letter-spacing: -0.5px; }
+            .brand p { font-size: 13px; color: #666; margin: 4px 0 0 0; line-height: 1.5; }
+            .invoice-details { text-align: right; }
+            .invoice-details h2 { font-size: 26px; font-weight: 800; color: #111; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 1px; }
+            .invoice-details p { font-size: 13px; color: #555; margin: 3px 0; }
+            .info-section { display: flex; justify-content: space-between; margin-bottom: 40px; background: #f8fafc; padding: 20px; border-radius: 12px; }
+            .info-box { width: 48%; }
+            .info-box h3 { font-size: 11px; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin: 0 0 6px 0; font-weight: 700; }
+            .info-box p { font-size: 14px; color: #0f172a; margin: 0; font-weight: 600; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+            th { text-align: left; padding: 12px 10px; background: #f1f5f9; font-size: 12px; text-transform: uppercase; color: #475569; font-weight: 700; border-bottom: 2px solid #e2e8f0; }
+            th:nth-child(2) { text-align: center; }
+            th:nth-child(3), th:nth-child(4) { text-align: right; }
+            .totals { width: 100%; display: flex; justify-content: flex-end; margin-bottom: 40px; }
+            .totals-table { width: 350px; border-collapse: collapse; }
+            .totals-table td { padding: 10px; border-bottom: 1px solid #f8fafc; font-size: 14px; }
+            .totals-table td:first-child { color: #64748b; font-weight: 500; }
+            .totals-table td:last-child { text-align: right; font-weight: 600; color: #0f172a; }
+            .totals-table tr.grand-total td { font-size: 18px; font-weight: 800; color: #0284C7; border-bottom: none; border-top: 2px solid #e2e8f0; padding-top: 15px; }
+            .footer { text-align: center; border-top: 1px solid #eaeaea; padding-top: 30px; font-size: 12px; color: #64748b; line-height: 1.6; }
+            .footer p { margin: 4px 0; }
+            .status-badge { display: inline-block; padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-top: 12px; letter-spacing: 0.5px; }
+            .status-paid { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+            .status-refunded { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+            @media print {
+              body { background: #fff; padding: 0; }
+              .invoice-container { box-shadow: none; border: none; padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-container">
+            <div class="header">
+              <div class="brand">
+                <h1>AZZAY PHARMA PRO</h1>
+                <p>123 Health Avenue, Medical District</p>
+                <p>Accra, Ghana</p>
+                <p>Tel: +233 24 000 0000 | Email: contact@azzaypharma.com</p>
+              </div>
+              <div class="invoice-details">
+                <h2>Tax Invoice</h2>
+                <p><strong>Receipt #:</strong> ${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</p>
+                <p><strong>Date:</strong> ${new Date(sale.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                <p><strong>Time:</strong> ${new Date(sale.createdAt).toLocaleTimeString()}</p>
+                <div class="status-badge ${sale.status === 'REFUNDED' ? 'status-refunded' : 'status-paid'}">
+                  ${sale.status === 'REFUNDED' ? 'REFUNDED' : 'PAID'}
+                </div>
+              </div>
+            </div>
+
+            <div class="info-section">
+              <div class="info-box">
+                <h3>Billed To</h3>
+                <p>${sale.customerName || 'Walk-in Customer'}</p>
+                ${sale.customer ? `<p style="font-size: 12px; color: #64748b; font-weight: 500; margin-top: 4px;">Loyalty Member</p>` : ''}
+              </div>
+              <div class="info-box" style="text-align: right;">
+                <h3>Cashier</h3>
+                <p>${sale.user?.name || 'System Staff'}</p>
+              </div>
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Item Description</th>
+                  <th>Qty</th>
+                  <th>Unit Price</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsHtml}
+              </tbody>
+            </table>
+
+            <div class="totals">
+              <table class="totals-table">
+                <tr>
+                  <td>Subtotal</td>
+                  <td>GH₵ ${((sale.totalAmount || 0) + (sale.discountAmt || 0)).toFixed(2)}</td>
+                </tr>
+                ${sale.discountAmt > 0 ? `
+                <tr>
+                  <td>Discount</td>
+                  <td style="color: #ef4444;">-GH₵ ${Number(sale.discountAmt).toFixed(2)}</td>
+                </tr>
+                ` : ''}
+                ${(sale.vat > 0 || sale.nhil > 0 || sale.getfund > 0) ? `
+                <tr>
+                  <td>Taxes (VAT/NHIL/GETFund)</td>
+                  <td>GH₵ ${(Number(sale.vat || 0) + Number(sale.nhil || 0) + Number(sale.getfund || 0)).toFixed(2)}</td>
+                </tr>
+                ` : ''}
+                <tr class="grand-total">
+                  <td>Grand Total</td>
+                  <td>GH₵ ${(sale.totalAmount || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Amount Paid</td>
+                  <td>GH₵ ${(sale.amountPaid || 0).toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td>Change</td>
+                  <td>GH₵ ${(sale.change || 0).toFixed(2)}</td>
+                </tr>
+              </table>
+            </div>
+
+            <div class="footer">
+              <p style="font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 8px;">Thank you for your business!</p>
+              <p>Items returned within 48 hours are subject to our return policies. Valid receipt required.</p>
+              <p style="margin-top: 20px; color: #cbd5e1;">System Generated Document &bull; Azzay Pharma Pro</p>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(() => {
+                window.print();
+                // Close after a delay to allow the print dialog to open and close
+                setTimeout(() => window.close(), 500);
+              }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const handleExecuteRefund = async (saleId: string) => {
     if (!refundReason.trim()) return;
     setProcessingRefund(true);
@@ -185,6 +344,23 @@ export default function EnhancedSalesPage() {
       alert(`Failed to execute refund: ${err.message || 'Unknown error'}`);
     } finally {
       setProcessingRefund(false);
+    }
+  };
+
+  const handleExecuteDelete = async (saleId: string) => {
+    if (!window.confirm('Are you absolutely sure you want to delete this sale? This action is permanent, will restore stock quantities, and remove ledger entries.')) {
+      return;
+    }
+    setProcessingDelete(true);
+    try {
+      await deleteSale(saleId);
+      setShowDetailsModal(false);
+      setSelectedSale(null);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Failed to delete sale: ${err.message || 'Unknown error'}`);
+    } finally {
+      setProcessingDelete(false);
     }
   };
 
@@ -560,9 +736,17 @@ export default function EnhancedSalesPage() {
                   <tr key={sale.id} className="transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30" style={{ borderBottom: i < paginatedSales.length - 1 ? `1px solid ${card.border}` : 'none' }}>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-medium" style={{ color: card.primary }}>
+                        <button
+                          onClick={() => {
+                            setSelectedSale(sale);
+                            setShowDetailsModal(true);
+                          }}
+                          className="font-mono text-xs font-semibold hover:underline transition-all text-left focus:outline-none focus:ring-1 focus:ring-sky-400 rounded px-1 -mx-1"
+                          style={{ color: card.primary }}
+                          title="View Details"
+                        >
                           {(sale as any).receiptNo || sale.id.slice(-8).toUpperCase()}
-                        </span>
+                        </button>
                         {sale.customerType === 'Registered' && (
                           <Users size={12} style={{ color: card.success }} />
                         )}
@@ -949,7 +1133,7 @@ export default function EnhancedSalesPage() {
                       
                       <div className="flex gap-2">
                         <button 
-                          onClick={() => handlePrint(selectedSale)}
+                          onClick={() => handleDownloadPdf(selectedSale)}
                           className="flex-1 py-3.5 rounded-2xl font-bold text-xs transition-all border flex items-center justify-center gap-1.5" 
                           style={{ borderColor: card.border, color: card.text, background: card.inputBg }}
                         >
@@ -965,6 +1149,21 @@ export default function EnhancedSalesPage() {
                           </button>
                         )}
                       </div>
+
+                      {canDeleteSales && (
+                        <button 
+                          onClick={() => handleExecuteDelete(selectedSale.id)}
+                          disabled={processingDelete}
+                          className="w-full py-3 rounded-2xl font-bold text-xs bg-red-500/10 hover:bg-red-600 hover:text-white text-red-500 hover:shadow-lg transition-all flex items-center justify-center gap-1.5 border border-red-500/20 active:scale-[0.98] mt-1"
+                        >
+                          {processingDelete ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                          Delete Sale Record Permanently
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

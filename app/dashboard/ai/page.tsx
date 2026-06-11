@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useTheme } from 'next-themes';
-import { Send, Sparkles, AlertTriangle, TrendingUp, Package, Pill } from 'lucide-react';
+import { Send, Sparkles, AlertTriangle, TrendingUp, Package, Pill, FileText, DollarSign, BarChart3 } from 'lucide-react';
 import { gql, M_ASK_NEXUS_AI } from '@/lib/gql';
 
 type Message = {
@@ -26,6 +26,32 @@ const INITIAL_MESSAGE: Message = {
   content: "Hello. I'm the Azzay NEXUS AI — powered by Gemini. I can help you with drug interaction checks, sales forecasting, inventory intelligence, and prescription analysis. How can I assist you today?",
   timestamp: new Date(),
 };
+
+function formatAiResponse(text: string): string {
+  // Preserve line breaks
+  let formatted = text.replace(/\n/g, '<br />');
+  
+  // Format headers (## Header)
+  formatted = formatted.replace(/## (.*)/g, '<strong class="text-base mt-3 mb-1 block">$1</strong>');
+  
+  // Format bold text (**text**)
+  formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Format bullet points (• or -)
+  formatted = formatted.replace(/^• (.*)/gm, '<span class="inline-block w-1.5 h-1.5 rounded-full bg-current mr-2 align-middle"></span>$1');
+  formatted = formatted.replace(/^- (.*)/gm, '<span class="inline-block w-1.5 h-1.5 rounded-full bg-current mr-2 align-middle"></span>$1');
+  
+  // Format numbered lists (1. )
+  formatted = formatted.replace(/^\d+\. (.*)/gm, '<span class="font-bold mr-1">$1</span>');
+  
+  // Format code blocks (```)
+  formatted = formatted.replace(/```([\s\S]*?)```/g, '<pre class="bg-black/10 p-2 rounded text-xs my-2 overflow-x-auto"><code>$1</code></pre>');
+  
+  // Format inline code (`code`)
+  formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-black/10 px-1 rounded text-xs">$1</code>');
+  
+  return formatted;
+}
 
 function getSimulatedResponse(prompt: string): string {
   const lower = prompt.toLowerCase();
@@ -82,6 +108,8 @@ export default function AiAssistantPage() {
     { label: 'Sales Forecast', prompt: 'Forecast demand for antimalarials over the next 30 days based on seasonal patterns.', icon: TrendingUp, color: card.primary, bg: card.primaryBg },
     { label: 'Reorder Suggestions', prompt: 'Which products are at risk of stockout in the next 2 weeks?', icon: Package, color: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
     { label: 'Prescription Analysis', prompt: 'Summarize the most commonly prescribed drug combinations this month.', icon: Pill, color: '#8B5CF6', bg: 'rgba(139,92,246,0.1)' },
+    { label: 'Invoice Summary', prompt: 'Generate a summary of all outstanding invoices and their payment status.', icon: FileText, color: '#0EA5E9', bg: 'rgba(14,165,233,0.1)' },
+    { label: 'Financial Report', prompt: 'Create a financial report showing total payments, outstanding balances, and supplier performance.', icon: BarChart3, color: '#10B981', bg: 'rgba(16,185,129,0.1)' },
   ];
 
   const sendMessage = async (text: string) => {
@@ -137,7 +165,7 @@ export default function AiAssistantPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 shrink-0">
         {quickActions.map(action => {
           const Icon = action.icon;
           return (
@@ -178,7 +206,11 @@ export default function AiAssistantPage() {
                   borderTopLeftRadius: msg.role === 'assistant' ? '4px' : undefined,
                   borderTopRightRadius: msg.role === 'user' ? '4px' : undefined,
                 }}>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: card.text }}>{msg.content}</p>
+                <div 
+                  className="text-sm leading-relaxed" 
+                  style={{ color: card.text }}
+                  dangerouslySetInnerHTML={{ __html: msg.role === 'assistant' ? formatAiResponse(msg.content) : msg.content.replace(/\n/g, '<br />') }}
+                />
                 <p className="text-[10px] mt-1.5" style={{ color: card.subtle }}>
                   {msg.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                 </p>

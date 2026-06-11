@@ -13,7 +13,7 @@ import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES, Q_REFUND_REQUESTS,
-  M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE,
+  M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD, M_DELETE_STAFF,
   M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
@@ -482,6 +482,7 @@ interface StoreState {
   // Invoice Management
   recordSupplierPayment: (invoiceId: string, amount: number, method: string, reference?: string, notes?: string) => Promise<Invoice>;
   deleteInvoice: (invoiceId: string) => Promise<void>;
+  deleteSale: (saleId: string) => Promise<boolean>;
 
   // Financials
   createExpense: (args: {
@@ -809,7 +810,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
       // Save to IndexedDB
       await saveToCache('pending_sales', [newSale]);
-      
+
       // Register sync if possible
       if ('serviceWorker' in navigator && 'SyncManager' in window) {
         const registration = await navigator.serviceWorker.ready;
@@ -855,19 +856,19 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     await saveToCache('products_cache', updatedProducts);
 
     // Schedule background re-sync after sale completes
-    // Delayed to avoid overwhelming the DB connection pool
+    // Short delay to let the DB transaction commit before re-fetching
     setTimeout(() => {
-      refetchSales().catch(() => {});
-      refetchProducts().catch(() => {});
-      refetchLedger().catch(() => {});
-    }, 3000);
+      refetchSales().catch(() => { });
+      refetchProducts().catch(() => { });
+      refetchLedger().catch(() => { });
+    }, 500);
 
     return newSale;
   }, [me, products, refetchSales, refetchProducts]);
 
   const closeTerminal = useCallback(async (physicalCash?: number, digitalPayments?: number, notes?: string): Promise<TerminalReport> => {
     if (!me) throw new Error('Not authenticated');
-    const data = await gql<{ closeTerminal: TerminalReport }>(M_CLOSE_TERMINAL, { 
+    const data = await gql<{ closeTerminal: TerminalReport }>(M_CLOSE_TERMINAL, {
       userId: me.id,
       physicalCash,
       digitalPayments,
@@ -1112,6 +1113,19 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     refetchLedger();
   }, [refetchLedger]);
 
+  const deleteSale = useCallback(async (saleId: string): Promise<boolean> => {
+    try {
+      await gql(M_DELETE_SALE, { saleId });
+      setSales(prev => prev.filter(s => s.id !== saleId));
+      refetchProducts();
+      refetchLedger();
+      return true;
+    } catch (error) {
+      console.error('Failed to delete sale:', error);
+      return false;
+    }
+  }, [refetchProducts, refetchLedger]);
+
   const getProductsBySupplier = useCallback(async (supplierId: string): Promise<Product[]> => {
     const data = await gql<{ productsBySupplier: Product[] }>(
       Q_PRODUCTS_BY_SUPPLIER, { supplierId }
@@ -1142,7 +1156,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       rejectRefund,
       createProduct, deleteProduct, adjustProductStock,
       createSupplier, updateSupplier, deleteSupplier,
-      recordSupplierPayment, deleteInvoice,
+      recordSupplierPayment, deleteInvoice, deleteSale,
       createExpense,
     }}>
       {children}
