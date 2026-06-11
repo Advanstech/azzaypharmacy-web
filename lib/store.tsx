@@ -798,6 +798,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         paymentMethod: args.paymentMethod,
         customerName: args.customerName || 'Walk-in',
         createdAt: new Date().toISOString(),
+        user: me ? { id: me.id, name: me.name, role: me.role } : undefined,
         items: args.items.map(i => ({
           id: `item-${Date.now()}`,
           quantity: i.quantity,
@@ -1115,16 +1116,23 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const deleteSale = useCallback(async (saleId: string): Promise<boolean> => {
     try {
-      await gql(M_DELETE_SALE, { saleId });
-      setSales(prev => prev.filter(s => s.id !== saleId));
-      refetchProducts();
-      refetchLedger();
-      return true;
-    } catch (error) {
-      console.error('Failed to delete sale:', error);
+      console.log('[store] Attempting to delete sale:', saleId);
+      const result = await gql<{ deleteSale: boolean }>(M_DELETE_SALE, { saleId });
+      console.log('[store] Delete sale result:', result);
+      if (result.deleteSale) {
+        setSales(prev => prev.filter(s => s.id !== saleId));
+        refetchProducts();
+        refetchLedger();
+        refetchSales();
+        return true;
+      }
+      return false;
+    } catch (error: any) {
+      console.error('[store] Failed to delete sale:', error);
+      console.error('[store] Error details:', error?.message, error?.response);
       return false;
     }
-  }, [refetchProducts, refetchLedger]);
+  }, [refetchProducts, refetchLedger, refetchSales]);
 
   const getProductsBySupplier = useCallback(async (supplierId: string): Promise<Product[]> => {
     const data = await gql<{ productsBySupplier: Product[] }>(

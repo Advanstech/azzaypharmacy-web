@@ -731,9 +731,10 @@ export default function EnhancedSalesPage() {
               {paginatedSales.map((sale, i) => {
                 const methodConfig = PAYMENT_METHODS[sale.paymentMethod as keyof typeof PAYMENT_METHODS];
                 const isProfitable = (sale.profit || 0) > 0;
+                const isRefunded = (sale as any).status === 'REFUNDED' || (sale as any).isRefunded;
                 
                 return (
-                  <tr key={sale.id} className="transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30" style={{ borderBottom: i < paginatedSales.length - 1 ? `1px solid ${card.border}` : 'none' }}>
+                  <tr key={sale.id} className={`transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30 ${isRefunded ? 'opacity-60 bg-red-50/30 dark:bg-red-900/10' : ''}`} style={{ borderBottom: i < paginatedSales.length - 1 ? `1px solid ${card.border}` : 'none' }}>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
                         <button
@@ -789,7 +790,7 @@ export default function EnhancedSalesPage() {
                       </div>
                     </td>
                     <td className="px-5 py-4">
-                      <p className="font-mono text-sm font-bold" style={{ color: card.text }}>
+                      <p className={`font-mono text-sm font-bold ${isRefunded ? 'line-through text-red-500' : ''}`} style={{ color: isRefunded ? '#EF4444' : card.text }}>
                         GH₵ {sale.totalAmount.toLocaleString()}
                       </p>
                     </td>
@@ -802,9 +803,15 @@ export default function EnhancedSalesPage() {
                       </div>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: card.success + '18', color: card.success }}>
-                        Completed
-                      </span>
+                      {isRefunded ? (
+                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg line-through" style={{ background: '#EF444418', color: '#EF4444' }}>
+                          REFUNDED
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-1 rounded-lg" style={{ background: card.success + '18', color: card.success }}>
+                          Completed
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
@@ -814,9 +821,15 @@ export default function EnhancedSalesPage() {
                         <button className="p-1.5 rounded-lg hover:bg-slate-500/10 text-slate-500" title="Print Receipt">
                           <Printer size={14} />
                         </button>
-                        <button className="p-1.5 rounded-lg hover:bg-orange-500/10 text-orange-500" title="Request Refund">
-                          <RefreshCw size={14} />
-                        </button>
+                        {isRefunded ? (
+                          <span className="p-1.5 rounded-lg text-red-500" title="Already Refunded">
+                            <RefreshCw size={14} />
+                          </span>
+                        ) : (
+                          <button onClick={() => { setSelectedSale(sale); setShowRefundModal(true); }} className="p-1.5 rounded-lg hover:bg-orange-500/10 text-orange-500" title="Request Refund">
+                            <RefreshCw size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

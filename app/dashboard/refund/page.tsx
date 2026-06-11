@@ -18,7 +18,7 @@ export default function RefundPage() {
 
   const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests } = useStore();
   const role = user?.user_metadata?.role || me?.role;
-  const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER'].includes(role || '');
 
   const [receiptSearch, setReceiptSearch] = useState('');
   const [foundSale, setFoundSale] = useState<any>(null);
@@ -166,11 +166,13 @@ export default function RefundPage() {
             )}
           </div>
 
-          {/* Pending Requests (For Managers) */}
-          {isManager && refundRequests.length > 0 && (
+          {/* Pending Requests */}
+          {refundRequests.length > 0 && (
             <div className="rounded-[32px] border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
               <div className="p-6 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>
-                <h3 className="font-display text-sm font-bold uppercase tracking-widest" style={{ color: c.text }}>Pending Authorizations</h3>
+                <h3 className="font-display text-sm font-bold uppercase tracking-widest" style={{ color: c.text }}>
+                  {isManager ? 'Pending Authorizations' : 'Your Refund Requests'}
+                </h3>
                 <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">{refundRequests.length}</span>
               </div>
               <div className="divide-y" style={{ borderColor: c.border }}>
@@ -192,30 +194,32 @@ export default function RefundPage() {
                           </span>
                         </div>
                         <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
-                          GH₵ {Number(r.sale?.totalAmount || 0).toFixed(2)} • Requested by <span className="text-blue-400">{r.requestedBy?.name || 'Staff'}</span>
+                          GH₵ {Number(r.sale?.totalAmount || 0).toFixed(2)} {isManager ? `• Requested by <span className="text-blue-400">${r.requestedBy?.name || 'Staff'}</span>` : ''}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-1 italic">"{r.reason}"</p>
                       </div>
                     </div>
                     
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => handleApprove(r.id)}
-                        disabled={processing || r.status !== 'PENDING'}
-                        className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50"
-                        title="Authorize Refund"
-                      >
-                        <CheckCircle size={20} />
-                      </button>
-                      <button 
-                        onClick={() => handleReject(r.id)}
-                        disabled={processing || r.status !== 'PENDING'}
-                        className="p-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"
-                        title="Reject Request"
-                      >
-                        <XCircle size={20} />
-                      </button>
-                    </div>
+                    {isManager && (
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => handleApprove(r.id)}
+                          disabled={processing || r.status !== 'PENDING'}
+                          className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50"
+                          title="Authorize Refund"
+                        >
+                          <CheckCircle size={20} />
+                        </button>
+                        <button 
+                          onClick={() => handleReject(r.id)}
+                          disabled={processing || r.status !== 'PENDING'}
+                          className="p-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"
+                          title="Reject Request"
+                        >
+                          <XCircle size={20} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
