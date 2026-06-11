@@ -74,95 +74,232 @@ export default function EnhancedSalesPage() {
   const handlePrint = (sale: any) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
-    
+
+    // Optimized for Xprinter 80mm thermal paper (72mm printable width)
     const itemsHtml = sale.items.map((item: any) => `
-      <tr style="border-bottom: 1px dashed #ddd;">
-        <td style="padding: 6px 0;">${item.product?.name || 'Item'}</td>
-        <td style="text-align: center; padding: 6px 0;">${item.quantity}</td>
-        <td style="text-align: right; padding: 6px 0;">GH₵ ${item.unitPrice.toFixed(2)}</td>
-        <td style="text-align: right; padding: 6px 0;">GH₵ ${(item.total || (item.quantity * item.unitPrice)).toFixed(2)}</td>
+      <tr>
+        <td style="padding: 4px 0; font-size: 10px; word-break: break-word;">${item.product?.name || 'Item'}</td>
+        <td style="text-align: center; padding: 4px 0; font-size: 10px; width: 30px;">${item.quantity}</td>
+        <td style="text-align: right; padding: 4px 0; font-size: 10px; width: 55px;">${item.unitPrice.toFixed(2)}</td>
+        <td style="text-align: right; padding: 4px 0; font-size: 10px; width: 60px; font-weight: bold;">${(item.total || (item.quantity * item.unitPrice)).toFixed(2)}</td>
       </tr>
     `).join('');
 
     const discountRow = sale.discountAmt > 0 ? `
-      <tr>
-        <td colspan="3" style="padding: 4px 0;">Discount:</td>
-        <td style="text-align: right; padding: 4px 0;">-GH₵ ${Number(sale.discountAmt).toFixed(2)}</td>
+      <tr style="border-top: 1px dashed #000;">
+        <td colspan="3" style="padding: 3px 0; font-size: 10px;">Discount:</td>
+        <td style="text-align: right; padding: 3px 0; font-size: 10px;">-${Number(sale.discountAmt).toFixed(2)}</td>
       </tr>
     ` : '';
 
     const taxRow = (sale.vat > 0 || sale.nhil > 0 || sale.getfund > 0) ? `
       <tr>
-        <td colspan="3" style="padding: 4px 0; font-size: 11px; color: #555;">NHIL/GETFund/VAT:</td>
-        <td style="text-align: right; padding: 4px 0; font-size: 11px; color: #555;">GH₵ ${(Number(sale.vat || 0) + Number(sale.nhil || 0) + Number(sale.getfund || 0)).toFixed(2)}</td>
+        <td colspan="3" style="padding: 3px 0; font-size: 9px; color: #000;">NHIL/GETFund/VAT:</td>
+        <td style="text-align: right; padding: 3px 0; font-size: 9px; color: #000;">${(Number(sale.vat || 0) + Number(sale.nhil || 0) + Number(sale.getfund || 0)).toFixed(2)}</td>
       </tr>
     ` : '';
+
+    const isRefunded = sale.status === 'REFUNDED' || sale.isRefunded;
 
     printWindow.document.write(`
       <html>
         <head>
           <title>Receipt - ${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</title>
           <style>
-            body { font-family: 'Courier New', Courier, monospace; width: 300px; margin: 0 auto; padding: 20px; font-size: 12px; color: #000; }
-            .header { text-align: center; margin-bottom: 15px; }
-            .title { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
-            .divider { border-top: 1px dashed #000; margin: 10px 0; }
+            @page { size: 80mm auto; margin: 0; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+              font-family: 'Courier New', 'Monaco', monospace;
+              width: 80mm;
+              max-width: 80mm;
+              padding: 3mm;
+              font-size: 10px;
+              line-height: 1.3;
+              color: #000;
+              background: #fff;
+            }
+            .center { text-align: center; }
+            .bold { font-weight: bold; }
+            .store-name {
+              font-size: 14px;
+              font-weight: bold;
+              text-transform: uppercase;
+              margin-bottom: 2px;
+              letter-spacing: 0.5px;
+            }
+            .store-info {
+              font-size: 9px;
+              margin-bottom: 1px;
+            }
+            .divider {
+              border-top: 1px dashed #000;
+              margin: 6px 0;
+              height: 0;
+            }
+            .divider-thick {
+              border-top: 2px solid #000;
+              margin: 4px 0;
+            }
+            .info-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 10px;
+              margin: 2px 0;
+            }
+            .info-row span:first-child { font-weight: bold; }
             table { width: 100%; border-collapse: collapse; }
-            .totals { font-weight: bold; }
-            .footer { text-align: center; margin-top: 20px; font-size: 10px; }
+            thead th {
+              font-size: 9px;
+              font-weight: bold;
+              text-align: left;
+              padding: 4px 0;
+              border-bottom: 1px dashed #000;
+            }
+            thead th:nth-child(2) { text-align: center; }
+            thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
+            tbody td { vertical-align: top; }
+            .totals-section {
+              margin-top: 6px;
+              border-top: 1px dashed #000;
+              padding-top: 4px;
+            }
+            .total-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 12px;
+              font-weight: bold;
+              padding: 4px 0;
+            }
+            .payment-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 10px;
+              padding: 2px 0;
+            }
+            .footer {
+              text-align: center;
+              font-size: 9px;
+              margin-top: 8px;
+              padding-top: 4px;
+              border-top: 1px dashed #000;
+            }
+            .footer p { margin: 2px 0; }
+            .barcode {
+              font-family: 'Libre Barcode 39', 'Courier New', monospace;
+              font-size: 24px;
+              text-align: center;
+              margin: 6px 0;
+            }
+            .refunded-stamp {
+              text-align: center;
+              font-size: 14px;
+              font-weight: bold;
+              color: #c00;
+              border: 2px solid #c00;
+              padding: 4px 8px;
+              margin: 6px 0;
+              transform: rotate(-5deg);
+              display: inline-block;
+            }
+            .refunded-badge {
+              text-align: center;
+              background: #fee2e2;
+              color: #991b1b;
+              font-size: 10px;
+              font-weight: bold;
+              padding: 2px 6px;
+              margin: 4px 0;
+            }
+            @media print {
+              body { width: 80mm; max-width: 80mm; padding: 2mm; }
+              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <div class="title">AZZAY PHARMACY</div>
-            <div>Accra, Ghana</div>
-            <div>Tel: +233 24 000 0000</div>
+          <div class="center">
+            <div class="store-name">AZZAY PHARMACY</div>
+            <div class="store-info">Accra, Ghana</div>
+            <div class="store-info">Tel: +233 24 000 0000</div>
+            <div class="store-info">TIN: C0001234567</div>
           </div>
+
           <div class="divider"></div>
-          <div>Receipt No: ${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</div>
-          <div>Date: ${new Date(sale.createdAt).toLocaleString()}</div>
-          <div>Cashier: ${sale.user?.name || 'Staff'}</div>
-          <div>Customer: ${sale.customerName || 'Walk-in'}</div>
+
+          <div class="info-row">
+            <span>Receipt:</span>
+            <span>#${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</span>
+          </div>
+          <div class="info-row">
+            <span>Date:</span>
+            <span>${new Date(sale.createdAt).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+          <div class="info-row">
+            <span>Cashier:</span>
+            <span>${sale.user?.name || 'Staff'}</span>
+          </div>
+          <div class="info-row">
+            <span>Customer:</span>
+            <span>${sale.customerName || 'Walk-in'}</span>
+          </div>
+
           <div class="divider"></div>
+
           <table>
             <thead>
-              <tr style="border-bottom: 1px solid #000;">
-                <th style="text-align: left; padding: 4px 0;">Item</th>
-                <th style="text-align: center; padding: 4px 0;">Qty</th>
-                <th style="text-align: right; padding: 4px 0;">Price</th>
-                <th style="text-align: right; padding: 4px 0;">Total</th>
+              <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
               </tr>
             </thead>
             <tbody>
               ${itemsHtml}
             </tbody>
           </table>
-          <div class="divider"></div>
-          <table>
+
+          <div class="totals-section">
             ${discountRow}
             ${taxRow}
-            <tr class="totals">
-              <td colspan="3" style="padding: 6px 0; font-size: 14px;">TOTAL:</td>
-              <td style="text-align: right; padding: 6px 0; font-size: 14px;">GH₵ ${sale.totalAmount.toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td colspan="3" style="padding: 4px 0;">Amount Paid:</td>
-              <td style="text-align: right; padding: 4px 0;">GH₵ ${sale.amountPaid.toFixed(2)}</td>
-            </tr>
-            <tr>
-              <td colspan="3" style="padding: 4px 0;">Change:</td>
-              <td style="text-align: right; padding: 4px 0;">GH₵ ${sale.change.toFixed(2)}</td>
-            </tr>
-          </table>
-          <div class="divider"></div>
-          <div class="footer">
-            <p>Thank you for your patronage!</p>
-            <p>Products returned within 48 hours are subject to Azzay Pharmacy Return Policies.</p>
+            <div class="total-row">
+              <span>TOTAL:</span>
+              <span>GH₵ ${sale.totalAmount.toFixed(2)}</span>
+            </div>
+            <div class="payment-row">
+              <span>Amount Paid:</span>
+              <span>GH₵ ${sale.amountPaid.toFixed(2)}</span>
+            </div>
+            <div class="payment-row">
+              <span>Change:</span>
+              <span>GH₵ ${sale.change.toFixed(2)}</span>
+            </div>
+            <div class="payment-row">
+              <span>Method:</span>
+              <span>${sale.paymentMethod}</span>
+            </div>
           </div>
+
+          ${isRefunded ? `
+            <div class="divider-thick"></div>
+            <div class="refunded-badge">*** REFUNDED ***</div>
+          ` : ''}
+
+          <div class="divider"></div>
+
+          <div class="footer">
+            <p style="font-weight: bold; font-size: 10px;">Thank you for your patronage!</p>
+            <p>Items sold are not returnable unless defective.</p>
+            <p>Keep this receipt for returns within 48 hours.</p>
+            <div class="barcode">*${sale.receiptNo || sale.id.slice(-8)}*</div>
+          </div>
+
           <script>
             window.onload = function() {
-              window.print();
-              window.close();
+              setTimeout(() => {
+                window.print();
+                setTimeout(() => window.close(), 100);
+              }, 200);
             };
           </script>
         </body>
