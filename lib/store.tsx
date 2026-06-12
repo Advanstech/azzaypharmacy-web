@@ -702,8 +702,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, [me?.branchId]);
   const refetchRefundRequests = useCallback(async () => {
     try {
-      const data = await gql<{ refundRequests: RefundRequest[] }>(Q_REFUND_REQUESTS);
-      setRefundRequests(data.refundRequests || []);
+      const data = await gql<{ refundRequests: { items: RefundRequest[], totalCount: number } }>(Q_REFUND_REQUESTS);
+      setRefundRequests(data.refundRequests?.items || []);
     } catch (err: any) {
       console.error('Failed to fetch refund requests', err);
     }
@@ -791,11 +791,21 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     };
 
     let newSale: Sale;
+    let isSynced = false;
     try {
+      console.log('[store] 📤 Sending createSale mutation...', variables);
       const data = await gql<{ createSale: Sale }>(M_CREATE_SALE, variables);
       newSale = data.createSale;
-    } catch (err) {
-      console.warn('[store] Online sale failed, saving to offline queue:', err);
+      isSynced = true;
+      console.log('[store] ✅ Sale synced to backend!', { id: newSale.id, total: newSale.totalAmount });
+    } catch (err: any) {
+      console.error('[store] ❌ Online sale failed:', {
+        error: err?.message,
+        status: err?.status,
+        response: err?.response,
+        stack: err?.stack
+      });
+      
       // Create a mock sale for immediate UI
       newSale = {
         id: `offline-${Date.now()}`,
@@ -828,7 +838,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           console.warn('[store] Sync registration failed:', e);
         }
       }
+
+      console.warn('[store] 📱 Sale saved locally (offline mode). Will sync when connection restored.');
     }
+
+    // Mark if synced or pending
+    (newSale as any)._isSynced = isSynced;
+    (newSale as any)._syncStatus = isSynced ? 'SYNCED' : 'PENDING';
 
     // Optimistically update local state
     setSales(prev => [newSale, ...prev]);

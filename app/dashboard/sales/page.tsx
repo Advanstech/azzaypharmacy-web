@@ -548,7 +548,8 @@ export default function EnhancedSalesPage() {
       const matchSearch = !search ||
         sale.id.toLowerCase().includes(search.toLowerCase()) ||
         ((sale as any).customerName?.toLowerCase() || '').includes(search.toLowerCase()) ||
-        ((sale as any).receiptNo?.toLowerCase() || '').includes(search.toLowerCase());
+        ((sale as any).receiptNo?.toLowerCase() || '').includes(search.toLowerCase()) ||
+        ((sale as any).user?.name?.toLowerCase() || '').includes(search.toLowerCase());
 
       const matchPayment = paymentFilter === 'all' || sale.paymentMethod === paymentFilter;
       const matchStatus = statusFilter === 'all' || (sale as any).status === statusFilter;
@@ -1003,9 +1004,14 @@ export default function EnhancedSalesPage() {
 
         {/* Pagination */}
         <div className="p-4 border-t flex items-center justify-between" style={{ borderColor: card.border }}>
-          <p className="text-xs" style={{ color: card.muted }}>
-            Showing <span className="font-bold" style={{ color: card.text }}>{startIndex}-{endIndex}</span> of <span className="font-bold" style={{ color: card.text }}>{totalItems}</span> sales
-          </p>
+          <div className="flex flex-col gap-0.5">
+            <p className="text-xs" style={{ color: card.muted }}>
+              Showing <span className="font-bold" style={{ color: card.text }}>{startIndex}-{endIndex}</span> of <span className="font-bold" style={{ color: card.text }}>{totalItems}</span> sales
+            </p>
+            <p className="text-[11px] font-bold" style={{ color: card.primary }}>
+              Total for this view: GH₵ {filteredSales.reduce((sum, s) => sum + s.totalAmount, 0).toFixed(2)}
+            </p>
+          </div>
           <div className="flex gap-2">
             <button disabled={currentPage === 1} onClick={prevPage} className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-30" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
               Previous
@@ -1190,7 +1196,7 @@ export default function EnhancedSalesPage() {
                 {modalTotalPages > 1 && (
                   <div className="pt-4 border-t flex items-center justify-between" style={{ borderColor: card.border }}>
                     <p className="text-xs" style={{ color: card.muted }}>
-                      Page {modalItemsPage} of {modalTotalPages}
+                      Showing <span className="font-bold" style={{ color: card.text }}>{Math.min(((modalItemsPage - 1) * modalItemsPerPage) + 1, selectedSale.items.length)}-{Math.min(modalItemsPage * modalItemsPerPage, selectedSale.items.length)}</span> of <span className="font-bold" style={{ color: card.text }}>{selectedSale.items.length}</span>
                     </p>
                     <div className="flex gap-2">
                       <button 

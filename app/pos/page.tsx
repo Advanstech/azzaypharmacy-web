@@ -303,13 +303,30 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         customerPhone: selectedCustomer?.phone,
         customerEmail: selectedCustomer?.email,
       });
-      setCompletedSale({ ...sale, items: [...cart], total, change: Math.max(0, change) });
+      
+      // Check if sale was synced or is pending
+      const isSynced = (sale as any)._isSynced ?? true;
+      const syncStatus = (sale as any)._syncStatus ?? 'SYNCED';
+      
+      if (!isSynced) {
+        console.warn('⚠️ Sale is OFFLINE - not sent to server yet');
+        alert('⚠️ WARNING: Sale saved OFFLINE\n\nYour device is offline. Sale will sync when connection is restored.\n\nReceipt ID: ' + sale.id);
+      }
+      
+      setCompletedSale({ 
+        ...sale, 
+        items: [...cart], 
+        total, 
+        change: Math.max(0, change),
+        _isSynced: isSynced,
+        _syncStatus: syncStatus
+      });
       setShowReceipt(true);
       setCart([]);
       setTendered('');
     } catch (err: any) {
-      console.error('Sale failed:', err);
-      alert(`Sale failed: ${err?.message || 'Unknown error. Check your connection and try again.'}`);
+      console.error('❌ Sale creation failed:', err);
+      alert(`❌ SALE FAILED\n\n${err?.message || 'Unknown error. Check your connection and try again.'}\n\nPlease try again or contact support.`);
     } finally {
       setSubmitting(false);
     }
@@ -1490,15 +1507,26 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center font-display font-bold text-xl mx-auto mb-3 border border-white/30 text-white print:hidden">A</div>
               <h2 className="font-display font-bold text-white print:text-black">Azzay Pharma NEXUS</h2>
               <p className="text-[10px] text-white/70 print:text-black">Clinical Receipt · {new Date().toLocaleString()}</p>
+              
+              {/* Sync Status Badge */}
+              {(completedSale as any)._isSynced === false && (
+                <div className="mt-3 px-3 py-2 rounded-lg bg-yellow-500/20 border border-yellow-500/50 text-[10px] font-bold text-yellow-200 print:hidden">
+                  ⚠️ OFFLINE - Will sync when online
+                </div>
+              )}
+              {(completedSale as any)._isSynced && (
+                <div className="mt-3 px-3 py-2 rounded-lg bg-green-500/20 border border-green-500/50 text-[10px] font-bold text-green-200 print:hidden">
+                  ✓ SYNCED TO SERVER
+                </div>
+              )}
             </div>
 
             <div className="p-6 space-y-4 print:p-2 print:space-y-2">
-              {/* Transaction Details */}
-              <div className="grid grid-cols-2 gap-2 text-[10px] print:text-[8px]" style={{ color: c.muted }}>
-                <div><span className="opacity-60">Date:</span> {new Date().toLocaleDateString()}</div>
-                <div><span className="opacity-60">Time:</span> {new Date().toLocaleTimeString()}</div>
-                <div><span className="opacity-60">Branch:</span> Dormaa Central</div>
-                <div><span className="opacity-60">Cashier:</span> {me?.name || 'Pharmacist'}</div>
+              <div className="grid grid-cols-2 gap-2 text-[10px] print:text-[10px] print:font-bold print:text-black" style={{ color: c.muted }}>
+                <div><span className="opacity-60 print:opacity-100">Date:</span> {new Date().toLocaleDateString()}</div>
+                <div><span className="opacity-60 print:opacity-100">Time:</span> {new Date().toLocaleTimeString()}</div>
+                <div><span className="opacity-60 print:opacity-100">Branch:</span> Dormaa Central</div>
+                <div><span className="opacity-60 print:opacity-100">Cashier:</span> {me?.name || 'Pharmacist'}</div>
               </div>
 
               {selectedCustomer && selectedCustomer.id && (
@@ -1511,25 +1539,25 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                 </div>
               )}
 
-              <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar print:max-h-none print:overflow-visible">
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-2 custom-scrollbar print:max-h-none print:overflow-visible print:h-auto print:block">
                 {completedSale.items.map((item: any) => (
-                  <div key={item.product.id} className="flex justify-between text-xs border-b border-dashed print:border-slate-300 pb-2">
-                    <div className="flex-1">
-                      <p className="font-bold truncate">{item.product.name}</p>
-                      <p className="text-[9px] opacity-60">Qty: {item.quantity} @ GH₵ {item.product.sellingPrice.toFixed(2)}</p>
+                  <div key={item.product.id} className="flex justify-between text-xs print:text-[13px] border-b border-dashed print:border-black pb-2 print:pb-3">
+                    <div className="flex-1 pr-2">
+                      <p className="font-bold print:font-extrabold print:text-black break-words" style={{ color: c.text }}>{item.product.name}</p>
+                      <p className="text-[9px] print:text-[11px] print:font-bold print:text-black print:opacity-100 opacity-60 mt-0.5">Qty: {item.quantity} @ GH₵ {item.product.sellingPrice.toFixed(2)}</p>
                     </div>
-                    <span className="font-mono font-bold ml-4 self-center">GH₵ {(item.product.sellingPrice * item.quantity).toFixed(2)}</span>
+                    <span className="font-mono font-bold print:font-extrabold print:text-[14px] print:text-black ml-2 self-center">GH₵ {(item.product.sellingPrice * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="pt-4 border-t space-y-2 print:pt-2">
-                <div className="flex justify-between text-xs opacity-60">
+              <div className="pt-4 border-t space-y-2 print:pt-3 print:border-black">
+                <div className="flex justify-between text-xs print:text-[12px] print:font-bold print:text-black print:opacity-100 opacity-60">
                   <span>Subtotal</span>
                   <span className="font-mono">GH₵ {completedSale.total.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-base print:text-sm">
-                  <span>Grand Total</span>
+                <div className="flex justify-between font-bold text-base print:text-[18px] print:font-black print:border-y-2 print:border-black print:py-2">
+                  <span className="print:text-black">Grand Total</span>
                   <span className="text-primary font-mono print:text-black">GH₵ {completedSale.total.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-[10px] opacity-60">

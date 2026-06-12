@@ -506,12 +506,17 @@ export const M_BULK_UPDATE_PRODUCT_SUPPLIER = `
 `;
 
 export const Q_REFUND_REQUESTS = `
-  query GetRefundRequests {
-    refundRequests {
-      id saleId reason status createdAt
-      sale { id totalAmount paymentMethod }
-      requestedBy { id name }
-      approvedBy { id name }
+  query GetRefundRequests($page: Float, $limit: Float) {
+    refundRequests(page: $page, limit: $limit) {
+      items {
+        id saleId reason status createdAt
+        sale { id totalAmount paymentMethod }
+        requestedBy { id name }
+        approvedBy { id name }
+      }
+      totalCount
+      totalPages
+      currentPage
     }
   }
 `;

@@ -14,6 +14,7 @@ import {
   CreditCard,
   FileText,
   Users,
+  Contact,
   ChevronLeft,
   ChevronRight,
   Moon,
@@ -30,6 +31,7 @@ import {
 const adminItems = [
   { label: 'Admin Hub', href: '/admin', icon: LayoutDashboard, color: '#00D9FF' },
   { label: 'Staff Intelligence', href: '/admin/staff', icon: Users, color: '#6366F1' },
+  { label: 'Customer Relations', href: '/admin/customers', icon: Contact, color: '#14B8A6' },
   { label: 'Authorizations', href: '/admin/authorizations', icon: ShieldCheck, color: '#10B981' },
   { label: 'Supplier Invoices', href: '/admin/invoices', icon: Truck, color: '#F59E0B' },
   { label: 'Financials', href: '/admin/financials', icon: CreditCard, color: '#A855F7' },
