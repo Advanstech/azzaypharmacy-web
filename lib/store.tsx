@@ -22,6 +22,7 @@ import {
   M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND
 } from './gql';
 import { saveToCache, getFromCache } from './offline';
+import { initTauriSync } from './tauri-sync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -741,6 +742,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   useEffect(() => {
     setAuthToken(token ?? null);
     if (token) {
+      // Initialize Tauri sync (background, non-blocking)
+      try {
+        initTauriSync().catch(err => console.warn('[store] Tauri sync init failed:', err));
+      } catch (err) {
+        console.warn('[store] Tauri not available, running web-only mode');
+      }
       refetchAll();
     }
   }, [token]);

@@ -7,7 +7,8 @@ import { useStore } from '@/lib/store';
 import { 
   TrendingUp, TrendingDown, DollarSign, CreditCard, ArrowUpRight, ArrowDownRight, 
   Plus, Filter, Receipt, ShoppingCart, Package, FileText, Wallet, Building2,
-  BarChart3, PieChart, Download, Calendar, ChevronDown, ChevronRight, ShieldAlert
+  BarChart3, PieChart, Download, Calendar, ChevronDown, ChevronRight, ShieldAlert,
+  ChevronLeft, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
@@ -34,6 +35,11 @@ export default function FinancialsPage() {
   const [showRecordModal, setShowRecordModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [expenseForm, setExpenseForm] = useState({ categoryId: '', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
+  
+  // Pagination states
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [payablesPage, setPayablesPage] = useState(1);
+  const ITEMS_PER_PAGE = 15;
 
   const liveLedger = useMemo(() => {
     const entries: any[] = [...ledger];
@@ -438,9 +444,9 @@ export default function FinancialsPage() {
                 </tr>
               </thead>
               <tbody>
-                {liveLedger.slice(0, 20).map((l, i) => (
+                {liveLedger.slice((transactionsPage - 1) * ITEMS_PER_PAGE, transactionsPage * ITEMS_PER_PAGE).map((l, i) => (
                   <tr key={l.id} className="transition-colors cursor-pointer"
-                    style={{ borderBottom: i < 14 ? `1px solid ${card.divider}` : 'none' }}
+                    style={{ borderBottom: i < ITEMS_PER_PAGE - 1 ? `1px solid ${card.divider}` : 'none' }}
                     onMouseEnter={e => (e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                     <td className="px-5 py-3 font-mono text-xs" style={{ color: card.muted }}>{l.date}</td>
@@ -466,6 +472,43 @@ export default function FinancialsPage() {
               </tbody>
             </table>
           </div>
+          
+          {/* Transactions Pagination */}
+          {Math.ceil(liveLedger.length / ITEMS_PER_PAGE) > 1 && (
+            <div className="px-5 py-4 border-t flex items-center justify-between"
+              style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.3)' : 'rgba(248,250,252,0.5)' }}>
+              <span className="text-xs" style={{ color: card.muted }}>
+                Page {transactionsPage} of {Math.ceil(liveLedger.length / ITEMS_PER_PAGE)} • Showing {Math.min(ITEMS_PER_PAGE, liveLedger.length - (transactionsPage - 1) * ITEMS_PER_PAGE)} of {liveLedger.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setTransactionsPage(1)} disabled={transactionsPage === 1}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: transactionsPage === 1 ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronsLeft size={16} />
+                </button>
+                <button onClick={() => setTransactionsPage(Math.max(1, transactionsPage - 1))} disabled={transactionsPage === 1}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: transactionsPage === 1 ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronLeft size={16} />
+                </button>
+                <div className="px-4 py-2 rounded-lg text-sm font-medium" style={{ background: card.primaryBg, color: card.primary }}>
+                  {transactionsPage}
+                </div>
+                <button onClick={() => setTransactionsPage(Math.min(Math.ceil(liveLedger.length / ITEMS_PER_PAGE), transactionsPage + 1))} 
+                  disabled={transactionsPage === Math.ceil(liveLedger.length / ITEMS_PER_PAGE)}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: transactionsPage === Math.ceil(liveLedger.length / ITEMS_PER_PAGE) ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronRight size={16} />
+                </button>
+                <button onClick={() => setTransactionsPage(Math.ceil(liveLedger.length / ITEMS_PER_PAGE))} 
+                  disabled={transactionsPage === Math.ceil(liveLedger.length / ITEMS_PER_PAGE)}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: transactionsPage === Math.ceil(liveLedger.length / ITEMS_PER_PAGE) ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronsRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -494,7 +537,7 @@ export default function FinancialsPage() {
                 <p className="text-sm font-medium">No supplier invoices found.</p>
                 <p className="text-xs mt-1 opacity-60">Upload invoices in the Inventory section to see payables here.</p>
               </div>
-            ) : livePayables.map((p, i) => {
+            ) : livePayables.slice((payablesPage - 1) * ITEMS_PER_PAGE, payablesPage * ITEMS_PER_PAGE).map((p, i) => {
               const statusColors: Record<string, { bg: string; color: string }> = {
                 paid: { bg: 'rgba(16,185,129,0.1)', color: '#10B981' },
                 pending: { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B' },
@@ -527,6 +570,43 @@ export default function FinancialsPage() {
               );
             })}
           </div>
+
+          {/* Payables Pagination */}
+          {Math.ceil(livePayables.length / ITEMS_PER_PAGE) > 1 && (
+            <div className="px-5 py-4 border-t flex items-center justify-between"
+              style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.3)' : 'rgba(248,250,252,0.5)' }}>
+              <span className="text-xs" style={{ color: card.muted }}>
+                Page {payablesPage} of {Math.ceil(livePayables.length / ITEMS_PER_PAGE)} • Showing {Math.min(ITEMS_PER_PAGE, livePayables.length - (payablesPage - 1) * ITEMS_PER_PAGE)} of {livePayables.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPayablesPage(1)} disabled={payablesPage === 1}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: payablesPage === 1 ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronsLeft size={16} />
+                </button>
+                <button onClick={() => setPayablesPage(Math.max(1, payablesPage - 1))} disabled={payablesPage === 1}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: payablesPage === 1 ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronLeft size={16} />
+                </button>
+                <div className="px-4 py-2 rounded-lg text-sm font-medium" style={{ background: card.primaryBg, color: card.primary }}>
+                  {payablesPage}
+                </div>
+                <button onClick={() => setPayablesPage(Math.min(Math.ceil(livePayables.length / ITEMS_PER_PAGE), payablesPage + 1))} 
+                  disabled={payablesPage === Math.ceil(livePayables.length / ITEMS_PER_PAGE)}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: payablesPage === Math.ceil(livePayables.length / ITEMS_PER_PAGE) ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronRight size={16} />
+                </button>
+                <button onClick={() => setPayablesPage(Math.ceil(livePayables.length / ITEMS_PER_PAGE))} 
+                  disabled={payablesPage === Math.ceil(livePayables.length / ITEMS_PER_PAGE)}
+                  className="p-2 rounded-lg transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  style={{ background: payablesPage === Math.ceil(livePayables.length / ITEMS_PER_PAGE) ? 'transparent' : card.primaryBg, color: card.primary }}>
+                  <ChevronsRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
