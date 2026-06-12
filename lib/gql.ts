@@ -368,6 +368,17 @@ export const Q_MY_SHIFT_RECONCILIATIONS = `
   }
 `;
 
+export const Q_ALL_SHIFT_RECONCILIATIONS = `
+  query GetAllShiftReconciliations {
+    allShiftReconciliations {
+      id totalRevenue physicalCash digitalPayments discrepancy notes status createdAt
+      branch { id name }
+      pharmacist { id name }
+      approvedBy { id name }
+    }
+  }
+`;
+
 export const Q_AUTHORIZATIONS_EXPENSE = `
   query GetExpensesPaginated($page: Float, $limit: Float) {
     expenses(page: $page, limit: $limit) {

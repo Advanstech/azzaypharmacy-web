@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
-import { gql, Q_MY_SHIFT_RECONCILIATIONS } from '@/lib/gql';
+import { gql, Q_MY_SHIFT_RECONCILIATIONS, Q_ALL_SHIFT_RECONCILIATIONS } from '@/lib/gql';
 
 export default function EndOfDayDashboardPage() {
   const { theme, resolvedTheme } = useTheme();
@@ -75,8 +75,15 @@ export default function EndOfDayDashboardPage() {
     if (!me?.id) return;
     setLoadingPastShifts(true);
     try {
-      const data = await gql<{ myShiftReconciliations: any[] }>(Q_MY_SHIFT_RECONCILIATIONS, { userId: me.id });
-      setPastShifts(data.myShiftReconciliations || []);
+      if (isManager) {
+        // Fetch all reconciliations for managers
+        const data = await gql<{ allShiftReconciliations: any[] }>(Q_ALL_SHIFT_RECONCILIATIONS);
+        setPastShifts(data.allShiftReconciliations || []);
+      } else {
+        // Fetch only own reconciliations for regular staff
+        const data = await gql<{ myShiftReconciliations: any[] }>(Q_MY_SHIFT_RECONCILIATIONS, { userId: me.id });
+        setPastShifts(data.myShiftReconciliations || []);
+      }
     } catch (e) {
       console.error("Failed to fetch past shifts", e);
     } finally {
