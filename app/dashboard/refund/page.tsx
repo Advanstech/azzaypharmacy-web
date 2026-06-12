@@ -17,8 +17,8 @@ export default function RefundPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests } = useStore();
-  const role = user?.user_metadata?.role || me?.role;
-  const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER'].includes(role || '');
+  const role = me?.role || user?.user_metadata?.role;
+  const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   const [receiptSearch, setReceiptSearch] = useState('');
   const [foundSale, setFoundSale] = useState<any>(null);

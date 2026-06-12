@@ -38,8 +38,8 @@ export default function EnhancedSalesPage() {
   const { sales, loadingSales, refetchSales, me, products, customers, requestRefund, deleteSale } = useStore();
   const { user } = useAuth();
 
-  const role = user?.user_metadata?.role || me?.role;
-  const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const role = me?.role || user?.user_metadata?.role;
+  const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
   const canDeleteSales = ['ROOT', 'SE_ADMIN', 'OWNER'].includes(role || '');
 
   const [search, setSearch] = useState('');
@@ -53,6 +53,7 @@ export default function EnhancedSalesPage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showRefundModal, setShowRefundModal] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [modalItemsPage, setModalItemsPage] = useState(1);
 
   // Redesigned Detail Modal refund states
   const [refundReason, setRefundReason] = useState('');
@@ -75,27 +76,33 @@ export default function EnhancedSalesPage() {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    // Optimized for Xprinter 80mm thermal paper (72mm printable width)
-    const itemsHtml = sale.items.map((item: any) => `
-      <tr>
-        <td style="padding: 4px 0; font-size: 10px; word-break: break-word;">${item.product?.name || 'Item'}</td>
-        <td style="text-align: center; padding: 4px 0; font-size: 10px; width: 30px;">${item.quantity}</td>
-        <td style="text-align: right; padding: 4px 0; font-size: 10px; width: 55px;">${item.unitPrice.toFixed(2)}</td>
-        <td style="text-align: right; padding: 4px 0; font-size: 10px; width: 60px; font-weight: bold;">${(item.total || (item.quantity * item.unitPrice)).toFixed(2)}</td>
-      </tr>
-    `).join('');
+    // Optimized for 80mm thermal printer with high-contrast black & white clarity
+    const itemsHtml = sale.items.map((item: any) => {
+      const itemName = item.product?.name || 'Unknown Item';
+      const qty = item.quantity;
+      const price = item.unitPrice.toFixed(2);
+      const total = (item.total || (item.quantity * item.unitPrice)).toFixed(2);
+      return `
+        <tr>
+          <td style="padding: 8px 4px; font-size: 12px; font-weight: 700; color: #000; line-height: 1.3;">${itemName}</td>
+          <td style="text-align: center; padding: 8px 4px; font-size: 12px; font-weight: 600; width: 30px;">${qty}</td>
+          <td style="text-align: right; padding: 8px 4px; font-size: 12px; font-weight: 600; width: 50px;">${price}</td>
+          <td style="text-align: right; padding: 8px 4px; font-size: 12px; font-weight: 800; width: 55px;">${total}</td>
+        </tr>
+      `;
+    }).join('');
 
     const discountRow = sale.discountAmt > 0 ? `
-      <tr style="border-top: 1px dashed #000;">
-        <td colspan="3" style="padding: 3px 0; font-size: 10px;">Discount:</td>
-        <td style="text-align: right; padding: 3px 0; font-size: 10px;">-${Number(sale.discountAmt).toFixed(2)}</td>
+      <tr style="border-top: 2px solid #000;">
+        <td colspan="3" style="padding: 6px 4px; font-size: 12px; font-weight: 700;">Discount:</td>
+        <td style="text-align: right; padding: 6px 4px; font-size: 12px; font-weight: 800;">-${Number(sale.discountAmt).toFixed(2)}</td>
       </tr>
     ` : '';
 
     const taxRow = (sale.vat > 0 || sale.nhil > 0 || sale.getfund > 0) ? `
       <tr>
-        <td colspan="3" style="padding: 3px 0; font-size: 9px; color: #000;">NHIL/GETFund/VAT:</td>
-        <td style="text-align: right; padding: 3px 0; font-size: 9px; color: #000;">${(Number(sale.vat || 0) + Number(sale.nhil || 0) + Number(sale.getfund || 0)).toFixed(2)}</td>
+        <td colspan="3" style="padding: 4px 4px; font-size: 11px; font-weight: 600;">Taxes:</td>
+        <td style="text-align: right; padding: 4px 4px; font-size: 11px; font-weight: 600;">${(Number(sale.vat || 0) + Number(sale.nhil || 0) + Number(sale.getfund || 0)).toFixed(2)}</td>
       </tr>
     ` : '';
 
@@ -109,109 +116,114 @@ export default function EnhancedSalesPage() {
             @page { size: 80mm auto; margin: 0; }
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
-              font-family: 'Courier New', 'Monaco', monospace;
+              font-family: 'Arial Black', 'Arial', 'Helvetica', sans-serif;
               width: 80mm;
               max-width: 80mm;
-              padding: 3mm;
-              font-size: 10px;
-              line-height: 1.3;
+              padding: 5mm;
+              font-size: 12px;
+              line-height: 1.5;
               color: #000;
               background: #fff;
+              -webkit-font-smoothing: none;
             }
             .center { text-align: center; }
-            .bold { font-weight: bold; }
+            .bold { font-weight: 900; }
             .store-name {
-              font-size: 14px;
-              font-weight: bold;
+              font-size: 20px;
+              font-weight: 900;
               text-transform: uppercase;
-              margin-bottom: 2px;
-              letter-spacing: 0.5px;
+              margin-bottom: 6px;
+              letter-spacing: 2px;
+              color: #000;
             }
             .store-info {
-              font-size: 9px;
-              margin-bottom: 1px;
+              font-size: 11px;
+              font-weight: 700;
+              margin-bottom: 3px;
+              color: #000;
             }
             .divider {
-              border-top: 1px dashed #000;
-              margin: 6px 0;
+              border-top: 3px solid #000;
+              margin: 10px 0;
               height: 0;
             }
-            .divider-thick {
-              border-top: 2px solid #000;
-              margin: 4px 0;
+            .divider-dashed {
+              border-top: 3px dashed #000;
+              margin: 10px 0;
+              height: 0;
             }
             .info-row {
               display: flex;
               justify-content: space-between;
-              font-size: 10px;
-              margin: 2px 0;
+              font-size: 12px;
+              font-weight: 700;
+              margin: 4px 0;
+              color: #000;
             }
-            .info-row span:first-child { font-weight: bold; }
-            table { width: 100%; border-collapse: collapse; }
+            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
             thead th {
-              font-size: 9px;
-              font-weight: bold;
+              font-size: 11px;
+              font-weight: 900;
               text-align: left;
-              padding: 4px 0;
-              border-bottom: 1px dashed #000;
+              padding: 8px 4px;
+              border-bottom: 3px solid #000;
+              color: #000;
+              text-transform: uppercase;
             }
             thead th:nth-child(2) { text-align: center; }
             thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
-            tbody td { vertical-align: top; }
+            tbody td { vertical-align: top; border-bottom: 1px solid #000; }
             .totals-section {
-              margin-top: 6px;
-              border-top: 1px dashed #000;
-              padding-top: 4px;
+              margin-top: 10px;
+              border-top: 3px solid #000;
+              padding-top: 8px;
             }
             .total-row {
               display: flex;
               justify-content: space-between;
-              font-size: 12px;
-              font-weight: bold;
-              padding: 4px 0;
+              font-size: 16px;
+              font-weight: 900;
+              padding: 8px 0;
+              color: #000;
             }
             .payment-row {
               display: flex;
               justify-content: space-between;
-              font-size: 10px;
-              padding: 2px 0;
+              font-size: 12px;
+              font-weight: 700;
+              padding: 4px 0;
+              color: #000;
             }
             .footer {
               text-align: center;
-              font-size: 9px;
-              margin-top: 8px;
-              padding-top: 4px;
-              border-top: 1px dashed #000;
+              font-size: 11px;
+              font-weight: 700;
+              margin-top: 12px;
+              padding-top: 10px;
+              border-top: 3px dashed #000;
+              color: #000;
             }
-            .footer p { margin: 2px 0; }
+            .footer p { margin: 4px 0; }
             .barcode {
-              font-family: 'Libre Barcode 39', 'Courier New', monospace;
-              font-size: 24px;
+              font-family: 'Courier New', monospace;
+              font-size: 22px;
+              font-weight: 900;
               text-align: center;
-              margin: 6px 0;
-            }
-            .refunded-stamp {
-              text-align: center;
-              font-size: 14px;
-              font-weight: bold;
-              color: #c00;
-              border: 2px solid #c00;
-              padding: 4px 8px;
-              margin: 6px 0;
-              transform: rotate(-5deg);
-              display: inline-block;
+              margin: 10px 0;
+              letter-spacing: 3px;
             }
             .refunded-badge {
               text-align: center;
-              background: #fee2e2;
-              color: #991b1b;
-              font-size: 10px;
-              font-weight: bold;
-              padding: 2px 6px;
-              margin: 4px 0;
+              background: #000;
+              color: #fff;
+              font-size: 14px;
+              font-weight: 900;
+              padding: 6px 16px;
+              margin: 10px 0;
+              text-transform: uppercase;
             }
             @media print {
-              body { width: 80mm; max-width: 80mm; padding: 2mm; }
+              body { width: 80mm; max-width: 80mm; padding: 4mm; }
               * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             }
           </style>
@@ -227,8 +239,8 @@ export default function EnhancedSalesPage() {
           <div class="divider"></div>
 
           <div class="info-row">
-            <span>Receipt:</span>
-            <span>#${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</span>
+            <span>Receipt #:</span>
+            <span>${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</span>
           </div>
           <div class="info-row">
             <span>Date:</span>
@@ -274,24 +286,24 @@ export default function EnhancedSalesPage() {
               <span>Change:</span>
               <span>GH₵ ${sale.change.toFixed(2)}</span>
             </div>
-            <div class="payment-row">
+            <div class="payment-row" style="margin-top: 8px;">
               <span>Method:</span>
               <span>${sale.paymentMethod}</span>
             </div>
           </div>
 
           ${isRefunded ? `
-            <div class="divider-thick"></div>
+            <div class="divider"></div>
             <div class="refunded-badge">*** REFUNDED ***</div>
           ` : ''}
 
-          <div class="divider"></div>
+          <div class="divider-dashed"></div>
 
           <div class="footer">
-            <p style="font-weight: bold; font-size: 10px;">Thank you for your patronage!</p>
+            <p style="font-size: 13px;">Thank you for your patronage!</p>
             <p>Items sold are not returnable unless defective.</p>
             <p>Keep this receipt for returns within 48 hours.</p>
-            <div class="barcode">*${sale.receiptNo || sale.id.slice(-8)}*</div>
+            <div class="barcode">${sale.receiptNo || sale.id.slice(-8)}</div>
           </div>
 
           <script>
@@ -648,6 +660,19 @@ export default function EnhancedSalesPage() {
     data: filteredSales,
     itemsPerPage: 5,
   });
+
+  // Pagination for modal items
+  const modalItemsPerPage = 5;
+  const modalTotalPages = Math.ceil((selectedSale?.items?.length || 0) / modalItemsPerPage);
+  const modalPaginatedItems = (selectedSale?.items || []).slice(
+    (modalItemsPage - 1) * modalItemsPerPage,
+    modalItemsPage * modalItemsPerPage
+  );
+
+  // Reset modal items page when sale changes
+  useEffect(() => {
+    setModalItemsPage(1);
+  }, [selectedSale?.id]);
 
   if (!mounted) return null;
 
@@ -1131,8 +1156,8 @@ export default function EnhancedSalesPage() {
                   </span>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin" style={{ maxHeight: '100%' }}>
-                  {selectedSale.items?.map((item: any) => (
+                <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin" style={{ maxHeight: 'calc(100% - 60px)' }}>
+                  {modalPaginatedItems.map((item: any) => (
                     <div key={item.id} className="p-4 rounded-2xl bg-slate-500/5 border hover:bg-slate-500/10 transition-colors flex justify-between items-center shadow-sm" style={{ borderColor: card.border }}>
                       <div className="space-y-1 min-w-0 flex-1 pr-3">
                         <p className="font-semibold text-sm truncate" style={{ color: card.text }}>
@@ -1160,6 +1185,33 @@ export default function EnhancedSalesPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Modal Items Pagination */}
+                {modalTotalPages > 1 && (
+                  <div className="pt-4 border-t flex items-center justify-between" style={{ borderColor: card.border }}>
+                    <p className="text-xs" style={{ color: card.muted }}>
+                      Page {modalItemsPage} of {modalTotalPages}
+                    </p>
+                    <div className="flex gap-2">
+                      <button 
+                        disabled={modalItemsPage === 1}
+                        onClick={() => setModalItemsPage(p => p - 1)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-30" 
+                        style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}
+                      >
+                        Previous
+                      </button>
+                      <button 
+                        disabled={modalItemsPage === modalTotalPages}
+                        onClick={() => setModalItemsPage(p => p + 1)}
+                        className="px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-30" 
+                        style={{ background: card.primary, color: '#fff' }}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Right Column: Financial summary & Actionables */}

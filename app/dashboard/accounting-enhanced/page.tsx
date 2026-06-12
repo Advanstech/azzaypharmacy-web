@@ -67,8 +67,8 @@ export default function EnhancedAccountingPage() {
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const role = user?.user_metadata?.role || me?.role;
-  const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const role = me?.role || user?.user_metadata?.role;
+  const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'ACCOUNTANT'].includes(role || '');
 
   if (!isManager && mounted) {
     return (

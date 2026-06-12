@@ -462,14 +462,14 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
             <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border" style={{ borderColor: c.border }}>
               <button 
                 onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-slate-950 shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}
+                className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}
                 title="Cards View (with Images)"
               >
                 <LayoutGrid size={16} />
               </button>
               <button 
                 onClick={() => setViewMode('list')}
-                className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-950 shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}
+                className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-blue-500 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}
                 title="List View (Compact)"
               >
                 <LayoutList size={16} />

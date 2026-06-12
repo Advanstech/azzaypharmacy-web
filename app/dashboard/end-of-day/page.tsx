@@ -43,7 +43,7 @@ export default function EndOfDayDashboardPage() {
     "Network issue with MoMo"
   ];
 
-  const role = user?.user_metadata?.role || me?.role;
+  const role = me?.role || user?.user_metadata?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   // Derived personal stats — robust multi-field matching

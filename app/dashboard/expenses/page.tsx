@@ -20,8 +20,8 @@ export default function ExpensesPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { me, expenses: storeExpenses } = useStore();
-  const role = user?.user_metadata?.role || me?.role;
-  const isManager = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const role = me?.role || user?.user_metadata?.role;
+  const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
