@@ -5,7 +5,9 @@ import { Finance3DChart } from '@/components/3d-finance-chart';
 import { TrendingUp, Users, Package, AlertTriangle, ArrowUpRight, ArrowDownRight, Activity, RefreshCw, Loader2 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useMemo, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/pharma-toast';
+import { gql, M_ASK_NEXUS_AI } from '@/lib/gql';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -25,7 +27,30 @@ const itemVariants: any = {
 export default function AdminDashboardPage() {
   const { sales, invoices, staff, products, refetchSales, refetchInvoices, refetchStaff, refetchProducts, loadingSales, loadingInvoices } = useStore();
   const { addToast } = useToast();
+  const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [insightText, setInsightText] = useState("Loading AI analytical forecast based on live database data...");
+
+  const fetchAiInsight = async () => {
+    if (insightLoading) return;
+    setInsightLoading(true);
+    try {
+      const res = await gql<{ askNexusAi: string }>(M_ASK_NEXUS_AI, {
+        prompt: "Generate a short, 2-sentence actionable insight regarding our current stock levels, expiry warnings, and forecasting for the next 30 days based on the live data provided."
+      });
+      if (res && res.askNexusAi) {
+        setInsightText(res.askNexusAi.replace(/✦ Azzay NEXUS AI \(Simulation\) ✦\n\n/, ''));
+      } else {
+        setInsightText("NEXUS AI is currently analyzing data. Check back shortly.");
+      }
+    } catch (e) {
+      console.error('AI fetch failed:', e);
+      setInsightText("AI Insight generation currently offline or unavailable. Check API keys.");
+    } finally {
+      setInsightLoading(false);
+    }
+  };
 
   // Ensure data is loaded on mount
   useEffect(() => {
@@ -34,6 +59,11 @@ export default function AdminDashboardPage() {
       if (invoices.length === 0) await refetchInvoices();
       if (staff.length === 0) await refetchStaff();
       if (products.length === 0) await refetchProducts();
+      
+      // Fetch AI insight lazily after core data is likely ready
+      setTimeout(() => {
+        fetchAiInsight();
+      }, 1500);
     };
     loadData();
   }, []);
@@ -261,16 +291,26 @@ export default function AdminDashboardPage() {
         <div className="p-8 rounded-3xl bg-gradient-to-br from-slate-900 to-slate-800 dark:from-[#0F2044] dark:to-[#1A3060] text-white shadow-xl dark:shadow-[0_8px_30px_rgb(0,0,0,0.5)] border dark:border-white/10 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-red-500/20 dark:bg-teal-500/20 rounded-full blur-3xl -mr-20 -mt-20" />
           <div className="absolute bottom-0 left-0 w-48 h-48 bg-blue-500/20 dark:bg-emerald-500/10 rounded-full blur-3xl -ml-10 -mb-10" />
-          <h3 className="text-lg font-bold mb-2 relative z-10 flex items-center gap-2">
+          <h3 className="text-lg font-bold mb-2 relative z-10 flex items-center justify-between gap-2">
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-orange-400 dark:from-teal-300 dark:to-emerald-300">
               NEXUS AI Insight
             </span>
+            <button 
+              onClick={fetchAiInsight} 
+              disabled={insightLoading}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              <RefreshCw size={14} className={insightLoading ? 'animate-spin' : ''} />
+            </button>
           </h3>
-          <p className="text-slate-300 dark:text-slate-200 text-sm mb-6 relative z-10 leading-relaxed font-medium">
-            Based on the last 30 days of sales volume and current financial trajectories, we project a 15% increase in demand for anti-malarials next month. Consider pre-ordering from ADD Pharma Limited to secure better margins.
+          <p className="text-slate-300 dark:text-slate-200 text-sm mb-6 relative z-10 leading-relaxed font-medium min-h-[60px]">
+            {insightText}
           </p>
-          <button className="relative z-10 px-6 py-2.5 bg-white dark:bg-teal-500 text-slate-900 dark:text-white font-bold rounded-xl text-sm hover:scale-105 transition-transform active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)] dark:shadow-[0_0_20px_rgba(0,191,166,0.3)]">
-            Review Forecasting
+          <button 
+            onClick={() => router.push('/dashboard/inventory')}
+            className="relative z-10 px-6 py-2.5 bg-white dark:bg-teal-500 text-slate-900 dark:text-white font-bold rounded-xl text-sm hover:scale-105 transition-transform active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.3)] dark:shadow-[0_0_20px_rgba(0,191,166,0.3)]"
+          >
+            Review Inventory Forecasting
           </button>
         </div>
       </motion.div>

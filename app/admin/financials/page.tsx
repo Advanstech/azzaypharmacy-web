@@ -21,12 +21,15 @@ export default function FinancialsPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { user } = useAuth();
-  const { sales, products, ledger, purchases, invoices, expenses, expenseCategories, createExpense, refetchLedger, refetchInvoices, me } = useStore();
+  const { sales, products, ledger, purchases, invoices, expenses, expenseCategories, createExpense, refetchLedger, refetchInvoices, refetchSales, refetchProducts, refetchExpenses, me } = useStore();
 
   useEffect(() => {
-    refetchLedger();
-    refetchInvoices();
-  }, [refetchLedger, refetchInvoices]);
+    if (ledger.length === 0) refetchLedger();
+    if (invoices.length === 0) refetchInvoices();
+    if (sales.length === 0) refetchSales();
+    if (products.length === 0) refetchProducts();
+    if (expenses.length === 0) refetchExpenses();
+  }, [refetchLedger, refetchInvoices, refetchSales, refetchProducts, refetchExpenses, ledger.length, invoices.length, sales.length, products.length, expenses.length]);
 
   const role = user?.user_metadata?.role || me?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'ACCOUNTANT'].includes(role || '');

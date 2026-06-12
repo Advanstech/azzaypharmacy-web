@@ -81,8 +81,24 @@ function POSInner() {
 
   // POS state
   const [search, setSearch] = useState('');
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('pos_cart');
+        if (saved) return JSON.parse(saved);
+      } catch(e) {}
+    }
+    return [];
+  });
+
+  // Persist cart to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('pos_cart', JSON.stringify(cart));
+    }
+  }, [cart]);
+
   const [activeCategory, setActiveCategory] = useState('All');
-  const [cart, setCart] = useState<CartItem[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [tendered, setTendered] = useState('');
   const [splitCash, setSplitCash] = useState('');
@@ -1493,8 +1509,8 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
       {/* Receipt Modal */}
       {showReceipt && completedSale && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xl bg-black/60 print:p-0 print:bg-white print:backdrop-blur-none">
-          <div id="receipt-print-area" className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 print:shadow-none print:max-w-none print:w-[80mm] print:rounded-none" 
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xl bg-black/60 print:absolute print:inset-0 print:block print:p-0 print:bg-white print:backdrop-blur-none print:h-auto print:min-h-full">
+          <div id="receipt-print-area" className="w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300 print:shadow-none print:max-w-none print:w-[80mm] print:rounded-none print:overflow-visible print:h-auto print:static" 
             style={{ background: isDark ? '#0F172A' : '#fff' }}>
             
             {/* Print Only Header (Logo) */}
@@ -1541,36 +1557,36 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
               <div className="space-y-2 max-h-56 overflow-y-auto pr-2 custom-scrollbar print:max-h-none print:overflow-visible print:h-auto print:block">
                 {completedSale.items.map((item: any) => (
-                  <div key={item.product.id} className="flex justify-between text-xs print:text-[13px] border-b border-dashed print:border-black pb-2 print:pb-3">
+                  <div key={item.product.id} className="flex justify-between text-xs print:text-[14px] print:font-bold print:leading-tight border-b border-dashed print:border-black pb-2 print:pb-3">
                     <div className="flex-1 pr-2">
                       <p className="font-bold print:font-extrabold print:text-black break-words" style={{ color: c.text }}>{item.product.name}</p>
-                      <p className="text-[9px] print:text-[11px] print:font-bold print:text-black print:opacity-100 opacity-60 mt-0.5">Qty: {item.quantity} @ GH₵ {item.product.sellingPrice.toFixed(2)}</p>
+                      <p className="text-[9px] print:text-[12px] print:font-extrabold print:text-black print:opacity-100 opacity-60 mt-0.5">Qty: {item.quantity} @ GH₵ {item.product.sellingPrice.toFixed(2)}</p>
                     </div>
-                    <span className="font-mono font-bold print:font-extrabold print:text-[14px] print:text-black ml-2 self-center">GH₵ {(item.product.sellingPrice * item.quantity).toFixed(2)}</span>
+                    <span className="font-mono font-bold print:font-extrabold print:text-[16px] print:text-black ml-2 self-center">GH₵ {(item.product.sellingPrice * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="pt-4 border-t space-y-2 print:pt-3 print:border-black">
-                <div className="flex justify-between text-xs print:text-[12px] print:font-bold print:text-black print:opacity-100 opacity-60">
+              <div className="pt-4 border-t space-y-2 print:pt-3 print:border-black print:border-t-2">
+                <div className="flex justify-between text-xs print:text-[14px] print:font-extrabold print:text-black print:opacity-100 opacity-60">
                   <span>Subtotal</span>
                   <span className="font-mono">GH₵ {completedSale.total.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-base print:text-[18px] print:font-black print:border-y-2 print:border-black print:py-2">
+                <div className="flex justify-between font-bold text-base print:text-[20px] print:font-black print:border-y-2 print:border-black print:py-2">
                   <span className="print:text-black">Grand Total</span>
                   <span className="text-primary font-mono print:text-black">GH₵ {completedSale.total.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-[10px] opacity-60">
+                <div className="flex justify-between text-[10px] print:text-[13px] print:font-bold print:text-black opacity-60">
                   <span>Method</span>
                   <span className="font-bold">{paymentMethod}</span>
                 </div>
                 {paymentMethod === 'Cash' && (
                   <>
-                    <div className="flex justify-between text-xs opacity-60">
+                    <div className="flex justify-between text-xs print:text-[13px] print:font-bold print:text-black opacity-60">
                       <span>Tendered</span>
                       <span className="font-mono">GH₵ {tenderedNum.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-xs font-bold text-green-500 print:text-black">
+                    <div className="flex justify-between text-xs print:text-[14px] print:font-extrabold text-green-500 print:text-black">
                       <span>Change Due</span>
                       <span className="font-mono">GH₵ {completedSale.change.toFixed(2)}</span>
                     </div>
@@ -1661,6 +1677,14 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
             opacity: 1 !important;
             text-shadow: none !important;
             box-shadow: none !important;
+            height: auto !important;
+            overflow: visible !important;
+          }
+          
+          /* Extra robust overrides for fixed positioning */
+          .fixed, .absolute {
+            position: relative !important;
+            transform: none !important;
           }
           
           /* Thermal print typography scaling and line spacing */

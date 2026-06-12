@@ -702,8 +702,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, [me?.branchId]);
   const refetchRefundRequests = useCallback(async () => {
     try {
-      const data = await gql<{ refundRequests: { items: RefundRequest[], totalCount: number } }>(Q_REFUND_REQUESTS);
-      setRefundRequests(data.refundRequests?.items || []);
+      const data = await gql<{ refundRequests: RefundRequest[] }>(Q_REFUND_REQUESTS);
+      setRefundRequests(data.refundRequests || []);
     } catch (err: any) {
       console.error('Failed to fetch refund requests', err);
     }

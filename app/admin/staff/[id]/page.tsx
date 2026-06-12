@@ -80,12 +80,19 @@ const STAFF: StaffMember[] = [
 // Activity Log Data
 interface Activity {
   id: string;
-  type: 'sale' | 'login' | 'logout' | 'password' | 'prescription' | 'inventory' | 'invoice' | 'shift' | 'security';
+  type: 'sale' | 'login' | 'logout' | 'password' | 'prescription' | 'inventory' | 'invoice' | 'shift' | 'security' | 'refund' | 'expense';
   description: string;
   timestamp: string;
   amount?: number;
   details?: string;
   date?: number;
+}
+
+interface StaffActivitiesResponse {
+  items: Activity[];
+  totalCount: number;
+  totalPages: number;
+  currentPage: number;
 }
 
 const ACTIVITIES: Record<string, Activity[]> = {
@@ -161,6 +168,8 @@ const ACTIVITY_ICONS = {
   invoice: Building,
   shift: Clock,
   security: Shield,
+  refund: DollarSign,
+  expense: ShoppingCart,
 };
 
 const ACTIVITY_COLORS = {
@@ -173,6 +182,8 @@ const ACTIVITY_COLORS = {
   invoice: '#14B8A6',
   shift: '#6366F1',
   security: '#EC4899',
+  refund: '#F43F5E',
+  expense: '#F59E0B',
 };
 
 function toActivityDate(timestamp: string): number {
@@ -235,6 +246,8 @@ export default function StaffDetailPage() {
   const [loadingActivities, setLoadingActivities] = useState(false);
   
   const [activityPage, setActivityPage] = useState(1);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const ITEMS_PER_PAGE = 5;
 
   const handleGeneratePassword = async () => {
@@ -304,7 +317,9 @@ export default function StaffDetailPage() {
     const fetchActivities = async () => {
       setLoadingActivities(true);
       try {
-        const data = await gql<{ staffActivities: Activity[] }>(Q_STAFF_ACTIVITIES, { userId: staffId, limit: 100 });
+        const data = await gql<{ staffActivities: any[] }>(Q_STAFF_ACTIVITIES, { 
+          userId: staffId 
+        });
         if (!cancelled) {
           setBackendActivities(
             (data.staffActivities || []).map((activity) => ({
@@ -315,7 +330,9 @@ export default function StaffDetailPage() {
         }
       } catch (err) {
         console.error('Failed to fetch staff activities', err);
-        if (!cancelled) setBackendActivities([]);
+        if (!cancelled) {
+          setBackendActivities([]);
+        }
       } finally {
         if (!cancelled) {
           setActivitiesLoaded(true);
@@ -359,16 +376,28 @@ export default function StaffDetailPage() {
   );
 
   const allActivities = useMemo(() => {
-    if (activitiesLoaded) return backendActivities;
-    return [...liveActivities, ...baseActivities].sort((a, b) => (b.date || 0) - (a.date || 0));
-  }, [activitiesLoaded, backendActivities, liveActivities, baseActivities]);
+    let list = activitiesLoaded ? backendActivities : [...liveActivities, ...baseActivities];
+    
+    // Client-side date filtering
+    if (startDate) {
+      const start = new Date(startDate).getTime();
+      list = list.filter(a => a.date && a.date >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      list = list.filter(a => a.date && a.date <= end.getTime());
+    }
+
+    return list.sort((a, b) => (b.date || 0) - (a.date || 0));
+  }, [activitiesLoaded, backendActivities, liveActivities, baseActivities, startDate, endDate]);
   
   const totalPages = Math.max(1, Math.ceil(allActivities.length / ITEMS_PER_PAGE));
   const paginatedActivities = allActivities.slice((activityPage - 1) * ITEMS_PER_PAGE, activityPage * ITEMS_PER_PAGE);
 
   useEffect(() => {
     setActivityPage(1);
-  }, [staffId]);
+  }, [staffId, startDate, endDate]);
 
   useEffect(() => {
     setActivityPage((current) => Math.min(current, totalPages));
@@ -722,14 +751,28 @@ export default function StaffDetailPage() {
         {/* Right Column - Activity Feed */}
         <div className="lg:col-span-2 space-y-4">
           <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-            <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(248,250,252,0.8)' }}>
+            <div className="p-5 border-b flex flex-col sm:flex-row sm:items-center justify-between gap-4" style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(248,250,252,0.8)' }}>
               <h3 className="font-display text-sm font-bold flex items-center gap-2" style={{ color: card.text }}>
                 <Activity size={16} style={{ color: card.primary }} />
                 Activity Log
               </h3>
-              <span className="text-xs px-2 py-1 rounded-lg" style={{ background: card.primaryBg, color: card.primary }}>
-                Today
-              </span>
+              <div className="flex items-center gap-2 text-xs">
+                <input 
+                  type="date" 
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="px-2 py-1.5 rounded-lg border focus:outline-none" 
+                  style={{ background: card.bg, borderColor: card.border, color: card.text }}
+                />
+                <span style={{ color: card.subtle }}>to</span>
+                <input 
+                  type="date" 
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="px-2 py-1.5 rounded-lg border focus:outline-none" 
+                  style={{ background: card.bg, borderColor: card.border, color: card.text }}
+                />
+              </div>
             </div>
 
             <div className="divide-y" style={{ borderColor: card.divider }}>
