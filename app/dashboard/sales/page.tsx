@@ -1307,7 +1307,19 @@ export default function EnhancedSalesPage() {
                         className="w-full p-2.5 rounded-xl text-xs outline-none resize-none focus:ring-1 focus:ring-red-500"
                         style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}
                       />
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {['Customer changed mind', 'Wrong item dispensed', 'Expired product', 'Damaged item', 'Billing error'].map(reason => (
+                          <button
+                            key={reason}
+                            onClick={() => setRefundReason(reason)}
+                            className="px-2 py-1 rounded-md text-[10px] font-medium border hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-500 transition-colors"
+                            style={{ borderColor: card.border, color: card.muted }}
+                          >
+                            {reason}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex gap-2 mt-2">
                         <button 
                           onClick={() => {
                             setShowRefundInline(false);

@@ -315,7 +315,9 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         cashAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitCash) || 0) : undefined,
         momoAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitMomo) || 0) : undefined,
         customerId: selectedCustomer?.id,
-        customerName: selectedCustomer?.name || 'Walk-in Customer',
+        customerName: (!selectedCustomer || selectedCustomer.name === 'Walk-in Customer') 
+          ? `Walk-in Customer (G-${Math.floor(1000 + Math.random() * 9000)})` 
+          : selectedCustomer.name,
         customerPhone: selectedCustomer?.phone,
         customerEmail: selectedCustomer?.email,
       });
