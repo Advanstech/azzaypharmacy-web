@@ -6,6 +6,6 @@ export function generateStaticParams() {
   ];
 }
 
-export default function InventoryDetailLayout({ children }: { children: React.ReactNode }) {
+export default function InvoiceDetailLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }

@@ -1038,7 +1038,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const deleteProduct = useCallback(async (productId: string): Promise<void> => {
     await gql(M_DELETE_PRODUCT, { productId });
     setProducts(prev => prev.filter(p => p.id !== productId));
-  }, []);
+    // Refetch all related data that may have been affected
+    await Promise.all([
+      refetchSales().catch(() => {}),
+      refetchPurchases().catch(() => {}),
+      refetchPrescriptions().catch(() => {}),
+    ]);
+  }, [refetchSales, refetchPurchases, refetchPrescriptions]);
 
   const updateProductFull = useCallback(async (productData: any): Promise<Product> => {
     const data = await gql<{ updateProduct: Product }>(M_UPDATE_PRODUCT, productData);

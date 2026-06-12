@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { 
   Search, X, Plus, Minus, CreditCard, Smartphone, Banknote, Shield, 
   CheckCircle2, Printer, User, Package, Tag, LogOut,
-  Monitor, LayoutGrid, Wifi, AlertCircle, ChevronLeft, ChevronRight,
+  Monitor, LayoutGrid, LayoutList, Wifi, AlertCircle, ChevronLeft, ChevronRight,
   Receipt, Trash2, UserPlus, BarChart2, RefreshCw, FlaskConical,
   ArrowRight, BadgeCheck, Pill, Home, ShoppingCart, Store,
   BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe
@@ -101,6 +101,7 @@ function POSInner() {
   const [previewProduct, setPreviewProduct] = useState<any>(null);
   const [previewSupplier, setPreviewSupplier] = useState<string | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Toggle layout mode
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
   // AI Drug Intelligence State
@@ -433,9 +434,9 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
             </div>
           )}
 
-          {/* Search Bar matching screenshot */}
-          <div className="px-6 pt-4 pb-2 z-20">
-            <div className="relative">
+          {/* Search Bar matching screenshot with View Switcher */}
+          <div className="px-6 pt-4 pb-2 z-20 flex gap-3 items-center">
+            <div className="relative flex-1">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: c.muted }} size={20} />
               <input 
                 type="text" 
@@ -457,12 +458,31 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                 </button>
               )}
             </div>
-            {searchResults.length > 0 && (
-              <p className="text-xs mt-2 ml-1 font-medium" style={{ color: c.muted }}>
+            {/* View Mode Toggle (Grid with Images vs List High Density) */}
+            <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border" style={{ borderColor: c.border }}>
+              <button 
+                onClick={() => setViewMode('grid')}
+                className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-slate-950 shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}
+                title="Cards View (with Images)"
+              >
+                <LayoutGrid size={16} />
+              </button>
+              <button 
+                onClick={() => setViewMode('list')}
+                className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white dark:bg-slate-950 shadow-sm text-emerald-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-white'}`}
+                title="List View (Compact)"
+              >
+                <LayoutList size={16} />
+              </button>
+            </div>
+          </div>
+          {searchResults.length > 0 && (
+            <div className="px-6">
+              <p className="text-xs font-medium" style={{ color: c.muted }}>
                 {searchResults.length} products found
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
             {/* Categories Navigation - aligned with search */}
             <div className="flex items-stretch gap-2 overflow-hidden px-6">
@@ -582,75 +602,156 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                 )}
               </div>
             ) : (
-              <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-2 lg:gap-3 px-2 pb-24 lg:pb-4">
-                {filteredProducts.map(p => (
-                  <button 
-                    key={p.id} onClick={() => addToCart(p)}
-                    disabled={p.stockQuantity === 0}
-                    className="group text-left rounded-2xl border hover:border-[#059669] transition-all shadow-sm active:scale-[0.98] overflow-hidden relative"
-                    style={{ 
-                      background: isDark ? 'rgba(15,23,42,0.86)' : '#fff',
-                      borderColor: cart.find(i => i.product.id === p.id) ? '#059669' : c.border,
-                      opacity: p.stockQuantity === 0 ? 0.5 : 1
-                    }}
-                  >
-                    <div className="flex w-full h-full p-2.5 gap-4 items-center">
-                      {/* Left: Image Container */}
-                      <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border bg-white dark:bg-slate-950" style={{ borderColor: c.border }}>
-                        <PharmaProductImage
-                          name={p.name}
-                          dosageForm={p.dosageForm}
-                          strength={p.strength}
-                          imageUrl={p.imageUrl}
-                          className="w-full h-full object-cover transition-transform group-hover:scale-110"
-                        />
-                      </div>
-                      
-                      {/* Right: Content */}
-                      <div className="flex-1 min-w-0 py-1 flex flex-col h-full justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="px-1.5 py-0.5 rounded border border-[#059669] text-[#059669] bg-transparent text-[9px] font-extrabold uppercase tracking-widest">
-                              {p.category || 'OTC'}
+              viewMode === 'grid' ? (
+                <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-2 lg:gap-3 px-2 pb-24 lg:pb-4">
+                  {filteredProducts.map(p => {
+                    const supplier = p.supplier || suppliers.find(s => s.id === p.supplierId);
+                    const inCart = cart.find(i => i.product.id === p.id);
+                    return (
+                      <button 
+                        key={p.id} onClick={() => addToCart(p)}
+                        disabled={p.stockQuantity === 0}
+                        className="group text-left rounded-2xl border hover:border-[#059669] transition-all shadow-sm active:scale-[0.98] overflow-hidden relative"
+                        style={{ 
+                          background: isDark ? 'rgba(15,23,42,0.86)' : '#fff',
+                          borderColor: inCart ? '#059669' : c.border,
+                          opacity: p.stockQuantity === 0 ? 0.5 : 1
+                        }}
+                      >
+                        <div className="flex w-full h-full p-2.5 gap-4 items-center">
+                          {/* Left: Image Container */}
+                          <div className="w-16 h-16 sm:w-24 sm:h-24 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border bg-white dark:bg-slate-950" style={{ borderColor: c.border }}>
+                            <PharmaProductImage
+                              name={p.name}
+                              dosageForm={p.dosageForm}
+                              strength={p.strength}
+                              imageUrl={p.imageUrl}
+                              className="w-full h-full object-cover transition-transform group-hover:scale-110"
+                            />
+                          </div>
+                          
+                          {/* Right: Content */}
+                          <div className="flex-1 min-w-0 py-1 flex flex-col h-full justify-between">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className="px-1.5 py-0.5 rounded border border-[#059669] text-[#059669] bg-transparent text-[9px] font-extrabold uppercase tracking-widest">
+                                  {p.category || 'OTC'}
+                                </span>
+                              </div>
+                              <h3 className="font-extrabold text-sm leading-tight truncate uppercase pr-16 hover:text-[#059669]" style={{ color: c.text }}>
+                                <span onClick={(e) => { e.stopPropagation(); setPreviewProduct(p); }} className="hover:underline cursor-pointer">{p.name}</span>
+                              </h3>
+                              {supplier && (
+                                <p className="text-[10px] truncate mt-0.5" style={{ color: c.muted }}>
+                                  Supplier: <span className="font-bold text-[#059669]">{supplier.name}</span>
+                                </p>
+                              )}
+                            </div>
+                            
+                            <div className="mt-2">
+                              <p className="font-extrabold text-base text-[#059669]">GHc{p.sellingPrice.toFixed(2)}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5 text-[#059669] font-bold text-[10px]">
+                                <Store size={12} /> {p.stockQuantity}/{p.maxStock || p.stockQuantity}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Top right tag */}
+                        <div className="absolute top-3 right-3">
+                          <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase ${p.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
+                            {p.requiresRx ? 'POM' : 'OTC'}
+                          </span>
+                        </div>
+
+                        {/* Rightmost Add Button - Positioned absolute to match design */}
+                        <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
+                          <div className="px-3 py-1.5 rounded-full bg-[#059669] text-white flex items-center gap-1 group-hover:bg-[#047857] transition-colors shadow-sm">
+                            {inCart ? (
+                              <span className="font-bold text-xs">{inCart.quantity}</span>
+                            ) : (
+                              <>
+                                <Plus size={12} />
+                                <span className="text-[10px] font-bold">ADD</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* High-Density Compact List View without Images */
+                <div className="flex flex-col gap-2 px-2 pb-24 lg:pb-4">
+                  {filteredProducts.map(p => {
+                    const supplier = p.supplier || suppliers.find(s => s.id === p.supplierId);
+                    const inCart = cart.find(i => i.product.id === p.id);
+                    return (
+                      <button 
+                        key={p.id} onClick={() => addToCart(p)}
+                        disabled={p.stockQuantity === 0}
+                        className="group text-left rounded-2xl border hover:border-[#059669] transition-all shadow-sm active:scale-[0.99] relative overflow-hidden flex items-center justify-between p-3"
+                        style={{ 
+                          background: isDark ? 'rgba(15,23,42,0.86)' : '#fff',
+                          borderColor: inCart ? '#059669' : c.border,
+                          opacity: p.stockQuantity === 0 ? 0.5 : 1
+                        }}
+                      >
+                        <div className="flex items-center gap-4 flex-1 min-w-0 pr-24">
+                          {/* Compact Badge and Code */}
+                          <div className="flex flex-col items-start gap-1 flex-shrink-0">
+                            <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase whitespace-nowrap ${p.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
+                              {p.requiresRx ? 'POM' : 'OTC'}
                             </span>
+                            <span className="text-[8px] font-mono opacity-50 uppercase tracking-widest">{p.id.slice(-6)}</span>
                           </div>
-                          <h3 className="font-extrabold text-sm leading-tight truncate uppercase pr-16 hover:text-[#059669]" style={{ color: c.text }}>
-                            <span onClick={(e) => { e.stopPropagation(); setPreviewProduct(p); }} className="hover:underline cursor-pointer">{p.name}</span>
-                          </h3>
-                        </div>
-                        
-                        <div className="mt-2">
-                          <p className="font-extrabold text-base text-[#059669]">GHc{p.sellingPrice.toFixed(2)}</p>
-                          <div className="flex items-center gap-1.5 mt-0.5 text-[#059669] font-bold text-[10px]">
-                            <Store size={12} /> {p.stockQuantity}/{p.maxStock || p.stockQuantity}
+
+                          {/* Product info details */}
+                          <div className="min-w-0">
+                            <h3 className="font-black text-sm uppercase leading-tight hover:text-[#059669] truncate" style={{ color: c.text }}>
+                              <span onClick={(e) => { e.stopPropagation(); setPreviewProduct(p); }} className="hover:underline cursor-pointer">{p.name}</span>
+                            </h3>
+                            <div className="flex items-center gap-2 text-[11px] mt-0.5 flex-wrap" style={{ color: c.muted }}>
+                              <span>{p.genericName || p.brand || 'No brand'}</span>
+                              <span>•</span>
+                              <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                                {p.stockQuantity > 0 ? 'In stock' : 'Out of stock'}
+                              </span>
+                              {supplier && (
+                                <>
+                                  <span>•</span>
+                                  <span>Supplier: <span className="font-bold text-[#059669]">{supplier.name}</span></span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
 
-                    {/* Top right tag */}
-                    <div className="absolute top-3 right-3">
-                      <span className={`text-[8px] font-black tracking-widest px-1.5 py-0.5 rounded uppercase ${p.requiresRx ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
-                        {p.requiresRx ? 'POM' : 'OTC'}
-                      </span>
-                    </div>
-
-                    {/* Rightmost Add Button - Positioned absolute to match design */}
-                    <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
-                      <div className="px-3 py-1.5 rounded-full bg-[#059669] text-white flex items-center gap-1 group-hover:bg-[#047857] transition-colors shadow-sm">
-                        {cart.find(i => i.product.id === p.id) ? (
-                          <span className="font-bold text-xs">{cart.find(i => i.product.id === p.id)?.quantity}</span>
-                        ) : (
-                          <>
-                            <Plus size={12} />
-                            <span className="text-[10px] font-bold">ADD</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                        {/* Right side alignment: Price, Stock, Add Button */}
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          <div className="text-right">
+                            <p className="font-black text-sm text-[#059669]">GHc{p.sellingPrice.toFixed(2)}</p>
+                            <p className="text-[10px] font-bold opacity-75" style={{ color: c.muted }}>
+                              Qty: <span className="font-black text-emerald-600 dark:text-emerald-400">{p.stockQuantity}</span>
+                            </p>
+                          </div>
+                          <div className="px-3 py-1.5 rounded-full bg-[#059669] text-white flex items-center gap-1 group-hover:bg-[#047857] transition-colors shadow-sm min-w-[54px] justify-center">
+                            {inCart ? (
+                              <span className="font-bold text-xs">{inCart.quantity}</span>
+                            ) : (
+                              <>
+                                <Plus size={10} />
+                                <span className="text-[9px] font-bold uppercase tracking-wider">ADD</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )
             )}
           </div>
         </div>

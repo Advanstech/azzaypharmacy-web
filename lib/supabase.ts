@@ -14,7 +14,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 function isRefreshTokenError(message?: string): boolean {
   if (!message) return false;
   const text = message.toLowerCase();
-  return text.includes('refresh token') || text.includes('jwt expired');
+  return text.includes('refresh token') || 
+         text.includes('jwt expired') ||
+         text.includes('refresh token not found') ||
+         text.includes('invalid refresh token');
 }
 
 export function clearSupabaseAuthStorage() {
@@ -50,5 +53,20 @@ export async function getSessionSafe() {
 supabase.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
     clearSupabaseAuthStorage();
+  }
+});
+
+// Global error handler for auth errors
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'INITIAL_SESSION') {
+    // Check if session retrieval failed
+    if (!session) {
+      getSessionSafe().then(({ error }) => {
+        if (error && isRefreshTokenError(error.message)) {
+          console.warn('[Supabase] Clearing stale auth tokens due to refresh error');
+          clearSupabaseAuthStorage();
+        }
+      });
+    }
   }
 });

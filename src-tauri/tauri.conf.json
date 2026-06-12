@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "msi"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,10 +41,17 @@
     "copyright": "2026 Azzay Pharmacy",
     "category": "Business",
     "shortDescription": "AI-Powered Pharmaceutical Intelligence Terminal",
+    "longDescription": "Azzay Pharmacy NEXUS - Complete offline-capable POS and inventory management system with AI-powered drug intelligence.",
     "macOS": {
       "minimumSystemVersion": "10.15",
       "signingIdentity": null,
-      "entitlements": null
+      "entitlements": null,
+      "hardenedRuntime": true
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
     },
     "android": {
       "debugApplicationIdSuffix": ".debug"
