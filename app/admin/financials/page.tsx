@@ -39,7 +39,7 @@ export default function FinancialsPage() {
   // Pagination states
   const [transactionsPage, setTransactionsPage] = useState(1);
   const [payablesPage, setPayablesPage] = useState(1);
-  const ITEMS_PER_PAGE = 15;
+  const ITEMS_PER_PAGE = 10;
 
   const liveLedger = useMemo(() => {
     const entries: any[] = [...ledger];
