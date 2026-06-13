@@ -1516,15 +1516,16 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
             style={{ background: isDark ? '#0F172A' : '#fff' }}>
             
             {/* Print Only Header (Logo) */}
-            <div className="hidden print:block text-center pt-4">
-              <h1 className="text-xl font-bold">AZZAY PHARMACY</h1>
-              <p className="text-[10px]">Quality Health, Quality Life</p>
+            <div className="hidden print:block text-center pt-4 pb-2">
+              <h1 className="text-[24px] font-black tracking-wide">AZZAY PHARMACY</h1>
+              <p className="text-[14px] font-bold">Quality Health, Quality Life</p>
+              <div className="w-full border-t-2 border-black mt-2"></div>
             </div>
 
-            <div className="p-6 text-center print:p-2" style={{ background: c.header }}>
+            <div className="p-6 text-center print:p-3 print:pb-2" style={{ background: c.header }}>
               <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center font-display font-bold text-xl mx-auto mb-3 border border-white/30 text-white print:hidden">A</div>
-              <h2 className="font-display font-bold text-white print:text-black">Azzay Pharma NEXUS</h2>
-              <p className="text-[10px] text-white/70 print:text-black">Clinical Receipt · {new Date().toLocaleString()}</p>
+              <h2 className="font-display font-bold text-white print:text-black print:text-[18px] print:font-black">Azzay Pharma NEXUS</h2>
+              <p className="text-[10px] text-white/70 print:text-black print:text-[12px] print:font-bold">Clinical Receipt · {new Date().toLocaleString()}</p>
               
               {/* Sync Status Badge */}
               {(completedSale as any)._isSynced === false && (
@@ -1539,8 +1540,8 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               )}
             </div>
 
-            <div className="p-6 space-y-4 print:p-2 print:space-y-2">
-              <div className="grid grid-cols-2 gap-2 text-[10px] print:text-[10px] print:font-bold print:text-black" style={{ color: c.muted }}>
+            <div className="p-6 space-y-4 print:p-3 print:space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-[10px] print:text-[12px] print:font-bold print:text-black" style={{ color: c.muted }}>
                 <div><span className="opacity-60 print:opacity-100">Date:</span> {new Date().toLocaleDateString()}</div>
                 <div><span className="opacity-60 print:opacity-100">Time:</span> {new Date().toLocaleTimeString()}</div>
                 <div><span className="opacity-60 print:opacity-100">Branch:</span> Dormaa Central</div>
@@ -1548,47 +1549,47 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </div>
 
               {selectedCustomer && selectedCustomer.id && (
-                <div className="p-3 rounded-xl border text-[10px]" style={{ background: isDark ? 'rgba(0,217,255,0.05)' : 'rgba(14,165,233,0.05)', borderColor: c.border }}>
+                <div className="p-3 rounded-xl border text-[10px] print:p-2 print:border-2 print:border-black" style={{ background: isDark ? 'rgba(0,217,255,0.05)' : 'rgba(14,165,233,0.05)', borderColor: c.border }}>
                   <div className="flex items-center gap-2 mb-1">
-                    <User size={12} className="text-[#00D9FF]" />
-                    <span className="font-bold">{selectedCustomer.name}</span>
-                    {selectedCustomer.phone && <span className="opacity-60">| {selectedCustomer.phone}</span>}
+                    <User size={12} className="text-[#00D9FF] print:hidden" />
+                    <span className="font-bold print:text-black print:text-[13px]">{selectedCustomer.name}</span>
+                    {selectedCustomer.phone && <span className="opacity-60 print:opacity-100 print:text-black">| {selectedCustomer.phone}</span>}
                   </div>
                 </div>
               )}
 
               <div className="space-y-2 max-h-56 overflow-y-auto pr-2 custom-scrollbar print:max-h-none print:overflow-visible print:h-auto print:block">
                 {completedSale.items.map((item: any) => (
-                  <div key={item.product.id} className="flex justify-between text-xs print:text-[14px] print:font-bold print:leading-tight border-b border-dashed print:border-black pb-2 print:pb-3">
+                  <div key={item.product.id} className="flex justify-between text-xs print:text-[15px] print:font-black print:leading-tight border-b border-dashed print:border-black print:border-b-2 pb-2 print:pb-3">
                     <div className="flex-1 pr-2">
-                      <p className="font-bold print:font-extrabold print:text-black break-words" style={{ color: c.text }}>{item.product.name}</p>
-                      <p className="text-[9px] print:text-[12px] print:font-extrabold print:text-black print:opacity-100 opacity-60 mt-0.5">Qty: {item.quantity} @ GH₵ {item.product.sellingPrice.toFixed(2)}</p>
+                      <p className="font-bold print:font-black print:text-black break-words" style={{ color: c.text }}>{item.product.name}</p>
+                      <p className="text-[9px] print:text-[13px] print:font-bold print:text-black print:opacity-100 opacity-60 mt-0.5">Qty: {item.quantity} @ GH₵ {item.product.sellingPrice.toFixed(2)}</p>
                     </div>
-                    <span className="font-mono font-bold print:font-extrabold print:text-[16px] print:text-black ml-2 self-center">GH₵ {(item.product.sellingPrice * item.quantity).toFixed(2)}</span>
+                    <span className="font-mono font-bold print:font-black print:text-[18px] print:text-black ml-2 self-center">GH₵ {(item.product.sellingPrice * item.quantity).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="pt-4 border-t space-y-2 print:pt-3 print:border-black print:border-t-2">
-                <div className="flex justify-between text-xs print:text-[14px] print:font-extrabold print:text-black print:opacity-100 opacity-60">
+              <div className="pt-4 border-t space-y-2 print:pt-4 print:border-black print:border-t-2">
+                <div className="flex justify-between text-xs print:text-[14px] print:font-bold print:text-black print:opacity-100 opacity-60">
                   <span>Subtotal</span>
                   <span className="font-mono">GH₵ {completedSale.total.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-base print:text-[20px] print:font-black print:border-y-2 print:border-black print:py-2">
+                <div className="flex justify-between font-bold text-base print:text-[22px] print:font-black print:border-y-2 print:border-black print:py-3">
                   <span className="print:text-black">Grand Total</span>
                   <span className="text-primary font-mono print:text-black">GH₵ {completedSale.total.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-[10px] print:text-[13px] print:font-bold print:text-black opacity-60">
+                <div className="flex justify-between text-[10px] print:text-[14px] print:font-bold print:text-black opacity-60">
                   <span>Method</span>
                   <span className="font-bold">{paymentMethod}</span>
                 </div>
                 {paymentMethod === 'Cash' && (
                   <>
-                    <div className="flex justify-between text-xs print:text-[13px] print:font-bold print:text-black opacity-60">
+                    <div className="flex justify-between text-xs print:text-[14px] print:font-bold print:text-black opacity-60">
                       <span>Tendered</span>
                       <span className="font-mono">GH₵ {tenderedNum.toFixed(2)}</span>
                     </div>
-                    <div className="flex justify-between text-xs print:text-[14px] print:font-extrabold text-green-500 print:text-black">
+                    <div className="flex justify-between text-xs print:text-[16px] print:font-black text-green-500 print:text-black">
                       <span>Change Due</span>
                       <span className="font-mono">GH₵ {completedSale.change.toFixed(2)}</span>
                     </div>
@@ -1609,21 +1610,23 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </div>
 
               {/* Barcode Line */}
-              <div className="pt-4 text-center print:pt-2">
-                <div className="h-8 bg-black dark:bg-white mx-auto" style={{ 
+              <div className="pt-4 text-center print:pt-3">
+                <div className="h-10 bg-black dark:bg-white mx-auto" style={{ 
                   background: `repeating-linear-gradient(90deg, ${isDark ? '#fff' : '#000'} 0px, ${isDark ? '#fff' : '#000'} 2px, transparent 2px, transparent 3px, ${isDark ? '#fff' : '#000'} 4px, ${isDark ? '#fff' : '#000'} 5px, transparent 5px, transparent 7px)`,
-                  width: '80%'
+                  width: '85%'
                 }}></div>
-                <p className="text-[9px] font-mono mt-1 opacity-60">{completedSale.id}</p>
+                <p className="text-[10px] font-mono mt-2 font-bold opacity-60 print:text-black print:text-[12px]">{completedSale.id}</p>
               </div>
 
               {/* Receipt Footer for Print */}
-              <div className="hidden print:block text-center pt-4 space-y-1">
-                <p className="text-[10px] font-bold">Thank you for your visit!</p>
-                <p className="text-[8px] opacity-60 italic">Items sold are not returnable unless defective.</p>
-                <div className="pt-2">
-                  <p className="text-[8px]">Served by: {me?.name || 'Pharmacist'}</p>
-                  <p className="text-[8px] opacity-60">AZZAY PHARMACY NEXUS</p>
+              <div className="hidden print:block text-center pt-4 space-y-2 pb-4">
+                <div className="w-full border-t-2 border-black"></div>
+                <p className="text-[14px] font-black">Thank you for your visit!</p>
+                <p className="text-[11px] font-bold italic">Items sold are not returnable unless defective.</p>
+                <div className="pt-2 space-y-1">
+                  <p className="text-[12px] font-bold">Served by: {me?.name || 'Pharmacist'}</p>
+                  <p className="text-[11px] font-bold">AZZAY PHARMACY NEXUS</p>
+                  <p className="text-[10px]">Dormaa Central, Ghana</p>
                 </div>
               </div>
 
@@ -1689,28 +1692,32 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
             transform: none !important;
           }
           
-          /* Thermal print typography scaling and line spacing */
+          /* Thermal print typography scaling and line spacing - International Pharmacy Standards */
           #receipt-print-area h1 {
-            font-size: 16px !important;
-            font-weight: bold !important;
+            font-size: 24px !important;
+            font-weight: 900 !important;
             line-height: 1.2 !important;
             margin-bottom: 2px !important;
+            letter-spacing: 0.5px !important;
           }
           #receipt-print-area h2 {
-            font-size: 13px !important;
-            font-weight: bold !important;
+            font-size: 18px !important;
+            font-weight: 900 !important;
             line-height: 1.2 !important;
             margin-bottom: 2px !important;
           }
           #receipt-print-area p, 
           #receipt-print-area span, 
           #receipt-print-area div {
-            font-size: 9px !important;
-            font-weight: 500 !important;
-            line-height: 1.3 !important;
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            line-height: 1.4 !important;
           }
           #receipt-print-area .font-bold {
-            font-weight: bold !important;
+            font-weight: 900 !important;
+          }
+          #receipt-print-area .font-black {
+            font-weight: 900 !important;
           }
           
           /* Keep items list simple and clear with high contrast dashed lines */
@@ -1719,9 +1726,9 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
           #receipt-print-area .border-dashed {
             border-color: #000 !important;
             border-style: dashed !important;
-            border-width: 1px !important;
-            border-top-width: 1px !important;
-            border-bottom-width: 1px !important;
+            border-width: 2px !important;
+            border-top-width: 2px !important;
+            border-bottom-width: 2px !important;
           }
           
           /* Hide non-printable screen items */
