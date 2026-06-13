@@ -6,15 +6,17 @@ import {
   Calendar, Clock, CheckCircle, AlertCircle, FileText, 
   Download, Printer, ArrowRight, UserCheck, BarChart3, TrendingUp,
   XCircle, Search, Filter, ShieldCheck, CheckSquare, ListTodo, ClipboardCheck, History,
-  ChevronLeft, ChevronRight, CalendarSearch
+  ChevronLeft, ChevronRight, CalendarSearch, Eye
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
 import { gql, Q_MY_SHIFT_RECONCILIATIONS, Q_ALL_SHIFT_RECONCILIATIONS } from '@/lib/gql';
+import { useRouter } from 'next/navigation';
 
 export default function EndOfDayDashboardPage() {
   const { theme, resolvedTheme } = useTheme();
   const { user } = useAuth();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { closeTerminal, todaySales, todayRevenue, todayTransactions, me, staff } = useStore();
   const [report, setReport] = useState<any>(null);
@@ -117,7 +119,7 @@ export default function EndOfDayDashboardPage() {
     } catch (e: any) {
       setReport({
         cashierName: me?.name || user?.email || 'Staff',
-        branchName: me?.branch?.name || 'Azzay Pharmacy',
+        branchName: (me?.branch?.name || '').toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch',
         totalSales: myRevenue,
         cashSales: mySales.filter(s => s.paymentMethod === 'CASH').reduce((sum, s) => sum + Number(s.totalAmount), 0),
         momoSales: mySales.filter(s => s.paymentMethod === 'MOMO').reduce((sum, s) => sum + Number(s.totalAmount), 0),
@@ -143,7 +145,7 @@ export default function EndOfDayDashboardPage() {
       return {
         id: s.id,
         cashier: s.name,
-        branch: s.branch?.name || 'Main Branch',
+        branch: s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'Branch'),
         total: sTotal,
         transactions: sSales.length,
         status: s.isOnDuty ? 'ON DUTY' : 'FINISHED',
@@ -427,10 +429,15 @@ export default function EndOfDayDashboardPage() {
                       const diff = Number(shift.discrepancy);
                       
                       return (
-                        <tr key={shift.id} className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/30" style={{ borderBottom: idx < paginatedShifts.length - 1 ? `1px solid ${c.border}` : 'none' }}>
+                        <tr 
+                          key={shift.id} 
+                          className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer" 
+                          style={{ borderBottom: idx < paginatedShifts.length - 1 ? `1px solid ${c.border}` : 'none' }}
+                          onClick={() => router.push(`/dashboard/end-of-day/${shift.id}`)}
+                        >
                           <td className="px-5 py-4">
                             <p className="text-xs font-bold" style={{ color: c.text }}>{dateText}</p>
-                            <p className="text-[10px]" style={{ color: c.muted }}>{timeText} · {shift.branch?.name}</p>
+                            <p className="text-[10px]" style={{ color: c.muted }}>{timeText} · {shift.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (shift.branch?.name ? 'Main Branch' : 'Branch')}</p>
                           </td>
                           <td className="px-5 py-4">
                             <p className="text-xs" style={{ color: c.text }}>

@@ -320,7 +320,7 @@ export default function ReportsPage() {
           ...staff.map(s => {
             const perf = staffSales[s.id] || { sales: 0, revenue: 0, items: 0 };
             return [
-              s.name, s.role, s.branch?.name || 'N/A',
+              s.name, s.role, s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'N/A'),
               s.isOnDuty ? 'On Duty' : s.isActive ? 'Active' : 'Inactive',
               String(perf.sales), perf.revenue.toFixed(2), String(perf.items),
               perf.sales > 0 ? (perf.revenue / perf.sales).toFixed(2) : '0.00',
@@ -342,7 +342,7 @@ export default function ReportsPage() {
           ['Name', 'Email', 'Role', 'Branch', 'On Duty', 'Last Seen', 'Active', 'Phone'],
           ...staff.map(s => [
             s.name, s.email, s.role,
-            s.branch?.name || 'N/A',
+            s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'N/A'),
             s.isOnDuty ? 'Yes' : 'No',
             s.lastSeen ? new Date(s.lastSeen).toLocaleString('en-GB') : 'Never',
             s.isActive ? 'Yes' : 'No',

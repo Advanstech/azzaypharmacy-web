@@ -262,7 +262,7 @@ export default function StaffIntelligencePage() {
             <thead>
               <tr style={{ background: isDark ? '#0F172A' : '#F8FAFC', borderBottom: `1px solid ${card.border}` }}>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: card.muted }}>Staff Member</th>
-                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: card.muted }}>Role & Branch</th>
+                <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider" style={{ color: card.muted }}>Branch</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-center" style={{ color: card.muted }}>On Duty</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-center" style={{ color: card.muted }}>Account Active</th>
                 <th className="px-6 py-4 text-xs font-bold uppercase tracking-wider text-center" style={{ color: card.muted }}>Actions</th>
@@ -298,20 +298,16 @@ export default function StaffIntelligencePage() {
                     </div>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex flex-col gap-1.5">
+                    {member.branch?.name ? (
                       <div className="flex items-center gap-2">
-                        <Shield size={14} style={{ color: card.muted }} />
-                        <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: card.text }}>
-                          {member.role.replace('_', ' ')}
-                        </span>
-                      </div>
-                      {member.branch?.name && (
-                        <div className="flex items-center gap-2 text-xs font-medium" style={{ color: card.muted }}>
-                          <MapPin size={12} />
-                          {member.branch.name}
+                        <div className="flex items-center gap-2 text-xs font-bold" style={{ color: card.text }}>
+                          <MapPin size={12} style={{ color: card.muted }} />
+                          {member.branch.name.toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs opacity-50" style={{ color: card.muted }}>No branch assigned</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <button 

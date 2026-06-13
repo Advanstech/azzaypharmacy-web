@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
-import { StoreProvider } from '@/lib/store';
+import { StoreProvider, useStore } from '@/lib/store';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -43,6 +43,7 @@ const adminItems = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useAuth();
+  const { me } = useStore();
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -296,7 +297,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     className="font-data text-[10px] uppercase"
                     style={{ color: isDark ? '#64748B' : '#94A3B8' }}
                   >
-                    {user.user_metadata?.role || 'Staff'}
+                    {(me?.branch?.name || '').toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}
                   </p>
                 </div>
               </div>

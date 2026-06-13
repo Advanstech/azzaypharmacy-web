@@ -113,11 +113,11 @@ function StaffSelectorModal({
                       borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
                     }}
                   >
-                    <div className="relative w-12 h-12 rounded-full overflow-hidden border-2" style={{ borderColor: getRoleColor(person.role) }}>
+                    <div className="relative w-12 h-12 rounded-full overflow-hidden border-2" style={{ borderColor: isDark ? '#00D9FF' : '#0EA5E9' }}>
                       {person.avatarUrl ? (
                         <img src={person.avatarUrl} alt={person.name} className="w-full h-full object-cover" />
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center font-bold text-lg" style={{ background: getRoleColor(person.role), color: '#fff' }}>
+                        <div className="w-full h-full flex items-center justify-center font-bold text-lg" style={{ background: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)', color: isDark ? '#00D9FF' : '#0EA5E9' }}>
                           {person.name[0]}
                         </div>
                       )}
@@ -128,8 +128,8 @@ function StaffSelectorModal({
                       <h4 className="font-bold text-sm" style={{ color: isDark ? '#F1F5F9' : '#1E293B' }}>{person.name}</h4>
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider" 
-                          style={{ background: `${getRoleColor(person.role)}20`, color: getRoleColor(person.role) }}>
-                          {person.role.replace('_', ' ')}
+                          style={{ background: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)', color: isDark ? '#00D9FF' : '#0EA5E9' }}>
+                          {person.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}
                         </span>
                         <span className="text-[11px] opacity-40" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>{person.email}</span>
                       </div>
@@ -1297,9 +1297,9 @@ export default function LoginPage() {
                     : 'Welcome to NEXUS'}
                 </h2>
                 <p className="text-sm opacity-50 mt-2">
-                  {staff.find(s => s.email === email)?.role
-                    ? staff.find(s => s.email === email)!.role.replace(/_/g, ' ')
-                    : 'Azzay Pharmacy NEXUS'}
+                  {staff.find(s => s.email === email)?.branch?.name?.toLowerCase().includes('chemical')
+                    ? 'Chemical Shop'
+                    : 'Main Branch'}
                 </p>
               </div>
               <div className="w-48 h-1 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>

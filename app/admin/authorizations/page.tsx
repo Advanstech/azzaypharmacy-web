@@ -186,7 +186,7 @@ export default function AdminAuthorizationsPage() {
                       </span>
                     </div>
                     <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                      {new Date(s.createdAt).toLocaleString()} • {s.branch?.name}
+                      {new Date(s.createdAt).toLocaleString()} • {s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'Branch')}
                     </p>
                   </div>
                 </div>

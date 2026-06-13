@@ -120,6 +120,255 @@ function POSInner() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Toggle layout mode
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
+  // Thermal Receipt Print Function
+  const handlePrintReceipt = (sale: any) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    // Optimized for 80mm thermal printer with high-contrast black & white clarity
+    const itemsHtml = sale.items.map((item: any) => {
+      const itemName = item.product?.name || 'Unknown Item';
+      const qty = item.quantity;
+      const price = item.product?.sellingPrice?.toFixed(2) || item.unitPrice?.toFixed(2) || '0.00';
+      const total = (item.product?.sellingPrice * item.quantity || item.total || (item.quantity * item.unitPrice)).toFixed(2);
+      return `
+        <tr>
+          <td style="padding: 8px 4px; font-size: 12px; font-weight: 700; color: #000; line-height: 1.3;">${itemName}</td>
+          <td style="text-align: center; padding: 8px 4px; font-size: 12px; font-weight: 600; width: 30px;">${qty}</td>
+          <td style="text-align: right; padding: 8px 4px; font-size: 12px; font-weight: 600; width: 50px;">${price}</td>
+          <td style="text-align: right; padding: 8px 4px; font-size: 12px; font-weight: 800; width: 55px;">${total}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const discountRow = sale.discountAmt > 0 ? `
+      <tr style="border-top: 2px solid #000;">
+        <td colspan="3" style="padding: 6px 4px; font-size: 12px; font-weight: 700;">Discount:</td>
+        <td style="text-align: right; padding: 6px 4px; font-size: 12px; font-weight: 800;">-${Number(sale.discountAmt).toFixed(2)}</td>
+      </tr>
+    ` : '';
+
+    const taxRow = (sale.vat > 0 || sale.nhil > 0 || sale.getfund > 0) ? `
+      <tr>
+        <td colspan="3" style="padding: 4px 4px; font-size: 11px; font-weight: 600;">Taxes:</td>
+        <td style="text-align: right; padding: 4px 4px; font-size: 11px; font-weight: 600;">${(Number(sale.vat || 0) + Number(sale.nhil || 0) + Number(sale.getfund || 0)).toFixed(2)}</td>
+      </tr>
+    ` : '';
+
+    const isRefunded = sale.status === 'REFUNDED' || sale.isRefunded;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Receipt - ${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</title>
+          <style>
+            @page { size: 80mm auto; margin: 0; }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+              font-family: 'Arial Black', 'Arial', 'Helvetica', sans-serif;
+              width: 80mm;
+              max-width: 80mm;
+              padding: 5mm;
+              font-size: 12px;
+              line-height: 1.5;
+              color: #000;
+              background: #fff;
+              -webkit-font-smoothing: none;
+            }
+            .center { text-align: center; }
+            .bold { font-weight: 900; }
+            .store-name {
+              font-size: 20px;
+              font-weight: 900;
+              text-transform: uppercase;
+              margin-bottom: 6px;
+              letter-spacing: 2px;
+              color: #000;
+            }
+            .store-info {
+              font-size: 11px;
+              font-weight: 700;
+              margin-bottom: 3px;
+              color: #000;
+            }
+            .divider {
+              border-top: 3px solid #000;
+              margin: 10px 0;
+              height: 0;
+            }
+            .divider-dashed {
+              border-top: 3px dashed #000;
+              margin: 10px 0;
+              height: 0;
+            }
+            .info-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 12px;
+              font-weight: 700;
+              margin: 4px 0;
+              color: #000;
+            }
+            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+            thead th {
+              font-size: 11px;
+              font-weight: 900;
+              text-align: left;
+              padding: 8px 4px;
+              border-bottom: 3px solid #000;
+              color: #000;
+              text-transform: uppercase;
+            }
+            thead th:nth-child(2) { text-align: center; }
+            thead th:nth-child(3), thead th:nth-child(4) { text-align: right; }
+            tbody td { vertical-align: top; border-bottom: 1px solid #000; }
+            .totals-section {
+              margin-top: 10px;
+              border-top: 3px solid #000;
+              padding-top: 8px;
+            }
+            .total-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 16px;
+              font-weight: 900;
+              padding: 8px 0;
+              color: #000;
+            }
+            .payment-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 12px;
+              font-weight: 700;
+              padding: 4px 0;
+              color: #000;
+            }
+            .footer {
+              text-align: center;
+              font-size: 11px;
+              font-weight: 700;
+              margin-top: 12px;
+              padding-top: 10px;
+              border-top: 3px dashed #000;
+              color: #000;
+            }
+            .footer p { margin: 4px 0; }
+            .barcode {
+              font-family: 'Courier New', monospace;
+              font-size: 22px;
+              font-weight: 900;
+              text-align: center;
+              margin: 10px 0;
+              letter-spacing: 3px;
+            }
+            .refunded-badge {
+              text-align: center;
+              background: #000;
+              color: #fff;
+              font-size: 14px;
+              font-weight: 900;
+              padding: 6px 16px;
+              margin: 10px 0;
+              text-transform: uppercase;
+            }
+            @media print {
+              body { width: 80mm; max-width: 80mm; padding: 4mm; }
+              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="center">
+            <div class="store-name">AZZAY PHARMACY</div>
+            <div class="store-info">Dormaa Central, Ghana</div>
+            <div class="store-info">Tel: +233 24 000 0000</div>
+            <div class="store-info">TIN: C0001234567</div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="info-row">
+            <span>Receipt #:</span>
+            <span>${sale.receiptNo || sale.id.slice(-8).toUpperCase()}</span>
+          </div>
+          <div class="info-row">
+            <span>Date:</span>
+            <span>${new Date(sale.createdAt || new Date()).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
+          <div class="info-row">
+            <span>Cashier:</span>
+            <span>${me?.name || 'Staff'}</span>
+          </div>
+          <div class="info-row">
+            <span>Customer:</span>
+            <span>${selectedCustomer?.name || 'Walk-in'}</span>
+          </div>
+
+          <div class="divider"></div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          <div class="totals-section">
+            ${discountRow}
+            ${taxRow}
+            <div class="total-row">
+              <span>TOTAL:</span>
+              <span>GH₵ ${sale.total?.toFixed(2) || sale.totalAmount?.toFixed(2) || '0.00'}</span>
+            </div>
+            <div class="payment-row">
+              <span>Amount Paid:</span>
+              <span>GH₵ ${(sale.amountPaid || sale.total || sale.totalAmount).toFixed(2)}</span>
+            </div>
+            <div class="payment-row">
+              <span>Change:</span>
+              <span>GH₵ ${sale.change?.toFixed(2) || '0.00'}</span>
+            </div>
+            <div class="payment-row" style="margin-top: 8px;">
+              <span>Method:</span>
+              <span>${paymentMethod}</span>
+            </div>
+          </div>
+
+          ${isRefunded ? `
+            <div class="divider"></div>
+            <div class="refunded-badge">*** REFUNDED ***</div>
+          ` : ''}
+
+          <div class="divider-dashed"></div>
+
+          <div class="footer">
+            <p style="font-size: 13px;">Thank you for your patronage!</p>
+            <p>Items sold are not returnable unless defective.</p>
+            <p>Keep this receipt for returns within 48 hours.</p>
+            <div class="barcode">${sale.receiptNo || sale.id.slice(-8)}</div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(() => {
+                window.print();
+                setTimeout(() => window.close(), 100);
+              }, 200);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   // AI Drug Intelligence State
   const [aiDrugTab, setAiDrugTab] = useState<'dosage' | 'safety' | 'counselling' | 'ghana'>('dosage');
   const [aiDrugData, setAiDrugData] = useState<any>(null);
@@ -416,7 +665,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               <span className="mx-2 opacity-50">•</span>
               <span className="font-light truncate max-w-[100px]">{me?.position || me?.role || 'Cashier'}</span>
               <span className="mx-2 opacity-50">•</span>
-              <span className="font-light truncate max-w-[120px]">{me?.role === 'SE_ADMIN' ? 'Main Branch' : (me?.branch?.name || 'Main Branch')}</span>
+              <span className="font-light truncate max-w-[120px]">{(me?.branch?.name || '').toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}</span>
             </div>
           </div>
 
@@ -1631,7 +1880,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </div>
 
               <div className="flex gap-3 pt-2 print:hidden">
-                <button onClick={() => window.print()} className="flex-1 py-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-2" style={{ borderColor: c.border, color: c.text }}><Printer size={16} /> Print</button>
+                <button onClick={() => handlePrintReceipt(completedSale)} className="flex-1 py-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-2" style={{ borderColor: c.border, color: c.text }}><Printer size={16} /> Print</button>
                 <button onClick={() => { setShowReceipt(false); setCompletedSale(null); setSelectedCustomer(null); setPaymentMethod('Cash'); setSplitCash(''); setSplitMomo(''); refetchProducts(); }} className="flex-[2] py-3 rounded-xl bg-primary text-white font-bold text-xs" style={{ background: c.primary }}>Next Sale</button>
               </div>
             </div>

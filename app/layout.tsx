@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/lib/auth-context";
+import { StoreProvider } from "@/lib/store";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { ToastProvider } from "@/components/pharma-toast";
@@ -40,9 +41,11 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            <ToastProvider>
-              {children}
-            </ToastProvider>
+            <StoreProvider>
+              <ToastProvider>
+                {children}
+              </ToastProvider>
+            </StoreProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

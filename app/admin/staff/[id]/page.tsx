@@ -231,7 +231,7 @@ export default function StaffDetailPage() {
   const { addToast } = useToast();
 
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', role: '', position: '', branchId: '', isActive: true });
+  const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', position: '', branchId: '', isActive: true });
   const [isSaving, setIsSaving] = useState(false);
   const [branches, setBranches] = useState<BranchOption[]>([]);
   const [loadingBranches, setLoadingBranches] = useState(false);
@@ -459,14 +459,15 @@ export default function StaffDetailPage() {
     );
   }
 
-  const roleStyle = ROLE_COLORS[staff.role] || ROLE_COLORS.CASHIER;
   const statusKey = typeof (staff as any).status === 'string'
     ? (staff as any).status
     : (staff as any).isActive
       ? 'active'
       : 'inactive';
   const statusStyle = STATUS_COLORS[statusKey] || STATUS_COLORS.active;
-  const staffBranch = typeof staff.branch === 'string' ? staff.branch : staff.branch?.name || 'Main Branch';
+  const staffBranch = typeof staff.branch === 'string' 
+    ? staff.branch 
+    : (staff.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch');
   const todaySales = allActivities.filter(a => a.type === 'sale').reduce((sum, a) => sum + (a.amount || 0), 0);
   const todayTransactions = allActivities.filter(a => a.type === 'sale').length;
 
@@ -484,8 +485,8 @@ export default function StaffDetailPage() {
         <div className="flex flex-col md:flex-row gap-6">
           {/* Avatar */}
           <div className="w-24 h-24 rounded-3xl flex items-center justify-center shrink-0"
-            style={{ background: roleStyle.bg, border: `3px solid ${roleStyle.color}40` }}>
-            <span className="font-display text-3xl font-bold" style={{ color: roleStyle.color }}>
+            style={{ background: isDark ? '#1E293B' : '#F1F5F9', border: `3px solid ${card.border}40` }}>
+            <span className="font-display text-3xl font-bold" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>
               {getInitials(staff)}
             </span>
           </div>
@@ -503,10 +504,6 @@ export default function StaffDetailPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4 text-sm" style={{ color: card.muted }}>
-              <span className="flex items-center gap-1.5">
-                <Shield size={14} style={{ color: roleStyle.color }} />
-                <span className="font-medium" style={{ color: roleStyle.color }}>{staff.role}</span>
-              </span>
               <span className="flex items-center gap-1.5">
                 <MapPin size={14} />
                 {staffBranch}
@@ -561,7 +558,6 @@ export default function StaffDetailPage() {
                   name: getFullName(staff) || '',
                   email: staff.email || '',
                   phone: (staff as any).phone || '',
-                  role: staff.role || '',
                   position: (staff as any).position || '',
                   branchId: branchIdFromStaff || matchedByName || '',
                   isActive: (staff as any).isActive !== false,
@@ -966,23 +962,6 @@ export default function StaffDetailPage() {
                   />
                 </div>
 
-                {/* Role */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
-                    <Shield size={11} /> Role
-                  </label>
-                  <select
-                    className="w-full px-4 py-2.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2"
-                    style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
-                    value={editForm.role}
-                    onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))}
-                  >
-                    {ROLES.map(r => (
-                      <option key={r} value={r}>{r.replace('_', ' ')}</option>
-                    ))}
-                  </select>
-                </div>
-
                 {/* Position */}
                 <div>
                   <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
@@ -1074,7 +1053,6 @@ export default function StaffDetailPage() {
                         name: editForm.name || undefined,
                         email: editForm.email || undefined,
                         phone: editForm.phone || undefined,
-                        role: editForm.role || undefined,
                         position: editForm.position || undefined,
                         branchId: editForm.branchId || undefined,
                         isActive: editForm.isActive,

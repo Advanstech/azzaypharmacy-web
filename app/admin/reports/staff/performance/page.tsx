@@ -56,7 +56,7 @@ export default function StaffPerformanceReportPage() {
         name: s.name,
         email: s.email,
         role: s.role,
-        branch: s.branch?.name || 'N/A',
+        branch: s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'N/A'),
         isOnDuty: s.isOnDuty,
         isActive: s.isActive,
         sales: 0,
@@ -270,7 +270,7 @@ export default function StaffPerformanceReportPage() {
                     <p className="text-sm" style={{ color: card.text }}>{member.role}</p>
                     <p className="text-xs flex items-center gap-1" style={{ color: card.subtle }}>
                       <Store size={10} />
-                      {member.branch}
+                      {member.branch?.toLowerCase?.().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}
                     </p>
                   </td>
                   <td className="px-4 py-3 text-center">
