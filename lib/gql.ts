@@ -263,7 +263,12 @@ export const Q_STAFF = `
 export const Q_STAFF_ACTIVITIES = `
   query GetStaffActivities($userId: ID!) {
     staffActivities(userId: $userId) {
-      id type description timestamp amount details source
+      items {
+        id type description timestamp amount details source
+      }
+      totalCount
+      totalPages
+      currentPage
     }
   }
 `;

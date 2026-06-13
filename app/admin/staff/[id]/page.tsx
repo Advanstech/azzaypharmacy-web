@@ -317,12 +317,12 @@ export default function StaffDetailPage() {
     const fetchActivities = async () => {
       setLoadingActivities(true);
       try {
-        const data = await gql<{ staffActivities: any[] }>(Q_STAFF_ACTIVITIES, { 
+        const data = await gql<{ staffActivities: StaffActivitiesResponse }>(Q_STAFF_ACTIVITIES, { 
           userId: staffId 
         });
         if (!cancelled) {
           setBackendActivities(
-            (data.staffActivities || []).map((activity) => ({
+            (data.staffActivities?.items || []).map((activity) => ({
               ...activity,
               date: activity.date ?? toActivityDate(activity.timestamp),
             }))
