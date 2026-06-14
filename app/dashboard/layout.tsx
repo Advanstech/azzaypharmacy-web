@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuth } from '@/lib/auth-context';
-import { StoreProvider, useStore } from '@/lib/store';
+import { useStore } from '@/lib/store';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -63,7 +63,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, []);
 
   useEffect(() => {
+    console.log(`[DASHBOARD] auth check: loading=${loading} user=${user?.email ?? 'null'}`);
     if (!loading && !user) {
+      console.warn('[DASHBOARD] No user after auth resolved — redirecting to login');
       router.push('/');
     }
   }, [user, loading, router]);
@@ -597,9 +599,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Page Content */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24">
-          <StoreProvider token={session?.access_token}>
-            <PageTransition>{children}</PageTransition>
-          </StoreProvider>
+          <PageTransition>{children}</PageTransition>
         </div>
       </main>
     </div>

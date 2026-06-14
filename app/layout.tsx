@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/lib/auth-context";
-import { StoreProvider } from "@/lib/store";
+import { RootStoreProvider } from "@/components/root-store-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ServiceWorkerRegister } from "@/components/sw-register";
 import { ToastProvider } from "@/components/pharma-toast";
@@ -28,6 +28,7 @@ export default function RootLayout({
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#00D9FF" />
 
+        <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Azzay NEXUS" />
@@ -41,11 +42,11 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <AuthProvider>
-            <StoreProvider>
+            <RootStoreProvider>
               <ToastProvider>
                 {children}
               </ToastProvider>
-            </StoreProvider>
+            </RootStoreProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

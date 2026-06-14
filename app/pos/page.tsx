@@ -11,8 +11,8 @@ import {
   ArrowRight, BadgeCheck, Pill, Home, ShoppingCart, Store,
   BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe
 } from 'lucide-react';
-import { StoreProvider, useStore } from '@/lib/store';
-import { supabase, getSessionSafe } from '@/lib/supabase';
+import { useStore } from '@/lib/store';
+
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
 import { PharmaProductImage } from '@/components/PharmaProductImage';
@@ -1996,27 +1996,5 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 }
 
 export default function POSPage() {
-  const [token, setToken] = useState<string | null>(null);
-  useEffect(() => {
-    getSessionSafe().then(({ session }) => setToken(session?.access_token ?? null));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setToken(s?.access_token ?? null));
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (!token) {
-    return (
-      <div className="w-full h-screen flex items-center justify-center bg-slate-900">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent animate-spin rounded-full" />
-          <p className="text-emerald-500 font-display font-bold animate-pulse">Authenticating NEXUS...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <StoreProvider token={token}>
-      <POSInner />
-    </StoreProvider>
-  );
+  return <POSInner />;
 }

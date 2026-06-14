@@ -761,24 +761,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     setSyncStatus('syncing');
     setError(null);
     try {
-      // Phase 1: Core data — refetchStaff also sets `me` (with branchId)
-      await Promise.all([
-        refetchProducts(),
-        refetchSuppliers(),
-        refetchSales(),
-        refetchStaff(),    // ← must complete before invoices (sets me+branchId)
-        refetchCustomers(),
-      ]);
-      // Phase 2: ERP modules that need branchId from `me`
-      await Promise.all([
-        refetchPrescriptions(),
-        refetchPurchases(),
-        refetchInvoices(),
-        refetchExpenses(),
-        refetchExpenseCategories(),
-        refetchLedger(),
-        refetchRefundRequests(),
-      ]);
+      // Phase 1a: Staff first (sets me+branchId needed by phase 2)
+      await refetchStaff();
+      // Phase 1b: Core data in small batches to stay within DB connection pool (limit: 5)
+      await Promise.all([refetchProducts(), refetchSuppliers()]);
+      await Promise.all([refetchSales(), refetchCustomers()]);
+      // Phase 2: ERP modules — batched to avoid pool exhaustion
+      await Promise.all([refetchPrescriptions(), refetchPurchases(), refetchInvoices()]);
+      await Promise.all([refetchExpenses(), refetchExpenseCategories(), refetchLedger(), refetchRefundRequests()]);
       setSyncStatus('idle');
     } catch (err) {
       console.error('[store] Sync failed:', err);
@@ -786,11 +776,19 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchRefundRequests]);
 
+  // Track previous token to only fetch on null→token transitions, not on every refresh
+  const prevTokenRef = useRef<string | null | undefined>(undefined);
+
   // Set token and fetch when it becomes available
   useEffect(() => {
     setAuthToken(token ?? null);
-    if (token) {
-      // Initialize Tauri sync (background, non-blocking)
+    const wasEmpty = !prevTokenRef.current;
+    const hasToken = !!token;
+    prevTokenRef.current = token ?? null;
+
+    if (hasToken && wasEmpty) {
+      // Only fetch on first token arrival (null→token), not on silent token refreshes
+      console.log('[store] Token acquired — initiating data sync');
       try {
         initTauriSync().catch(err => console.warn('[store] Tauri sync init failed:', err));
       } catch (err) {

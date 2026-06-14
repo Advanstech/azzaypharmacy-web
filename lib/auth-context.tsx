@@ -77,7 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Get initial session
-    getSessionSafe().then(({ session }) => {
+    getSessionSafe().then(({ session, error }) => {
+      console.log('[AUTH] Initial session:', session ? `user=${session.user.email} expires=${new Date(session.expires_at! * 1000).toISOString()}` : `null (error=${error?.message ?? 'none'})`);
       setSession(session);
       setUser(session?.user ?? null);
       setAuthToken(session?.access_token ?? null);
@@ -87,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
+        console.log(`[AUTH] onAuthStateChange: event=${_event} user=${session?.user?.email ?? 'null'} token=${session?.access_token ? 'YES' : 'MISSING'}`);
         setSession(session);
         setUser(session?.user ?? null);
         setAuthToken(session?.access_token ?? null);
