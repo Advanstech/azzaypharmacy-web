@@ -82,7 +82,7 @@ export default function RefundPage() {
     }
   };
 
-  const recentRefunds = sales.filter(s => (s as any).status === 'REFUNDED').slice(0, 10);
+  const processedRefunds = refundRequests.filter(r => r.status === 'APPROVED' || r.status === 'REJECTED').slice(0, 20);
 
   if (!mounted) return null;
 
@@ -167,16 +167,16 @@ export default function RefundPage() {
           </div>
 
           {/* Pending Requests */}
-          {refundRequests.length > 0 && (
+          {refundRequests.filter(r => r.status === 'PENDING').length > 0 && (
             <div className="rounded-[32px] border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
               <div className="p-6 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>
                 <h3 className="font-display text-sm font-bold uppercase tracking-widest" style={{ color: c.text }}>
                   {isManager ? 'Pending Authorizations' : 'Your Refund Requests'}
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">{refundRequests.length}</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">{refundRequests.filter(r => r.status === 'PENDING').length}</span>
               </div>
               <div className="divide-y" style={{ borderColor: c.border }}>
-                {refundRequests.map((r) => (
+                {refundRequests.filter(r => r.status === 'PENDING').map((r) => (
                   <div key={r.id} className="p-6 flex items-center justify-between hover:bg-white/5 transition-all">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700">
@@ -194,7 +194,7 @@ export default function RefundPage() {
                           </span>
                         </div>
                         <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
-                          GH₵ {Number(r.sale?.totalAmount || 0).toFixed(2)} {isManager ? `• Requested by <span className="text-blue-400">${r.requestedBy?.name || 'Staff'}</span>` : ''}
+                          GH₵ {Number(r.sale?.totalAmount || 0).toFixed(2)}{isManager && r.requestedBy?.name ? <> &bull; Requested by <span className="text-blue-400 normal-case">{r.requestedBy.name}</span></> : ''}
                         </p>
                         <p className="text-[10px] text-slate-500 mt-1 italic">"{r.reason}"</p>
                       </div>
@@ -232,23 +232,30 @@ export default function RefundPage() {
               <h3 className="font-display text-sm font-bold uppercase tracking-widest" style={{ color: c.text }}>Processed Refunds</h3>
             </div>
             <div className="divide-y" style={{ borderColor: c.border }}>
-              {recentRefunds.length === 0 ? (
+              {processedRefunds.length === 0 ? (
                 <div className="p-12 text-center text-sm" style={{ color: c.muted }}>No recently processed refunds</div>
               ) : (
-                recentRefunds.map((r) => (
+                processedRefunds.map((r) => (
                   <div key={r.id} className="p-4 flex items-center justify-between opacity-80">
                     <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 rounded-xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center">
-                        <RotateCcw size={18} style={{ color: c.muted }} />
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${r.status === 'APPROVED' ? 'bg-emerald-500/10' : 'bg-red-500/10'}`}>
+                        {r.status === 'APPROVED'
+                          ? <CheckCircle size={18} className="text-emerald-500" />
+                          : <XCircle size={18} className="text-red-500" />}
                       </div>
                       <div>
-                        <p className="text-xs font-bold" style={{ color: c.text }}>{r.id}</p>
-                        <p className="text-[10px] uppercase font-black tracking-widest text-emerald-500">REFUNDED · GH₵ {Number(r.totalAmount).toFixed(2)}</p>
+                        <p className="text-xs font-bold font-mono" style={{ color: c.text }}>{r.saleId}</p>
+                        <p className={`text-[10px] uppercase font-black tracking-widest ${r.status === 'APPROVED' ? 'text-emerald-500' : 'text-red-400'}`}>
+                          {r.status} · GH₵ {Number(r.sale?.totalAmount || 0).toFixed(2)}
+                        </p>
+                        <p className="text-[10px] italic text-slate-500 mt-0.5">"{r.reason}"</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold" style={{ color: c.muted }}>{new Date((r as any).refundedAt || (r as any).updatedAt || r.createdAt).toLocaleDateString()}</p>
-                      <p className="text-[10px] italic" style={{ color: c.muted }}>{(r as any).refundReason || 'No reason'}</p>
+                    <div className="text-right shrink-0">
+                      <p className="text-[10px] font-bold" style={{ color: c.muted }}>{new Date(r.createdAt).toLocaleDateString()}</p>
+                      {r.approvedBy?.name && (
+                        <p className="text-[10px]" style={{ color: c.muted }}>by <span className="text-blue-400">{r.approvedBy.name}</span></p>
+                      )}
                     </div>
                   </div>
                 ))

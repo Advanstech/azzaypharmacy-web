@@ -19,7 +19,8 @@ import {
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
   M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_CREATE_EXPENSE,
-  M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND
+  M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND,
+  Q_STOCK_TRANSFERS
 } from './gql';
 import { saveToCache, getFromCache } from './offline';
 import { initTauriSync } from './tauri-sync';
@@ -282,6 +283,36 @@ export interface LedgerEntry {
   paymentMethod?: string;
 }
 
+export interface StockTransferItem {
+  id: string;
+  quantity: number;
+  costPrice: number;
+  transferPrice: number;
+  total: number;
+  batchNo?: string;
+  expiryDate?: string;
+  product?: Product;
+}
+
+export interface StockTransfer {
+  id: string;
+  transferNo: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'RECEIVED';
+  notes?: string;
+  transferDate: string;
+  totalCost: number;
+  transferPrice: number;
+  invoiceId?: string;
+  purchaseId?: string;
+  sourceBranch?: { id: string; name: string };
+  destBranch?: { id: string; name: string };
+  initiatedBy?: { id: string; name: string; role?: string };
+  approvedBy?: { id: string; name: string; role?: string };
+  items: StockTransferItem[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StockMovement {
   id: string;
   productId: string;
@@ -323,11 +354,13 @@ interface StoreState {
   invoices: Invoice[];
   expenses: Expense[];
   ledger: LedgerEntry[];
+  stockTransfers: StockTransfer[];
   loadingPrescriptions: boolean;
   loadingPurchases: boolean;
   loadingInvoices: boolean;
   loadingExpenses: boolean;
   loadingLedger: boolean;
+  loadingTransfers: boolean;
   expenseCategories: ExpenseCategory[];
   loadingExpenseCategories: boolean;
 
@@ -352,6 +385,7 @@ interface StoreState {
   refetchExpenses: () => Promise<void>;
   refetchLedger: () => Promise<void>;
   refetchExpenseCategories: () => Promise<void>;
+  refetchTransfers: () => Promise<void>;
   refetchAll: () => Promise<void>;
 
   // Mutations
@@ -528,8 +562,22 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
   const [refundRequests, setRefundRequests] = useState<RefundRequest[]>([]);
+  const [stockTransfers, setStockTransfers] = useState<StockTransfer[]>([]);
+  const [loadingTransfers, setLoadingTransfers] = useState(false);
 
   // ── Fetchers ──────────────────────────────────────────────────────────────
+
+  const refetchTransfers = useCallback(async () => {
+    setLoadingTransfers(true);
+    try {
+      const data = await gql<{ stockTransfers: StockTransfer[] }>(Q_STOCK_TRANSFERS);
+      setStockTransfers(data.stockTransfers ?? []);
+    } catch (e: any) {
+      console.warn('[store] stockTransfers fetch failed:', e.message);
+    } finally {
+      setLoadingTransfers(false);
+    }
+  }, []);
 
   const refetchProducts = useCallback(async () => {
     setLoadingProducts(true);
@@ -1174,13 +1222,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     <StoreContext.Provider value={{
       products, suppliers, sales, staff, customers, me,
       prescriptions, purchases, invoices, expenses, expenseCategories, ledger,
+      stockTransfers, loadingTransfers,
       loadingProducts, loadingSuppliers, loadingSales, loadingStaff, loadingCustomers,
       loadingPrescriptions, loadingPurchases, loadingInvoices, loadingExpenses, loadingExpenseCategories, loadingLedger,
       error, syncStatus,
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
       refetchProducts, refetchSales, refetchStaff, refetchCustomers,
-      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchAll,
+      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchAll,
       createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, updateProductFull,
       updateProductSupplier,

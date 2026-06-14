@@ -12,7 +12,7 @@ import {
   ArrowLeft, Mail, Phone, MapPin, Calendar, Award, Briefcase, Shield,
   Clock, Activity, Package, ShoppingCart, DollarSign, UserCheck,
   FileText, BarChart3, CalendarDays, Edit2, CheckCircle2, AlertCircle,
-  X, Save, Loader2, Building, ToggleLeft, ToggleRight, Key, Trash2
+  X, Save, Loader2, Building, ToggleLeft, ToggleRight, Key, Trash2, WifiOff
 } from 'lucide-react';
 
 interface StaffMember {
@@ -503,6 +503,30 @@ export default function StaffDetailPage() {
               </span>
             </div>
 
+            <div className="flex flex-wrap items-center gap-3 mb-2">
+              {(() => {
+                const lastSeen = liveStaffMember?.lastSeen;
+                const isOnDuty = liveStaffMember?.isOnDuty ?? false;
+                const STALE_MS = 2 * 60 * 60 * 1000;
+                const effective = isOnDuty && lastSeen && (Date.now() - new Date(lastSeen).getTime() < STALE_MS);
+                const stale = isOnDuty && !effective;
+                if (effective) return (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'rgba(16,185,129,0.12)', color: '#10B981', border: '1px solid rgba(16,185,129,0.25)' }}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />On Duty
+                  </span>
+                );
+                if (stale) return (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold" style={{ background: 'rgba(245,158,11,0.10)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)' }}>
+                    <WifiOff size={11} />Session Expired
+                  </span>
+                );
+                return (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold" style={{ background: isDark ? 'rgba(51,65,85,0.4)' : 'rgba(226,232,240,0.6)', color: card.muted, border: `1px solid ${card.border}` }}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />Off Duty
+                  </span>
+                );
+              })()}
+            </div>
             <div className="flex flex-wrap items-center gap-4 text-sm" style={{ color: card.muted }}>
               <span className="flex items-center gap-1.5">
                 <MapPin size={14} />
@@ -510,7 +534,19 @@ export default function StaffDetailPage() {
               </span>
               <span className="flex items-center gap-1.5">
                 <Clock size={14} />
-                 Last active {(staff as any).lastLogin || 'N/A'}
+                {(() => {
+                  const ls = liveStaffMember?.lastSeen;
+                  if (!ls) return `Last active: ${(staff as any).lastLogin || 'N/A'}`;
+                  const diff = Date.now() - new Date(ls).getTime();
+                  const mins = Math.floor(diff / 60000);
+                  const hours = Math.floor(diff / 3600000);
+                  const days = Math.floor(diff / 86400000);
+                  if (mins < 2) return 'Active just now';
+                  if (mins < 60) return `Active ${mins}m ago`;
+                  if (hours < 24) return `Active ${hours}h ago`;
+                  if (days === 1) return 'Active yesterday';
+                  return `Active ${days}d ago`;
+                })()}
               </span>
             </div>
 

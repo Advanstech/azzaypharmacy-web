@@ -755,8 +755,10 @@ export default function LoginPage() {
         setToken('');
       } else {
         setTokenStepVisible(true);
-        setTokenSent(false);
-        setToken('');
+        // Auto-send OTP when email is valid and no cooldown active
+        if (tokenCooldown <= 0 && !tokenSent && !tokenSending) {
+          handleSendToken(cleanEmail, true);
+        }
       }
     } else {
       setTokenStepVisible(false);
@@ -768,6 +770,7 @@ export default function LoginPage() {
         setPasswordStepVisible(true);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email, loginMode]);
 
   useEffect(() => {
@@ -854,8 +857,8 @@ export default function LoginPage() {
 
         setIsSuccessTransition(true);
         setTimeout(() => {
-          router.push('/dashboard');
-        }, 800);
+          router.replace('/dashboard');
+        }, 900);
       }
     } else {
       const cleanEmail = email.trim();
@@ -887,8 +890,8 @@ export default function LoginPage() {
 
           setIsSuccessTransition(true);
           setTimeout(() => {
-            router.push('/dashboard');
-          }, 800);
+            router.replace('/dashboard');
+          }, 900);
         }
       }
     }
@@ -941,6 +944,8 @@ export default function LoginPage() {
     }
     setTokenSent(true);
     setTokenCooldown(60);
+    // Auto-focus token input after send
+    setTimeout(() => tokenRef.current?.focus(), 120);
   };
 
   const handleStaffSelect = (selectedEmail: string) => {
@@ -1102,7 +1107,11 @@ export default function LoginPage() {
                         </button>
                       </div>
                       <p className="text-[11px] mb-2" style={{ color: isDark ? '#64748B' : '#94A3B8' }}>
-                        We send your code to email and SMS (if your phone is on file).
+                        {tokenSent
+                          ? <span style={{ color: isDark ? '#34D399' : '#059669' }}>✓ Code sent to your email{selectedPhone ? ' & SMS' : ''}. Enter it below.</span>
+                          : tokenSending
+                            ? 'Sending your login code…'
+                            : 'We send your code to email and SMS (if your phone is on file).'}
                       </p>
                       <input
                         ref={tokenRef}
@@ -1186,7 +1195,10 @@ export default function LoginPage() {
                 </AnimatePresence>
               )}
 
-              <motion.button suppressHydrationWarning type="submit" disabled={!mounted || loading || tokenSending || (loginMode === 'token' && !tokenStepVisible) || (loginMode === 'password' && !passwordStepVisible)}
+              <motion.button suppressHydrationWarning type="submit"
+                disabled={!mounted || loading || tokenSending
+                  || (loginMode === 'token' && (!tokenStepVisible || !tokenSent || token.length !== 6))
+                  || (loginMode === 'password' && !passwordStepVisible)}
                 className="w-full py-3.5 rounded-xl font-bold text-sm relative overflow-hidden"
                 whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
                 style={{

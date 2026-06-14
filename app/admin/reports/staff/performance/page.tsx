@@ -33,7 +33,9 @@ export default function StaffPerformanceReportPage() {
   const { sales, staff, products } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [sortField, setSortField] = useState<'revenue' | 'sales' | 'items' | 'name'>('revenue');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Calculate staff performance metrics
   const staffPerformance = useMemo(() => {
@@ -76,28 +78,59 @@ export default function StaffPerformanceReportPage() {
       }
     });
 
-    return Object.values(performance).sort((a, b) => b.revenue - a.revenue);
+    return Object.values(performance);
   }, [sales, staff]);
 
-  // Filter staff
+  const toggleSort = (field: typeof sortField) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('desc'); }
+    setCurrentPage(1);
+  };
+
+  // Filter + sort staff
   const filteredStaff = useMemo(() => {
-    if (!searchTerm) return staffPerformance;
-    const term = searchTerm.toLowerCase();
-    return staffPerformance.filter(s => 
-      s.name.toLowerCase().includes(term) ||
-      s.email.toLowerCase().includes(term) ||
-      s.role.toLowerCase().includes(term) ||
-      s.branch.toLowerCase().includes(term)
-    );
-  }, [staffPerformance, searchTerm]);
+    let list = [...staffPerformance];
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      list = list.filter(s =>
+        s.name.toLowerCase().includes(term) ||
+        s.email.toLowerCase().includes(term) ||
+        s.role.toLowerCase().includes(term) ||
+        s.branch.toLowerCase().includes(term)
+      );
+    }
+    list.sort((a, b) => {
+      let cmp = 0;
+      if (sortField === 'revenue') cmp = a.revenue - b.revenue;
+      else if (sortField === 'sales') cmp = a.sales - b.sales;
+      else if (sortField === 'items') cmp = a.items - b.items;
+      else if (sortField === 'name') cmp = a.name.localeCompare(b.name);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return list;
+  }, [staffPerformance, searchTerm, sortField, sortDir]);
 
   // Pagination
   const totalPages = Math.ceil(filteredStaff.length / itemsPerPage);
-  const paginatedStaff = filteredStaff.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const safeCurrentPage = Math.min(currentPage, totalPages || 1);
+  const paginatedStaff = filteredStaff.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+
+  // Page number buttons (show up to 7: first, last, and surrounding current)
+  const pageNumbers = useMemo(() => {
+    if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    const pages: (number | '...')[] = [1];
+    const left = Math.max(2, safeCurrentPage - 1);
+    const right = Math.min(totalPages - 1, safeCurrentPage + 1);
+    if (left > 2) pages.push('...');
+    for (let i = left; i <= right; i++) pages.push(i);
+    if (right < totalPages - 1) pages.push('...');
+    pages.push(totalPages);
+    return pages;
+  }, [totalPages, safeCurrentPage]);
 
   // Top performers for chart
   const topPerformers = useMemo(() => {
-    const performers = staffPerformance.slice(0, 5).map(s => ({
+    const performers = [...staffPerformance].sort((a, b) => b.revenue - a.revenue).slice(0, 5).map(s => ({
       name: s.name.split(' ')[0],
       revenue: s.revenue,
       sales: s.sales,
@@ -232,16 +265,32 @@ export default function StaffPerformanceReportPage() {
       </div>
 
       {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={16} style={{ color: card.subtle }} />
-        <input 
-          type="text"
-          placeholder="Search staff by name, email, role or branch..."
-          value={searchTerm}
-          onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-          className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
-          style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
-        />
+      <div className="flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[220px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={16} style={{ color: card.subtle }} />
+          <input
+            type="text"
+            placeholder="Search staff by name, email, role or branch..."
+            value={searchTerm}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
+            style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs" style={{ color: card.muted }}>Per page:</span>
+          <select
+            value={itemsPerPage}
+            onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+            className="px-2 py-1.5 rounded-lg text-sm border outline-none"
+            style={{ background: card.bg, borderColor: card.border, color: card.text }}>
+            {[5, 10, 20, 50].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        <span className="text-xs font-bold px-3 py-1.5 rounded-lg"
+          style={{ background: card.primaryBg, color: card.primary }}>
+          {filteredStaff.length} staff
+        </span>
       </div>
 
       {/* Staff Table */}
@@ -250,13 +299,29 @@ export default function StaffPerformanceReportPage() {
           <table className="w-full">
             <thead>
               <tr style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC' }}>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Staff Member</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Role & Branch</th>
-                <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Status</th>
-                <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Sales</th>
-                <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Items</th>
-                <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>Revenue</th>
-                <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>Avg Sale</th>
+                {[
+                  { key: 'name', label: 'Staff Member', align: 'left' },
+                  { key: null, label: 'Role & Branch', align: 'left' },
+                  { key: null, label: 'Status', align: 'center' },
+                  { key: 'sales', label: 'Sales', align: 'center' },
+                  { key: 'items', label: 'Items', align: 'center' },
+                  { key: 'revenue', label: 'Revenue', align: 'right' },
+                  { key: null, label: 'Avg Sale', align: 'right' },
+                ].map(col => (
+                  <th key={col.label}
+                    className={`px-4 py-3 text-${col.align} text-xs font-bold uppercase tracking-wider select-none ${col.key ? 'cursor-pointer hover:opacity-70' : ''}`}
+                    style={{ color: col.key && sortField === col.key ? card.primary : card.subtle }}
+                    onClick={() => col.key && toggleSort(col.key as typeof sortField)}>
+                    <span className="inline-flex items-center gap-1">
+                      {col.label}
+                      {col.key && (
+                        sortField === col.key
+                          ? <span className="text-[10px]">{sortDir === 'desc' ? '↓' : '↑'}</span>
+                          : <span className="text-[10px] opacity-30">↕</span>
+                      )}
+                    </span>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -296,33 +361,48 @@ export default function StaffPerformanceReportPage() {
           </table>
         </div>
         
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: card.border }}>
-            <span className="text-xs" style={{ color: card.muted }}>
-              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredStaff.length)} of {filteredStaff.length}
-            </span>
-            <div className="flex items-center gap-2">
-              <button 
+        {/* Pagination footer — always visible */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t" style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.6)' : '#F8FAFC' }}>
+          <span className="text-xs" style={{ color: card.muted }}>
+            {filteredStaff.length === 0
+              ? 'No results'
+              : `Showing ${(safeCurrentPage - 1) * itemsPerPage + 1}–${Math.min(safeCurrentPage * itemsPerPage, filteredStaff.length)} of ${filteredStaff.length}`
+            }
+          </span>
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg transition-all disabled:opacity-50"
+                disabled={safeCurrentPage === 1}
+                className="p-1.5 rounded-lg transition-all disabled:opacity-30"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
-                <ChevronLeft size={16} style={{ color: card.text }} />
+                <ChevronLeft size={15} style={{ color: card.text }} />
               </button>
-              <span className="text-sm font-bold px-3 py-1 rounded-lg" style={{ background: card.primaryBg, color: card.primary }}>
-                {currentPage} / {totalPages}
-              </span>
-              <button 
+              {pageNumbers.map((pg, idx) =>
+                pg === '...'
+                  ? <span key={`ellipsis-${idx}`} className="px-1 text-sm" style={{ color: card.subtle }}>…</span>
+                  : <button
+                      key={pg}
+                      onClick={() => setCurrentPage(pg as number)}
+                      className="w-8 h-8 rounded-lg text-xs font-bold transition-all"
+                      style={{
+                        background: safeCurrentPage === pg ? card.primary : card.bg,
+                        color: safeCurrentPage === pg ? (isDark ? '#060B14' : '#fff') : card.text,
+                        border: `1px solid ${safeCurrentPage === pg ? card.primary : card.border}`,
+                      }}>
+                      {pg}
+                    </button>
+              )}
+              <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-2 rounded-lg transition-all disabled:opacity-50"
+                disabled={safeCurrentPage === totalPages}
+                className="p-1.5 rounded-lg transition-all disabled:opacity-30"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
-                <ChevronRight size={16} style={{ color: card.text }} />
+                <ChevronRight size={15} style={{ color: card.text }} />
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

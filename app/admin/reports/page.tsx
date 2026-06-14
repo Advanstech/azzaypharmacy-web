@@ -38,6 +38,27 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const today = new Date().toISOString().split('T')[0];
 
+  // Date range filter
+  const firstOfMonth = new Date();
+  firstOfMonth.setDate(1);
+  const [dateFrom, setDateFrom] = useState(firstOfMonth.toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState(today);
+
+  const rangeStart = useMemo(() => new Date(dateFrom + 'T00:00:00'), [dateFrom]);
+  const rangeEnd = useMemo(() => new Date(dateTo + 'T23:59:59'), [dateTo]);
+
+  const rangeSales = useMemo(() => sales.filter(s => {
+    const d = new Date(s.createdAt);
+    return d >= rangeStart && d <= rangeEnd;
+  }), [sales, rangeStart, rangeEnd]);
+
+  const rangeRevenue = useMemo(() => rangeSales.reduce((sum, s) => sum + s.totalAmount, 0), [rangeSales]);
+
+  const rangeExpenses = useMemo(() => expenses.filter(e => {
+    const d = new Date(e.date || e.createdAt);
+    return e.status === 'APPROVED' && d >= rangeStart && d <= rangeEnd;
+  }), [expenses, rangeStart, rangeEnd]);
+
   // Computed report summaries
   const todaySales = useMemo(() => sales.filter(s => new Date(s.createdAt).toISOString().split('T')[0] === today), [sales, today]);
   const todayRevenue = useMemo(() => todaySales.reduce((sum, s) => sum + s.totalAmount, 0), [todaySales]);
@@ -79,7 +100,18 @@ export default function ReportsPage() {
   
   const approvedExpenses = useMemo(() => expenses.filter(e => e.status === 'APPROVED'), [expenses]);
   const totalOperatingExpenses = useMemo(() => approvedExpenses.reduce((sum, e) => sum + Number(e.amount), 0), [approvedExpenses]);
-  
+
+  // Range-scoped financials for P&L export
+  const rangeCogs = useMemo(() => rangeSales.reduce((sum, s) => {
+    return sum + s.items.reduce((itemSum, item) => {
+      const product = products.find(p => p.id === item.product.id);
+      return itemSum + ((product ? product.costPrice : item.unitPrice * 0.5) * item.quantity);
+    }, 0);
+  }, 0), [rangeSales, products]);
+  const rangeExpenseTotal = useMemo(() => rangeExpenses.reduce((sum, e) => sum + Number(e.amount), 0), [rangeExpenses]);
+  const rangeNetProfit = rangeRevenue - rangeCogs - rangeExpenseTotal;
+  const rangeGrossProfit = rangeRevenue - rangeCogs;
+
   const netProfit = totalRevenue - totalCogs - totalOperatingExpenses;
   const grossProfit = totalRevenue - totalCogs;
   const profitMargin = totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0';
@@ -108,14 +140,14 @@ export default function ReportsPage() {
     {
       id: 'sales-daily',
       title: 'Daily Sales Report',
-      desc: `${todaySales.length} transactions · GH₵ ${todayRevenue.toFixed(2)} today`,
+      desc: `${rangeSales.length} transactions · GH₵ ${rangeRevenue.toFixed(2)} in range`,
       icon: BarChart3, color: '#0EA5E9', category: 'Sales',
       lastGenerated: today,
       detailPath: '/admin/reports/sales/daily',
       onExport: () => {
         const rows = [
-          ['Sale ID', 'Customer', 'Items', 'Payment', 'Amount', 'Profit', 'Time'],
-          ...todaySales.map(s => {
+          ['Sale ID', 'Customer', 'Items', 'Payment', 'Amount', 'Profit', 'Date & Time'],
+          ...rangeSales.map(s => {
             const saleCogs = s.items.reduce((sum, item) => {
               const product = products.find(p => p.id === item.product.id);
               const cost = product ? product.costPrice : (item.unitPrice * 0.5);
@@ -126,23 +158,23 @@ export default function ReportsPage() {
               String(s.items.length), s.paymentMethod,
               s.totalAmount.toFixed(2),
               (s.totalAmount - saleCogs).toFixed(2),
-              new Date(s.createdAt).toLocaleTimeString('en-GB'),
+              new Date(s.createdAt).toLocaleString('en-GB'),
             ];
           }),
         ];
-        downloadCSV(`daily-sales-${today}.csv`, rows);
+        downloadCSV(`sales-${dateFrom}-to-${dateTo}.csv`, rows);
       },
     },
     {
       id: 'sales-monthly',
-      title: 'Monthly Revenue Summary',
-      desc: `${monthlySales.length} transactions · GH₵ ${monthlyRevenue.toFixed(2)} this month`,
+      title: 'Revenue Summary',
+      desc: `${rangeSales.length} transactions · GH₵ ${rangeRevenue.toFixed(2)} in selected range`,
       icon: DollarSign, color: '#10B981', category: 'Sales',
       lastGenerated: today,
       detailPath: '/admin/reports/sales/monthly',
       onExport: () => {
         const byMethod: Record<string, { amount: number; count: number; cogs: number }> = {};
-        monthlySales.forEach(s => {
+        rangeSales.forEach(s => {
           const saleCogs = s.items.reduce((sum, item) => {
             const product = products.find(p => p.id === item.product.id);
             const cost = product ? product.costPrice : (item.unitPrice * 0.5);
@@ -161,19 +193,12 @@ export default function ReportsPage() {
             String(data.count),
             (data.amount / data.count).toFixed(2),
           ]),
-          ['TOTAL', monthlyRevenue.toFixed(2), 
-           monthlySales.reduce((sum, s) => sum + s.items.reduce((itemSum, item) => {
-             const product = products.find(p => p.id === item.product.id);
-             return itemSum + ((product ? product.costPrice : item.unitPrice * 0.5) * item.quantity);
-           }, 0), 0).toFixed(2),
-           (monthlyRevenue - monthlySales.reduce((sum, s) => sum + s.items.reduce((itemSum, item) => {
-             const product = products.find(p => p.id === item.product.id);
-             return itemSum + ((product ? product.costPrice : item.unitPrice * 0.5) * item.quantity);
-           }, 0), 0)).toFixed(2),
-           String(monthlySales.length),
-           monthlySales.length > 0 ? (monthlyRevenue / monthlySales.length).toFixed(2) : '0.00'],
+          ['TOTAL', rangeRevenue.toFixed(2), rangeCogs.toFixed(2),
+           rangeGrossProfit.toFixed(2),
+           String(rangeSales.length),
+           rangeSales.length > 0 ? (rangeRevenue / rangeSales.length).toFixed(2) : '0.00'],
         ];
-        downloadCSV(`monthly-revenue-${today}.csv`, rows);
+        downloadCSV(`revenue-${dateFrom}-to-${dateTo}.csv`, rows);
       },
     },
     {
@@ -356,34 +381,35 @@ export default function ReportsPage() {
     {
       id: 'financial-pl',
       title: 'Profit & Loss Statement',
-      desc: `Revenue GH₵ ${totalRevenue.toFixed(2)} · Net GH₵ ${netProfit.toFixed(2)} · Margin ${profitMargin}%`,
+      desc: `Range net: GH₵ ${rangeNetProfit.toFixed(2)} · Margin: ${rangeRevenue > 0 ? ((rangeNetProfit/rangeRevenue)*100).toFixed(1) : '0'}%`,
       icon: FileText, color: '#EC4899', category: 'Financial',
       lastGenerated: today,
       detailPath: '/admin/reports/financial/pnl',
       onExport: () => {
         const rows = [
           ['Account', 'Amount (GH₵)', 'Notes'],
-          ['TOTAL REVENUE', totalRevenue.toFixed(2), 'All sales transactions'],
+          [`REPORT PERIOD: ${dateFrom} to ${dateTo}`, '', ''],
+          ['TOTAL REVENUE', rangeRevenue.toFixed(2), `${rangeSales.length} transactions`],
           ['', '', ''],
           ['COST OF GOODS SOLD', '', ''],
-          ['  Product Costs', totalCogs.toFixed(2), 'Based on cost prices'],
-          ['GROSS PROFIT', grossProfit.toFixed(2), 'Revenue - COGS'],
-          ['GROSS MARGIN %', totalRevenue > 0 ? ((grossProfit / totalRevenue) * 100).toFixed(1) + '%' : '0%', ''],
+          ['  Product Costs', rangeCogs.toFixed(2), 'Based on cost prices'],
+          ['GROSS PROFIT', rangeGrossProfit.toFixed(2), 'Revenue - COGS'],
+          ['GROSS MARGIN %', rangeRevenue > 0 ? ((rangeGrossProfit / rangeRevenue) * 100).toFixed(1) + '%' : '0%', ''],
           ['', '', ''],
           ['OPERATING EXPENSES', '', ''],
-          ...approvedExpenses.map(e => [`  ${e.category || 'Other'}`, Number(e.amount).toFixed(2), e.description || '']),
-          ['  TOTAL EXPENSES', totalOperatingExpenses.toFixed(2), ''],
+          ...rangeExpenses.map(e => [`  ${e.category?.name || e.category || 'Other'}`, Number(e.amount).toFixed(2), e.description || '']),
+          ['  TOTAL EXPENSES', rangeExpenseTotal.toFixed(2), ''],
           ['', '', ''],
-          ['NET PROFIT', netProfit.toFixed(2), 'Gross Profit - Expenses'],
-          ['NET MARGIN %', totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) + '%' : '0%', ''],
+          ['NET PROFIT', rangeNetProfit.toFixed(2), 'Gross Profit - Expenses'],
+          ['NET MARGIN %', rangeRevenue > 0 ? ((rangeNetProfit / rangeRevenue) * 100).toFixed(1) + '%' : '0%', ''],
         ];
-        downloadCSV(`profit-loss-${today}.csv`, rows);
+        downloadCSV(`profit-loss-${dateFrom}-to-${dateTo}.csv`, rows);
       },
     },
     {
       id: 'financial-expenses',
       title: 'Expense Report',
-      desc: `${approvedExpenses.length} expenses · GH₵ ${totalOperatingExpenses.toFixed(2)} total`,
+      desc: `${rangeExpenses.length} expenses · GH₵ ${rangeExpenseTotal.toFixed(2)} in range`,
       icon: Receipt, color: '#F97316', category: 'Financial',
       lastGenerated: today,
       detailPath: '/admin/reports/financial/expenses',
@@ -395,19 +421,19 @@ export default function ReportsPage() {
         });
         const rows = [
           ['Date', 'Category', 'Amount', 'Description', 'Status'],
-          ...approvedExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(e => [
-            new Date(e.createdAt).toLocaleDateString('en-GB'),
-            String(e.category || 'Uncategorized'),
+          ...rangeExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(e => [
+            new Date(e.date || e.createdAt).toLocaleDateString('en-GB'),
+            String(e.category?.name || e.category || 'Uncategorized'),
             Number(e.amount).toFixed(2),
             String(e.description || ''),
             String(e.status),
           ]),
           ['', '', '', '', ''],
           ['CATEGORY SUMMARY', '', '', '', ''],
-          ...Object.entries(byCategory).map(([cat, amount]) => ['', String(cat), amount.toFixed(2), '', '']),
-          ['', 'TOTAL', totalOperatingExpenses.toFixed(2), '', ''],
+          ...Object.entries(byCategory).map(([cat, amount]) => ['', String(cat), (amount as number).toFixed(2), '', '']),
+          ['', 'TOTAL', rangeExpenseTotal.toFixed(2), '', ''],
         ];
-        downloadCSV(`expense-report-${today}.csv`, rows);
+        downloadCSV(`expense-report-${dateFrom}-to-${dateTo}.csv`, rows);
       },
     },
     // CUSTOMER REPORTS
@@ -522,23 +548,65 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Reports</h1>
-          <p className="text-sm" style={{ color: card.muted }}>Live data — export any report as CSV instantly.</p>
+      {/* Header */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div>
+            <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Reports</h1>
+            <p className="text-sm" style={{ color: card.muted }}>Live data — export any report as CSV instantly.</p>
+          </div>
+          {/* Live summary strip */}
+          <div className="flex items-center gap-3 flex-wrap">
+            {[
+              { label: 'Today Revenue', value: `GH₵ ${todaySales.reduce((s, x) => s + x.totalAmount, 0).toFixed(2)}`, color: '#10B981' },
+              { label: 'Low Stock', value: String(lowStock.length), color: '#F59E0B' },
+              { label: 'Staff On Duty', value: String(staff.filter(s => s.isOnDuty).length), color: '#0EA5E9' },
+            ].map(k => (
+              <div key={k.label} className="px-3 py-1.5 rounded-xl text-xs font-bold"
+                style={{ background: `${k.color}15`, color: k.color, border: `1px solid ${k.color}30` }}>
+                {k.label}: {k.value}
+              </div>
+            ))}
+          </div>
         </div>
-        {/* Live summary strip */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {[
-            { label: 'Today Revenue', value: `GH₵ ${todaySales.reduce((s, x) => s + x.totalAmount, 0).toFixed(2)}`, color: '#10B981' },
-            { label: 'Low Stock', value: String(lowStock.length), color: '#F59E0B' },
-            { label: 'Staff On Duty', value: String(staff.filter(s => s.isOnDuty).length), color: '#0EA5E9' },
-          ].map(k => (
-            <div key={k.label} className="px-3 py-1.5 rounded-xl text-xs font-bold"
-              style={{ background: `${k.color}15`, color: k.color, border: `1px solid ${k.color}30` }}>
-              {k.label}: {k.value}
-            </div>
-          ))}
+
+        {/* Date Range Filter */}
+        <div className="flex flex-wrap items-center gap-3 p-4 rounded-2xl border" style={{ background: card.bg, borderColor: card.border }}>
+          <Calendar size={16} style={{ color: card.primary }} />
+          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: card.muted }}>Date Range</span>
+          <div className="flex items-center gap-2">
+            <label className="text-xs" style={{ color: card.muted }}>From</label>
+            <input
+              type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none"
+              style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs" style={{ color: card.muted }}>To</label>
+            <input
+              type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none"
+              style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
+            />
+          </div>
+          <div className="flex gap-1.5 ml-auto flex-wrap">
+            {[
+              { label: 'Today', fn: () => { setDateFrom(today); setDateTo(today); } },
+              { label: 'This Week', fn: () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); setDateFrom(d.toISOString().split('T')[0]); setDateTo(today); } },
+              { label: 'This Month', fn: () => { const d = new Date(); d.setDate(1); setDateFrom(d.toISOString().split('T')[0]); setDateTo(today); } },
+              { label: 'Last 3M', fn: () => { const d = new Date(); d.setMonth(d.getMonth() - 3); setDateFrom(d.toISOString().split('T')[0]); setDateTo(today); } },
+            ].map(q => (
+              <button key={q.label} onClick={q.fn}
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
+                style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+                {q.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs font-bold" style={{ color: '#10B981' }}>
+            {rangeSales.length} sales · GH₵ {rangeRevenue.toFixed(2)}
+          </div>
         </div>
       </div>
 

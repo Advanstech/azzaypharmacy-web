@@ -46,8 +46,14 @@ function normalizeOtpError(message: string): string {
   if (lower.includes('rate limit')) {
     return 'Email rate limit exceeded. Please wait about 60 seconds and try again.';
   }
+  if (lower.includes('otp expired') || lower.includes('token has expired') || lower.includes('invalid otp')) {
+    return 'Token has expired or is invalid. Please request a new code and try again.';
+  }
   if (lower.includes('invalid login credentials')) {
-    return 'Account credentials are invalid. Please use password login or reset your password.';
+    return 'Invalid or expired token. Please request a new code and try again.';
+  }
+  if (lower.includes('user not found') || lower.includes('no user')) {
+    return 'No account found with this email. Contact your manager.';
   }
   return message;
 }
@@ -199,8 +205,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const cleanEmail = email.trim();
       const cleanPhone = phone?.trim();
 
-      await gql<{ guardLoginTokenVerify: boolean }>(M_GUARD_LOGIN_TOKEN_VERIFY, {
+      // Rate-limit / lock check — non-blocking: if this call fails (network, etc), still attempt verify
+      gql<{ guardLoginTokenVerify: boolean }>(M_GUARD_LOGIN_TOKEN_VERIFY, {
         email: cleanEmail,
+      }).catch((err) => {
+        if (DEBUG_AUTH) console.warn('[AUTH][OTP] guardLoginTokenVerify call failed (non-blocking):', err?.message);
       });
 
       if (DEBUG_AUTH) {
@@ -211,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
 
+      // Try email OTP first
       const { data: emailData, error: emailError } = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token,
@@ -222,18 +232,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: maskEmail(cleanEmail),
           ok: !emailError,
           error: emailError?.message ?? null,
+          hasSession: !!emailData?.session,
         });
       }
 
-      if (!emailError) {
-        await gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
+      if (!emailError && emailData?.session) {
+        // Explicitly hydrate auth state so the session is ready before redirect
+        setSession(emailData.session);
+        setUser(emailData.session.user);
+        setAuthToken(emailData.session.access_token);
+
+        gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
           email: cleanEmail,
           success: true,
           reason: null,
-        });
+        }).catch(() => null);
         return { data: emailData, error: null };
       }
 
+      // Fall back to SMS OTP if phone is available
       if (cleanPhone) {
         const { data: smsData, error: smsError } = await supabase.auth.verifyOtp({
           phone: cleanPhone,
@@ -245,35 +262,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log('[AUTH][OTP] Verify SMS response', {
             phone: maskPhone(cleanPhone),
             ok: !smsError,
+            hasSession: !!smsData?.session,
             error: smsError?.message ?? null,
           });
         }
 
-        if (!smsError) {
-          await gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
+        if (!smsError && smsData?.session) {
+          setSession(smsData.session);
+          setUser(smsData.session.user);
+          setAuthToken(smsData.session.access_token);
+
+          gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
             email: cleanEmail,
             success: true,
             reason: null,
-          });
+          }).catch(() => null);
           return { data: smsData, error: null };
         }
 
-        await gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
+        // Both failed
+        const failReason = smsError?.message || emailError?.message || 'Unknown';
+        gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
           email: cleanEmail,
           success: false,
-          reason: smsError.message,
+          reason: failReason,
         }).catch(() => null);
 
-        return { error: normalizeOtpError(smsError.message) };
+        return { error: normalizeOtpError(smsError?.message || emailError?.message || 'Token verification failed') };
       }
 
-      await gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
+      // Email-only failure
+      const failReason = emailError?.message || 'Unknown';
+      gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
         email: cleanEmail,
         success: false,
-        reason: emailError.message,
+        reason: failReason,
       }).catch(() => null);
 
-      return { error: normalizeOtpError(emailError.message) };
+      return { error: normalizeOtpError(emailError?.message || 'Token verification failed') };
     } catch (error: any) {
       if (DEBUG_AUTH) {
         console.error('[AUTH][OTP] Verify crashed', {

@@ -958,3 +958,66 @@ export const Q_NOTIFICATION_STATS = `
     }
   }
 `;
+
+// ─── Inter-Branch Stock Transfers ────────────────────────────────────────────
+
+export const Q_STOCK_TRANSFERS = `
+  query GetStockTransfers($branchId: String) {
+    stockTransfers(branchId: $branchId) {
+      id transferNo status notes transferDate totalCost transferPrice invoiceId purchaseId
+      createdAt updatedAt
+      sourceBranch { id name }
+      destBranch   { id name }
+      initiatedBy  { id name role }
+      approvedBy   { id name role }
+      items {
+        id quantity costPrice transferPrice total batchNo expiryDate
+        product { id name genericName brand category strength dosageForm sellingPrice costPrice stockQuantity imageUrl }
+      }
+    }
+  }
+`;
+
+export const M_INITIATE_TRANSFER = `
+  mutation InitiateTransfer(
+    $sourceBranchId: String!
+    $destBranchId: String!
+    $items: [TransferItemInput!]!
+    $notes: String
+  ) {
+    initiateTransfer(sourceBranchId: $sourceBranchId, destBranchId: $destBranchId, items: $items, notes: $notes) {
+      id transferNo status totalCost transferPrice createdAt
+      sourceBranch { id name }
+      destBranch   { id name }
+      items {
+        id quantity costPrice transferPrice total batchNo
+        product { id name stockQuantity }
+      }
+    }
+  }
+`;
+
+export const M_APPROVE_TRANSFER = `
+  mutation ApproveTransfer($transferId: ID!) {
+    approveTransfer(transferId: $transferId) {
+      id transferNo status invoiceId purchaseId updatedAt
+      approvedBy { id name }
+    }
+  }
+`;
+
+export const M_REJECT_TRANSFER = `
+  mutation RejectTransfer($transferId: ID!, $reason: String) {
+    rejectTransfer(transferId: $transferId, reason: $reason) {
+      id transferNo status updatedAt
+      approvedBy { id name }
+    }
+  }
+`;
+
+export const M_DELETE_TRANSFER = `
+  mutation DeleteTransfer($transferId: ID!) {
+    deleteTransfer(transferId: $transferId)
+  }
+`;
+

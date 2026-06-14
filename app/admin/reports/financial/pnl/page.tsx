@@ -30,13 +30,39 @@ export default function ProfitLossReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, products, expenses } = useStore();
+  const { sales, products, expenses, refetchSales, refetchExpenses } = useStore();
+
+  // Ensure data is loaded
+  useEffect(() => {
+    if (sales.length === 0) refetchSales();
+    if (expenses.length === 0) refetchExpenses();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Date range filter
+  const today = new Date();
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+  const [dateFrom, setDateFrom] = useState(firstOfMonth);
+  const [dateTo, setDateTo] = useState(today.toISOString().split('T')[0]);
 
   // Calculate all financial metrics
   const metrics = useMemo(() => {
-    const totalRevenue = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const from = dateFrom ? new Date(dateFrom).getTime() : 0;
+    const to = dateTo ? new Date(dateTo + 'T23:59:59').getTime() : Infinity;
+
+    const filteredSales = sales.filter(s => {
+      const t = new Date(s.createdAt).getTime();
+      return t >= from && t <= to;
+    });
+
+    const filteredExpenses = expenses.filter(e => {
+      const t = new Date(e.date || e.createdAt).getTime();
+      return t >= from && t <= to;
+    });
+
+    const totalRevenue = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
     
-    const totalCogs = sales.reduce((sum, s) => {
+    const totalCogs = filteredSales.reduce((sum, s) => {
       return sum + s.items.reduce((itemSum, item) => {
         const product = products.find(p => p.id === item.product.id);
         return itemSum + ((product ? product.costPrice : item.unitPrice * 0.5) * item.quantity);
@@ -46,32 +72,35 @@ export default function ProfitLossReportPage() {
     const grossProfit = totalRevenue - totalCogs;
     const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
-    const approvedExpenses = expenses.filter(e => e.status === 'APPROVED');
+    const approvedExpenses = filteredExpenses.filter(e => e.status === 'APPROVED');
     const totalOperatingExpenses = approvedExpenses.reduce((sum, e) => sum + Number(e.amount), 0);
     
     const netProfit = grossProfit - totalOperatingExpenses;
     const netMargin = totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0;
 
     // Breakdown by category
-    const expensesByCategory: Record<string, number> = {};
+    const expensesByCategory: Record<string, { amount: number; count: number }> = {};
     approvedExpenses.forEach(e => {
-      const cat = String(e.category || 'Uncategorized');
-      expensesByCategory[cat] = (expensesByCategory[cat] || 0) + Number(e.amount);
+      const cat = e.category?.name || 'Uncategorized';
+      if (!expensesByCategory[cat]) expensesByCategory[cat] = { amount: 0, count: 0 };
+      expensesByCategory[cat].amount += Number(e.amount);
+      expensesByCategory[cat].count += 1;
     });
 
     return {
       totalRevenue, totalCogs, grossProfit, grossMargin,
       totalOperatingExpenses, netProfit, netMargin,
       approvedExpenses, expensesByCategory,
-      totalTransactions: sales.length,
-      avgTransaction: sales.length > 0 ? totalRevenue / sales.length : 0,
+      totalTransactions: filteredSales.length,
+      avgTransaction: filteredSales.length > 0 ? totalRevenue / filteredSales.length : 0,
     };
-  }, [sales, products, expenses]);
+  }, [sales, products, expenses, dateFrom, dateTo]);
 
   const handleExport = () => {
     const rows = [
       ['PROFIT & LOSS STATEMENT'],
       ['Generated:', new Date().toLocaleString('en-GB')],
+      ['Period:', `${dateFrom} to ${dateTo}`],
       [''],
       ['REVENUE'],
       ['Total Revenue', metrics.totalRevenue.toFixed(2), `${metrics.totalTransactions} transactions`],
@@ -85,8 +114,8 @@ export default function ProfitLossReportPage() {
       ['Gross Margin %', `${metrics.grossMargin.toFixed(1)}%`],
       [''],
       ['OPERATING EXPENSES'],
-      ...Object.entries(metrics.expensesByCategory).map(([cat, amount]) => [
-        cat, `-${amount.toFixed(2)}`
+      ...Object.entries(metrics.expensesByCategory).map(([cat, { amount, count }]) => [
+        cat, `-${amount.toFixed(2)}`, `${count} item(s)`
       ]),
       ['Total Operating Expenses', `-${metrics.totalOperatingExpenses.toFixed(2)}`],
       [''],
@@ -135,6 +164,29 @@ export default function ProfitLossReportPage() {
           <Download size={16} />
           Export CSV
         </button>
+      </div>
+
+      {/* Date Range Filter */}
+      <div className="flex flex-wrap items-center gap-3 p-4 rounded-xl border" style={{ background: card.bg, borderColor: card.border }}>
+        <span className="text-xs font-bold uppercase tracking-wider" style={{ color: card.muted }}>Period:</span>
+        <div className="flex items-center gap-2">
+          <label className="text-xs" style={{ color: card.muted }}>From</label>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="px-3 py-1.5 rounded-lg text-sm border outline-none"
+            style={{ background: card.bg, borderColor: card.border, color: card.text }} />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs" style={{ color: card.muted }}>To</label>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="px-3 py-1.5 rounded-lg text-sm border outline-none"
+            style={{ background: card.bg, borderColor: card.border, color: card.text }} />
+        </div>
+        <button onClick={() => { setDateFrom(''); setDateTo(''); }}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold"
+          style={{ background: card.primaryBg, color: card.primary }}>All Time</button>
+        <button onClick={() => { setDateFrom(firstOfMonth); setDateTo(today.toISOString().split('T')[0]); }}
+          className="px-3 py-1.5 rounded-lg text-xs font-bold"
+          style={{ background: card.primaryBg, color: card.primary }}>This Month</button>
       </div>
 
       {/* Summary Cards */}
@@ -215,9 +267,9 @@ export default function ProfitLossReportPage() {
               Operating Expenses
             </h4>
             <div className="space-y-2 pl-4">
-              {Object.entries(metrics.expensesByCategory).sort((a, b) => b[1] - a[1]).map(([cat, amount]) => (
+              {Object.entries(metrics.expensesByCategory).sort((a, b) => b[1].amount - a[1].amount).map(([cat, { amount, count }]) => (
                 <div key={cat} className="flex justify-between text-sm">
-                  <span style={{ color: card.text }}>{cat}</span>
+                  <span style={{ color: card.text }}>{cat} <span className="text-[10px]" style={{ color: card.subtle }}>({count})</span></span>
                   <span className="font-mono" style={{ color: card.danger }}>-GH₵ {amount.toFixed(2)}</span>
                 </div>
               ))}

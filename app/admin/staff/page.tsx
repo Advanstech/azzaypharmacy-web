@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Users, TrendingUp, Target, Activity, Shield, Phone, MapPin, 
-  Mail, Award, CheckCircle, XCircle, Plus, X, Key, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, ChevronRight, Trash2
+  Mail, Award, CheckCircle, XCircle, Plus, X, Key, Eye, EyeOff, Loader2, AlertCircle, ChevronLeft, ChevronRight, Trash2, Clock, WifiOff
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { useState, useMemo, useEffect } from 'react';
@@ -75,36 +75,38 @@ export default function StaffIntelligencePage() {
   }, [staff, currentPage]);
 
   const activeStaffCount = useMemo(() => staff.filter(s => s.isActive).length, [staff]);
+  const onDutyCount = useMemo(() => staff.filter(s => {
+    if (!s.isOnDuty || !s.lastSeen) return false;
+    return Date.now() - new Date(s.lastSeen).getTime() < 2 * 60 * 60 * 1000;
+  }).length, [staff]);
 
-  const { topPerformer, topPerformerRevenue, totalRevenue, totalTransactions } = useMemo(() => {
+  const { topPerformer, topPerformerRevenue, totalRevenue, totalTransactions, staffLeaderboard } = useMemo(() => {
     let revenue = 0;
-    const staffSales: Record<string, { name: string; revenue: number; txCount: number }> = {};
+    const staffSales: Record<string, { id: string; name: string; revenue: number; txCount: number }> = {};
 
     sales.forEach(sale => {
       revenue += sale.totalAmount;
       if (sale.user?.id) {
         if (!staffSales[sale.user.id]) {
-          staffSales[sale.user.id] = { name: sale.user.name, revenue: 0, txCount: 0 };
+          staffSales[sale.user.id] = { id: sale.user.id, name: sale.user.name, revenue: 0, txCount: 0 };
         }
         staffSales[sale.user.id].revenue += sale.totalAmount;
         staffSales[sale.user.id].txCount += 1;
       }
     });
 
-    let topName = 'N/A';
-    let maxRev = 0;
-    Object.values(staffSales).forEach(s => {
-      if (s.revenue > maxRev) {
-        maxRev = s.revenue;
-        topName = s.name;
-      }
-    });
+    const leaderboard = Object.values(staffSales)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10);
+
+    const top = leaderboard[0];
 
     return {
-      topPerformer: topName,
-      topPerformerRevenue: maxRev,
+      topPerformer: top?.name || 'N/A',
+      topPerformerRevenue: top?.revenue || 0,
       totalRevenue: revenue,
-      totalTransactions: sales.length
+      totalTransactions: sales.length,
+      staffLeaderboard: leaderboard,
     };
   }, [sales]);
 
@@ -193,6 +195,30 @@ export default function StaffIntelligencePage() {
     inputBg: isDark ? '#1E293B' : '#F8FAFC',
   };
 
+  // Effective duty: isOnDuty must be true AND lastSeen within 2 hours
+  const STALE_MS = 2 * 60 * 60 * 1000;
+  const isEffectivelyOnDuty = (member: StaffMember) => {
+    if (!member.isOnDuty) return false;
+    if (!member.lastSeen) return false;
+    return Date.now() - new Date(member.lastSeen).getTime() < STALE_MS;
+  };
+
+  const formatLastSeen = (lastSeen?: string): { label: string; isRecent: boolean; isToday: boolean } => {
+    if (!lastSeen) return { label: 'Never', isRecent: false, isToday: false };
+    const diff = Date.now() - new Date(lastSeen).getTime();
+    const mins = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    const isRecent = diff < STALE_MS;
+    const isToday = diff < 24 * 3600000;
+    if (mins < 2) return { label: 'Just now', isRecent: true, isToday: true };
+    if (mins < 60) return { label: `${mins}m ago`, isRecent: true, isToday: true };
+    if (hours < 2) return { label: `${hours}h ago`, isRecent: true, isToday: true };
+    if (isToday) return { label: `${hours}h ago`, isRecent: false, isToday: true };
+    if (days === 1) return { label: 'Yesterday', isRecent: false, isToday: false };
+    return { label: `${days}d ago`, isRecent: false, isToday: false };
+  };
+
   if (!mounted) return null;
 
   return (
@@ -224,6 +250,10 @@ export default function StaffIntelligencePage() {
           </div>
           <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Active Staff</p>
           <p className="text-3xl font-display font-black" style={{ color: card.text }}>{activeStaffCount}</p>
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-xs font-bold text-emerald-500">{onDutyCount} on duty now</span>
+          </div>
         </motion.div>
         
         <motion.div whileHover={{ y: -4 }} className="p-6 rounded-3xl border shadow-sm relative overflow-hidden" style={{ background: card.bg, borderColor: card.border }}>
@@ -252,7 +282,57 @@ export default function StaffIntelligencePage() {
         </motion.div>
       </div>
 
-      <div className="mt-8 rounded-3xl border overflow-hidden shadow-sm" style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: card.border }}>
+      {/* Performance Leaderboard */}
+      {staffLeaderboard.length > 0 && (
+        <div className="rounded-3xl border overflow-hidden shadow-sm" style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: card.border }}>
+          <div className="px-6 py-5 border-b flex justify-between items-center" style={{ borderColor: card.border, background: isDark ? '#0F172A' : '#F8FAFC' }}>
+            <div>
+              <h2 className="font-display font-bold text-lg flex items-center gap-2" style={{ color: card.text }}>
+                <Award size={18} className="text-yellow-500" /> Performance Leaderboard
+              </h2>
+              <p className="text-xs mt-0.5" style={{ color: card.muted }}>Ranked by total revenue generated — all time</p>
+            </div>
+          </div>
+          <div className="divide-y" style={{ borderColor: card.border }}>
+            {staffLeaderboard.map((s, i) => {
+              const pct = staffLeaderboard[0].revenue > 0 ? (s.revenue / staffLeaderboard[0].revenue) * 100 : 0;
+              const staffMember = staff.find(m => m.id === s.id);
+              return (
+                <div key={s.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                  <div className="w-8 text-center">
+                    {i < 3 ? (
+                      <span className="text-xl">{i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</span>
+                    ) : (
+                      <span className="text-sm font-black" style={{ color: card.muted }}>#{i + 1}</span>
+                    )}
+                  </div>
+                  {staffMember?.avatarUrl ? (
+                    <img src={staffMember.avatarUrl} alt={s.name} className="w-9 h-9 rounded-xl object-cover" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm" style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: card.muted }}>
+                      {s.name.charAt(0)}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-sm truncate" style={{ color: card.text }}>{s.name}</span>
+                      <div className="flex items-center gap-4 flex-shrink-0 ml-2">
+                        <span className="text-xs" style={{ color: card.muted }}>{s.txCount} sales</span>
+                        <span className="font-black text-sm" style={{ color: i === 0 ? '#F59E0B' : '#10B981' }}>GH₵ {s.revenue.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: isDark ? '#1E293B' : '#E2E8F0' }}>
+                      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: i === 0 ? 'linear-gradient(90deg,#F59E0B,#FBBF24)' : i === 1 ? 'linear-gradient(90deg,#94A3B8,#CBD5E1)' : i === 2 ? 'linear-gradient(90deg,#B45309,#D97706)' : 'linear-gradient(90deg,#10B981,#34D399)' }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 rounded-3xl border overflow-hidden shadow-sm" style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: card.border }}>
         <div className="px-6 py-5 border-b flex justify-between items-center" style={{ borderColor: card.border, background: isDark ? '#0F172A' : '#F8FAFC' }}>
           <h2 className="font-display font-bold text-lg" style={{ color: card.text }}>Staff Roster</h2>
         </div>
@@ -309,18 +389,37 @@ export default function StaffIntelligencePage() {
                       <span className="text-xs opacity-50" style={{ color: card.muted }}>No branch assigned</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-center">
-                    <button 
-                      onClick={() => handleDutyToggle(member.id, member.isOnDuty)}
-                      className="inline-flex flex-col items-center justify-center p-2 rounded-xl transition-all hover:scale-105"
-                      disabled={me?.id === member.id && !member.isOnDuty}
-                    >
-                      {member.isOnDuty ? (
-                        <CheckCircle size={28} className="text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                      ) : (
-                        <XCircle size={28} className="text-slate-300 dark:text-slate-600" />
-                      )}
-                    </button>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const effective = isEffectivelyOnDuty(member);
+                      const stale = member.isOnDuty && !effective;
+                      const { label, isRecent } = formatLastSeen(member.lastSeen);
+                      return (
+                        <div className="flex flex-col items-center gap-1">
+                          <button
+                            onClick={() => handleDutyToggle(member.id, member.isOnDuty)}
+                            title={stale ? 'Session expired — click to clock out' : member.isOnDuty ? 'Click to clock out' : 'Click to clock in'}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all hover:scale-105 border"
+                            style={{
+                              background: effective ? 'rgba(16,185,129,0.12)' : stale ? 'rgba(245,158,11,0.10)' : (isDark ? 'rgba(51,65,85,0.4)' : 'rgba(226,232,240,0.6)'),
+                              color: effective ? '#10B981' : stale ? '#F59E0B' : (isDark ? '#475569' : '#94A3B8'),
+                              borderColor: effective ? 'rgba(16,185,129,0.25)' : stale ? 'rgba(245,158,11,0.25)' : (isDark ? 'rgba(51,65,85,0.5)' : 'rgba(203,213,225,0.7)'),
+                            }}
+                          >
+                            {effective ? (
+                              <><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />On Duty</>
+                            ) : stale ? (
+                              <><WifiOff size={11} />Expired</>
+                            ) : (
+                              <><span className="w-1.5 h-1.5 rounded-full bg-slate-400" />Off Duty</>
+                            )}
+                          </button>
+                          <span className="text-[10px] flex items-center gap-0.5" style={{ color: isRecent ? '#10B981' : (isDark ? '#475569' : '#94A3B8') }}>
+                            <Clock size={9} />{label}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <button 
