@@ -11,6 +11,8 @@ import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
 import { gql } from '@/lib/gql';
 import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 export default function ExpensesPage() {
   const { theme, resolvedTheme } = useTheme();
@@ -35,6 +37,8 @@ export default function ExpensesPage() {
   };
 
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [rawExpenses, setRawExpenses] = useState<any[]>([]);
+  const branchFilter = useBranchFilter();
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -59,6 +63,7 @@ export default function ExpensesPage() {
         allExp = allExp.filter((e: any) => e.requestedBy?.id === me?.id);
       }
       setExpenses(allExp);
+      setRawExpenses(allExp);
       setTotalPages(response.totalPages || 1);
     } catch (err) {
       console.error(err);
@@ -106,8 +111,11 @@ export default function ExpensesPage() {
     }
   };
 
+  const displayExpenses = branchFilter(expenses);
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>Operational Expenses</h1>
@@ -174,7 +182,7 @@ export default function ExpensesPage() {
           </div>
         </div>
         <div className="divide-y" style={{ borderColor: c.border }}>
-          {expenses.map((e) => (
+          {displayExpenses.map((e) => (
             <div key={e.id} className="p-4 flex items-center justify-between hover:bg-white/5 transition-all">
               <div className="flex items-center gap-4">
                 <div className="text-xs font-mono" style={{ color: c.muted }}>{new Date(e.date).toLocaleDateString()}</div>

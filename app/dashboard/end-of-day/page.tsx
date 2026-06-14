@@ -12,6 +12,8 @@ import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
 import { gql, Q_MY_SHIFT_RECONCILIATIONS, Q_ALL_SHIFT_RECONCILIATIONS } from '@/lib/gql';
 import { useRouter } from 'next/navigation';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 export default function EndOfDayDashboardPage() {
   const { theme, resolvedTheme } = useTheme();
@@ -19,6 +21,8 @@ export default function EndOfDayDashboardPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { closeTerminal, todaySales, todayRevenue, todayTransactions, me, staff } = useStore();
+  const branchFilter = useBranchFilter();
+  const branchTodaySales = useMemo(() => branchFilter(todaySales), [branchFilter, todaySales]);
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -51,7 +55,7 @@ export default function EndOfDayDashboardPage() {
   // Derived personal stats — robust multi-field matching
   const mySales = useMemo(() => {
     if (!me) return [];
-    return todaySales.filter(s => {
+    return branchTodaySales.filter(s => {
       // Match by user.id (cuid from cashier relation)
       if (s.user?.id === me.id) return true;
       // Match by supabaseId (for sales created before the JWT fix)
@@ -61,7 +65,7 @@ export default function EndOfDayDashboardPage() {
       if (me.supabaseId && (s as any).cashierId === me.supabaseId) return true;
       return false;
     });
-  }, [todaySales, me]);
+  }, [branchTodaySales, me]);
 
   const myRevenue = mySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
   const myTransactions = mySales.length;
@@ -140,7 +144,7 @@ export default function EndOfDayDashboardPage() {
   const activeStaffStats = staff
     .filter(s => s.isActive)
     .map(s => {
-      const sSales = todaySales.filter(sale => sale.user?.id === s.id);
+      const sSales = branchTodaySales.filter(sale => sale.user?.id === s.id);
       const sTotal = sSales.reduce((sum, sale) => sum + Number(sale.totalAmount), 0);
       return {
         id: s.id,
@@ -214,6 +218,7 @@ export default function EndOfDayDashboardPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      <BranchBanner />
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>
@@ -304,12 +309,12 @@ export default function EndOfDayDashboardPage() {
                 },
                 { 
                   label: 'Physical Cash', 
-                  value: report?.cashSales ?? (isManager ? todaySales : mySales).filter(s => s.paymentMethod === 'CASH').reduce((sum, s) => sum + Number(s.totalAmount), 0), 
+                  value: report?.cashSales ?? (isManager ? branchTodaySales : mySales).filter(s => s.paymentMethod === 'CASH').reduce((sum, s) => sum + Number(s.totalAmount), 0), 
                   icon: FileText, color: c.success 
                 },
                 { 
                   label: 'Digital Payments', 
-                  value: report ? (report.momoSales + report.cardSales) : (isManager ? todaySales : mySales).filter(s => ['MOMO','CARD'].includes(s.paymentMethod)).reduce((sum, s) => sum + Number(s.totalAmount), 0), 
+                  value: report ? (report.momoSales + report.cardSales) : (isManager ? branchTodaySales : mySales).filter(s => ['MOMO','CARD'].includes(s.paymentMethod)).reduce((sum, s) => sum + Number(s.totalAmount), 0), 
                   icon: BarChart3, color: '#8B5CF6' 
                 },
               ].map(k => (

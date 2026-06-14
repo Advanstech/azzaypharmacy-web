@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { PageTransition } from '@/components/page-transition';
+import { BranchProvider, useBranch, MANAGERIAL_ROLES } from '@/lib/branch-context';
+import { BranchSwitcher } from '@/components/BranchSwitcher';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -32,6 +34,7 @@ import {
   User as UserIcon,
   Clock,
   Menu,
+  GitBranch,
 } from 'lucide-react';
 
 const navItems = [
@@ -48,7 +51,7 @@ const navItems = [
 
 
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useAuth();
   const { me } = useStore();
   const router = useRouter();
@@ -104,7 +107,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null;
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
-  const role = user.user_metadata?.role as string;
+  const role = (user.user_metadata?.role as string) ?? '';
 
   // Role Categories
   const isSuperAdmin = role === 'SE_ADMIN' || user.email === 'root@azzaypharmacy.com';
@@ -454,7 +457,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     className="font-data text-[10px] uppercase"
                     style={{ color: isDark ? '#64748B' : '#94A3B8' }}
                   >
-                    {(me?.branch?.name || '').toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}
+                    {me?.branch?.name ?? me?.branchId ?? 'Branch'}
                   </p>
                 </div>
               </div>
@@ -553,7 +556,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   style={{ background: isDark ? '#34D399' : '#059669' }}
                 />
               </span>
-              Dormaa Central
+              <ActiveBranchLabel />
             </div>
           </div>
 
@@ -582,10 +585,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
           </div>
 
-          {/* Right: Date */}
-          <div className="flex items-center min-w-max">
+          {/* Right: Branch Switcher + Date */}
+          <div className="flex items-center gap-3 min-w-max">
+            <BranchSwitcher isDark={isDark} />
             <span
-              className="font-data text-xs"
+              className="font-data text-xs hidden md:block"
               style={{ color: isDark ? '#64748B' : '#94A3B8' }}
             >
               {new Date().toLocaleDateString('en-GB', {
@@ -603,5 +607,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </main>
     </div>
+  );
+}
+
+function ActiveBranchLabel() {
+  const { activeBranchName, canSwitchBranch } = useBranch();
+  const { me } = useStore();
+  const label = activeBranchName || me?.branch?.name || me?.branchId || 'Loading...';
+  return <>{label}</>;
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { me } = useStore();
+  const role = (user?.user_metadata?.role as string) ?? '';
+  return (
+    <BranchProvider
+      role={role}
+      assignedBranchId={me?.branchId}
+      assignedBranchName={me?.branch?.name}
+    >
+      <DashboardLayoutInner>{children}</DashboardLayoutInner>
+    </BranchProvider>
   );
 }

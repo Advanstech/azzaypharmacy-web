@@ -6,6 +6,8 @@ import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 import {
   TrendingUp, TrendingDown, BarChart3, Calendar, Download, DollarSign,
   ShoppingBag, Users, Percent, Package, Pill, Clock, CreditCard,
@@ -43,14 +45,18 @@ export default function AnalyticsPage() {
   const role = (user?.user_metadata?.role as string) || '';
   const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role);
 
+  const branchFilter = useBranchFilter();
+  const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
+  const branchProducts = useMemo(() => branchFilter(products), [branchFilter, products]);
+
   const s = useCardStyles(isDark);
   const now = new Date();
   const periodDays = period === 'Today' ? 1 : period === '7 Days' ? 7 : period === '30 Days' ? 30 : period === '90 Days' ? 90 : 365;
   const cutoff = new Date(now.getTime() - periodDays * 24 * 60 * 60 * 1000);
 
-  const periodSales = useMemo(() => sales.filter(s => new Date(s.createdAt) >= cutoff), [sales, cutoff]);
+  const periodSales = useMemo(() => branchSales.filter(s => new Date(s.createdAt) >= cutoff), [branchSales, cutoff]);
   const prevCutoff = new Date(cutoff.getTime() - periodDays * 24 * 60 * 60 * 1000);
-  const prevSales = useMemo(() => sales.filter(s => new Date(s.createdAt) >= prevCutoff && new Date(s.createdAt) < cutoff), [sales, prevCutoff, cutoff]);
+  const prevSales = useMemo(() => branchSales.filter(s => new Date(s.createdAt) >= prevCutoff && new Date(s.createdAt) < cutoff), [branchSales, prevCutoff, cutoff]);
 
   const totalRevenue = periodSales.reduce((sum, s) => sum + s.totalAmount, 0);
   const prevRevenue = prevSales.reduce((sum, s) => sum + s.totalAmount, 0);
@@ -214,7 +220,7 @@ export default function AnalyticsPage() {
     { label: 'Total Revenue', value: totalRevenue, prefix: 'GH₵ ', icon: DollarSign, color: s.primary, change: revenueChange },
     { label: 'Transactions', value: totalTransactions, prefix: '', icon: ShoppingBag, color: s.success, change: txnChange },
     { label: 'Avg Sale', value: avgSaleValue, prefix: 'GH₵ ', icon: Target, color: '#8B5CF6', change: avgChange },
-    { label: 'Products', value: products.length, prefix: '', icon: Package, color: '#EC4899', change: 0 },
+    { label: 'Products', value: branchProducts.length, prefix: '', icon: Package, color: '#EC4899', change: 0 },
   ];
 
   if (!mounted) return (
@@ -225,6 +231,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       {/* ── HEADER ───────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

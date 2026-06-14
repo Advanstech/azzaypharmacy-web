@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 import {
   TrendingUp, TrendingDown, ShoppingCart, Package,
   AlertTriangle, Sparkles, Plus, BarChart3, Users,
@@ -54,12 +56,15 @@ function useCardStyles(isDark: boolean) {
 // ═══════════════════════════════════════════════════════════════
 function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
   const { products, sales, staff, customers, todayRevenue, todayTransactions, lowStockProducts, loadingProducts, loadingSales } = useStore();
+  const branchFilter = useBranchFilter();
+  const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
+  const branchProducts = useMemo(() => branchFilter(products), [branchFilter, products]);
 
   // Compute derived analytics
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 86400000);
-  const weekRevenue = sales.filter(s => new Date(s.createdAt) >= weekAgo).reduce((sum, s) => sum + s.totalAmount, 0);
-  const weekTxns = sales.filter(s => new Date(s.createdAt) >= weekAgo).length;
+  const weekRevenue = branchSales.filter(s => new Date(s.createdAt) >= weekAgo).reduce((sum, s) => sum + s.totalAmount, 0);
+  const weekTxns = branchSales.filter(s => new Date(s.createdAt) >= weekAgo).length;
   const avgTicket = todayTransactions > 0 ? todayRevenue / todayTransactions : 0;
   const outOfStock = lowStockProducts.filter(p => p.stockQuantity === 0).length;
   const lowStock = lowStockProducts.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10).length;
@@ -69,7 +74,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
   // Revenue by day for sparkline (last 7 days)
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const dayMap: Record<string, number> = {};
-  sales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => {
+  branchSales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => {
     const d = new Date(s.createdAt).toLocaleDateString('en-GB', { weekday: 'short' });
     dayMap[d] = (dayMap[d] || 0) + s.totalAmount;
   });
@@ -78,14 +83,14 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
   // Top products by revenue — scoped to last 7 days
   const topProducts = useMemo(() => {
     const map: Record<string, { name: string; revenue: number; qty: number }> = {};
-    sales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => s.items.forEach(item => {
+    branchSales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => s.items.forEach(item => {
       const n = item.product?.name || 'Unknown';
       if (!map[n]) map[n] = { name: n, revenue: 0, qty: 0 };
       map[n].revenue += item.total;
       map[n].qty += item.quantity;
     }));
     return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  }, [sales, weekAgo]);
+  }, [branchSales, weekAgo]);
 
   // Payment method breakdown by revenue (all-time)
   const paymentMix = useMemo(() => {
@@ -96,7 +101,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       NHIS: 0,
     };
 
-    sales.forEach((s) => {
+    branchSales.forEach((s) => {
       const method = (s.paymentMethod || '').toUpperCase().replace(/\s+/g, '_');
       if (method === 'MOMO' || method === 'MOBILE_MONEY') {
         amounts.MOMO += s.totalAmount;
@@ -112,24 +117,24 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       { label: 'Card', pct: Math.round(((amounts['CARD'] || 0) / total) * 100), color: '#8B5CF6', icon: CreditCard },
       { label: 'NHIS', pct: Math.round(((amounts['NHIS'] || 0) / total) * 100), color: '#F59E0B', icon: ShieldAlert },
     ].filter(pm => pm.pct > 0);
-  }, [sales]);
+  }, [branchSales]);
 
   // Sales by staff for manager overview
   const staffSales = useMemo(() => {
     const today = new Date().toDateString();
     const map: Record<string, { name: string; revenue: number; count: number }> = {};
-    sales.filter(s => new Date(s.createdAt).toDateString() === today).forEach(s => {
+    branchSales.filter(s => new Date(s.createdAt).toDateString() === today).forEach(s => {
       const name = s.user?.name || 'Unknown Staff';
       if (!map[name]) map[name] = { name, revenue: 0, count: 0 };
       map[name].revenue += s.totalAmount;
       map[name].count += 1;
     });
     return Object.values(map).sort((a, b) => b.revenue - a.revenue);
-  }, [sales]);
+  }, [branchSales]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-
+      <BranchBanner />
       {/* ── WELCOME + ROLE BADGE ─────────────────────────────── */}
       <div className="sticky -top-6 z-20 flex items-center justify-between pb-4 pt-4 -mt-6 backdrop-blur-xl"
         style={{ 

@@ -16,6 +16,8 @@ import { useAuth } from '@/lib/auth-context';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 const STATUS_CONFIG = {
   OK: { label: 'In Stock', color: '#10B981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)' },
@@ -211,7 +213,10 @@ export default function InventoryPage() {
   const newInvoiceItems = invoiceItems.filter(i => !i.exists || !i.productId);
   const hasResolvableSupplier = Boolean(invoiceSupplier || (createSupplierOnConfirm && invoiceSupplierDraft.trim()));
 
-  const products = storeProducts.map((p: any) => {
+  const branchFilter = useBranchFilter();
+  const branchProducts = branchFilter(storeProducts);
+
+  const products = branchProducts.map((p: any) => {
     const isPOM = ['ANTIBIOTICS', 'CARDIOVASCULAR', 'ANTIMALARIALS'].includes(p.category);
     const dbClass = p.isControlled ? 'CONTROLLED' : (p.requiresRx ? 'POM' : 'OTC');
     return {
@@ -1147,6 +1152,7 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Inventory & Stock Management</h1>

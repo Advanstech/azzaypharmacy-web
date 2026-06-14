@@ -14,6 +14,8 @@ import {
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
 import { usePagination } from '@/hooks/use-pagination';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 const STOCK_STATUS = {
   IN_STOCK: { label: 'In Stock', color: '#10B981', bg: 'rgba(16,185,129,0.1)', icon: CheckCircle },
@@ -76,6 +78,8 @@ export default function EnhancedStockPage() {
     adjustProductStock,
     error: storeError
   } = useStore();
+  const branchFilter = useBranchFilter();
+  const branchProducts = useMemo(() => branchFilter(storeProducts), [branchFilter, storeProducts]);
   const { signOut } = useAuth();
   const router = useRouter();
 
@@ -122,7 +126,7 @@ export default function EnhancedStockPage() {
 
   // Enhanced products with expiry and storage tracking
   const products = useMemo(() => {
-    return storeProducts.map((p: any) => {
+    return branchProducts.map((p: any) => {
       const daysToExpiry = p.expiryDate ? Math.ceil((new Date(p.expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : 999;
       let status = 'IN_STOCK';
       
@@ -146,7 +150,7 @@ export default function EnhancedStockPage() {
         storageLocation: p.storageLocation || 'Main Warehouse',
       };
     });
-  }, [storeProducts]);
+  }, [branchProducts]);
 
   // Filter products
   const filteredProducts = useMemo(() => {
@@ -257,6 +261,7 @@ export default function EnhancedStockPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

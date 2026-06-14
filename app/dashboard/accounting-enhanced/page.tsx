@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 import {
   TrendingUp, TrendingDown, DollarSign, CreditCard, ArrowUpRight, ArrowDownRight,
   Plus, Filter, Receipt, ShoppingCart, Package, FileText, Wallet, Building2,
@@ -34,6 +36,9 @@ export default function EnhancedAccountingPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { sales, products, ledger, purchases, refetchLedger, me } = useStore();
+  const branchFilter = useBranchFilter();
+  const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
+  const branchProducts = useMemo(() => branchFilter(products), [branchFilter, products]);
   const { user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'reports' | 'budget' | 'payables' | 'analytics'>('overview');
@@ -99,48 +104,34 @@ export default function EnhancedAccountingPage() {
     danger: '#EF4444',
   };
 
-  // Enhanced financial data
+  // Enhanced financial data - using real data from store
   const financialData = useMemo(() => {
-    // Simulated comprehensive ledger data
-    const comprehensiveLedger = [
-      // Revenue entries
-      { id: 'TXN-001', date: '2026-05-15', type: 'CREDIT', category: 'SALES_REVENUE', amount: 3450.00, description: 'Daily POS Sales', reference: 'POS-001' },
-      { id: 'TXN-002', date: '2026-05-14', type: 'CREDIT', category: 'SALES_REVENUE', amount: 2890.00, description: 'Daily POS Sales', reference: 'POS-002' },
-      { id: 'TXN-003', date: '2026-05-13', type: 'CREDIT', category: 'SERVICE_REVENUE', amount: 450.00, description: 'Consultation Fees', reference: 'SRV-001' },
-      
-      // COGS entries
-      { id: 'TXN-004', date: '2026-05-15', type: 'DEBIT', category: 'COGS', amount: 1725.00, description: 'Inventory Cost - Sales', reference: 'COGS-001' },
-      { id: 'TXN-005', date: '2026-05-14', type: 'DEBIT', category: 'COGS', amount: 1445.00, description: 'Inventory Cost - Sales', reference: 'COGS-002' },
-      
-      // Operating expenses
-      { id: 'TXN-006', date: '2026-05-10', type: 'DEBIT', category: 'SALARIES', amount: 3500.00, description: 'Staff Salaries', reference: 'SAL-001' },
-      { id: 'TXN-007', date: '2026-05-05', type: 'DEBIT', category: 'RENT', amount: 1200.00, description: 'Monthly Rent', reference: 'RENT-001' },
-      { id: 'TXN-008', date: '2026-05-03', type: 'DEBIT', category: 'UTILITIES', amount: 450.00, description: 'Electricity & Water', reference: 'UTIL-001' },
-      { id: 'TXN-009', date: '2026-05-01', type: 'DEBIT', category: 'MARKETING', amount: 300.00, description: 'Marketing Expenses', reference: 'MKT-001' },
-      
-      // Financial expenses
-      { id: 'TXN-010', date: '2026-05-15', type: 'DEBIT', category: 'BANK_FEES', amount: 25.00, description: 'Bank Transaction Fees', reference: 'BANK-001' },
-      { id: 'TXN-011', date: '2026-05-10', type: 'DEBIT', category: 'INTEREST', amount: 150.00, description: 'Loan Interest', reference: 'INT-001' },
-      
-      // Tax entries
-      { id: 'TXN-012', date: '2026-05-15', type: 'DEBIT', category: 'VAT_PAYABLE', amount: 345.00, description: 'VAT Payment', reference: 'VAT-001' },
-    ];
-
-    const revenue = comprehensiveLedger.filter(l => l.type === 'CREDIT').reduce((sum, l) => sum + l.amount, 0);
-    const expenses = comprehensiveLedger.filter(l => l.type === 'DEBIT').reduce((sum, l) => sum + l.amount, 0);
+    // Use real sales data for revenue
+    const salesRevenue = branchSales.reduce((sum, sale) => sum + ((sale as any).total || 0), 0);
+    
+    // Use real purchases for COGS
+    const purchasesCost = purchases.reduce((sum, p) => sum + (p.total || 0), 0);
+    
+    // Use real expenses for operating expenses
+    const operatingExpenses = ledger
+      .filter(l => l.type === 'DEBIT' && l.category && ['SALARIES', 'RENT', 'UTILITIES', 'MARKETING'].includes(l.category))
+      .reduce((sum, l) => sum + (l.amount || 0), 0);
+    
+    const revenue = salesRevenue;
+    const expenses = purchasesCost + operatingExpenses;
     const netProfit = revenue - expenses;
     const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
 
     // Category breakdown
     const categoryBreakdown = {
-      REVENUE: comprehensiveLedger.filter(l => l.type === 'CREDIT').reduce((sum, l) => sum + l.amount, 0),
-      COGS: comprehensiveLedger.filter(l => l.category === 'COGS').reduce((sum, l) => sum + l.amount, 0),
-      OPERATING: comprehensiveLedger.filter(l => ['SALARIES', 'RENT', 'UTILITIES', 'MARKETING'].includes(l.category)).reduce((sum, l) => sum + l.amount, 0),
-      FINANCIAL: comprehensiveLedger.filter(l => ['BANK_FEES', 'INTEREST'].includes(l.category)).reduce((sum, l) => sum + l.amount, 0),
-      TAXES: comprehensiveLedger.filter(l => l.category.includes('TAX')).reduce((sum, l) => sum + l.amount, 0),
+      REVENUE: salesRevenue,
+      COGS: purchasesCost,
+      OPERATING: operatingExpenses,
+      FINANCIAL: ledger.filter(l => l.category && ['BANK_FEES', 'INTEREST'].includes(l.category)).reduce((sum, l) => sum + (l.amount || 0), 0),
+      TAXES: ledger.filter(l => l.category && l.category.includes('TAX')).reduce((sum, l) => sum + (l.amount || 0), 0),
     };
 
-    // Budget data (simulated)
+    // Budget data (simulated for now)
     const budgetData = {
       REVENUE: { budget: 15000, actual: categoryBreakdown.REVENUE, variance: categoryBreakdown.REVENUE - 15000 },
       COGS: { budget: 6000, actual: categoryBreakdown.COGS, variance: categoryBreakdown.COGS - 6000 },
@@ -151,10 +142,10 @@ export default function EnhancedAccountingPage() {
 
     // Cash flow analysis
     const cashFlow = {
-      operating: revenue - categoryBreakdown.COGS - categoryBreakdown.OPERATING,
-      investing: -2000, // Equipment purchase
-      financing: 5000,  // Loan received
-      net: (revenue - categoryBreakdown.COGS - categoryBreakdown.OPERATING) - 2000 + 5000,
+      operating: revenue - purchasesCost - operatingExpenses,
+      investing: ledger.filter(l => l.category === 'EQUIPMENT').reduce((sum, l) => sum + (l.amount || 0), 0),
+      financing: ledger.filter(l => l.category === 'LOAN').reduce((sum, l) => sum + (l.amount || 0), 0),
+      net: (revenue - purchasesCost - operatingExpenses) + ledger.filter(l => l.category === 'LOAN').reduce((sum, l) => sum + (l.amount || 0), 0),
     };
 
     return {
@@ -165,12 +156,12 @@ export default function EnhancedAccountingPage() {
       categoryBreakdown,
       budgetData,
       cashFlow,
-      ledger: comprehensiveLedger,
-      grossProfit: revenue - categoryBreakdown.COGS,
-      operatingProfit: revenue - categoryBreakdown.COGS - categoryBreakdown.OPERATING,
-      ebitda: revenue - categoryBreakdown.COGS - categoryBreakdown.OPERATING + 150, // Add back interest and taxes
+      ledger,
+      grossProfit: revenue - purchasesCost,
+      operatingProfit: revenue - purchasesCost - operatingExpenses,
+      ebitda: revenue - purchasesCost - operatingExpenses + categoryBreakdown.FINANCIAL + categoryBreakdown.TAXES,
     };
-  }, []);
+  }, [branchSales, purchases, ledger]);
 
   // Key metrics
   const metrics = useMemo(() => {
@@ -190,6 +181,7 @@ export default function EnhancedAccountingPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -419,14 +411,14 @@ export default function EnhancedAccountingPage() {
                   <tr key={transaction.id} className="transition-colors hover:bg-slate-50/50 dark:hover:bg-slate-800/30" style={{ borderBottom: `1px solid ${card.divider}` }}>
                     <td className="px-5 py-3 font-mono text-xs" style={{ color: card.muted }}>{transaction.date}</td>
                     <td className="px-5 py-3">
-                      <span className="font-mono text-xs font-medium" style={{ color: card.primary }}>{transaction.reference}</span>
+                      <span className="font-mono text-xs font-medium" style={{ color: card.primary }}>{(transaction as any).reference || 'N/A'}</span>
                     </td>
                     <td className="px-5 py-3">
                       <p className="text-sm" style={{ color: card.text }}>{transaction.description}</p>
                     </td>
                     <td className="px-5 py-3">
                       <span className="text-[10px] font-medium px-2 py-1 rounded-lg" style={{ background: card.primaryBg, color: card.primary }}>
-                        {transaction.category.replace('_', ' ')}
+                        {transaction.category?.replace('_', ' ') || 'N/A'}
                       </span>
                     </td>
                     <td className="px-5 py-3">

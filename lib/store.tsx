@@ -15,7 +15,7 @@ import {
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES, Q_REFUND_REQUESTS,
   M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD, M_DELETE_STAFF,
-  M_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
+  M_UPDATE_PRODUCT_PRICES, M_BULK_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
   M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_CREATE_EXPENSE,
@@ -52,6 +52,7 @@ export interface Product {
   dosageForm?: string;
   requiresRx?: boolean;
   isControlled?: boolean;
+  branchId?: string;
   stockItems?: StockItem[];
 }
 
@@ -103,6 +104,7 @@ export interface Sale {
   refundedAt?: string;
   createdAt: string;
   cashierId?: string;
+  branchId?: string;
   user?: { id: string; name: string; role: string };
   items: SaleItem[];
 }
@@ -180,6 +182,7 @@ export interface Prescription {
   notes?: string;
   items: RxItem[];
   createdAt: string;
+  branchId?: string;
 }
 
 export interface PurchaseItem {
@@ -216,6 +219,7 @@ export interface Expense {
   receiptUrl?: string;
   category?: ExpenseCategory;
   status: string;
+  branchId?: string;
   createdAt: string;
 }
 
@@ -436,6 +440,7 @@ interface StoreState {
   generateTempPassword: (userId: string) => Promise<string>;
 
   updateProductPrices: (productId: string, costPrice: number, sellingPrice: number) => Promise<Product>;
+  bulkUpdateProductPrices: (updates: Array<{ productId: string; costPrice: number; sellingPrice: number }>) => Promise<Product[]>;
   updateProductFull: (productData: any) => Promise<Product>;
   updateProductSupplier: (productId: string, supplierId: string) => Promise<void>;
   bulkUpdateProductSupplier: (productIds: string[], supplierId: string) => Promise<void>;
@@ -1009,6 +1014,20 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     return updated;
   }, []);
 
+  const bulkUpdateProductPrices = useCallback(async (
+    updates: Array<{ productId: string; costPrice: number; sellingPrice: number }>
+  ): Promise<Product[]> => {
+    const data = await gql<{ bulkUpdateProductPrices: Product[] }>(
+      M_BULK_UPDATE_PRODUCT_PRICES, { updates: JSON.stringify(updates) }
+    );
+    const updated = data.bulkUpdateProductPrices;
+    setProducts(prev => prev.map(p => {
+      const u = updated.find(u => u.id === p.id);
+      return u ? { ...p, ...u } : p;
+    }));
+    return updated;
+  }, []);
+
   const updateProductSupplier = useCallback(async (productId: string, supplierId: string) => {
     try {
       await gql(M_UPDATE_PRODUCT_SUPPLIER, { productId, supplierId });
@@ -1229,7 +1248,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       refetchProducts, refetchSales, refetchStaff, refetchCustomers,
       refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchAll,
       createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
-      updateProductPrices, updateProductFull,
+      updateProductPrices, bulkUpdateProductPrices, updateProductFull,
       updateProductSupplier,
       bulkUpdateProductSupplier,
       createCustomer, updateCustomer, getProductsBySupplier,

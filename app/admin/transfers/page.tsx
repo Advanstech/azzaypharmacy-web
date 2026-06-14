@@ -7,8 +7,9 @@ import {
   Package, Building2, ChevronDown, ChevronUp, FileText, Truck,
   DollarSign, Hash, Clock, ShieldCheck, Eye, ChevronLeft, ChevronRight,
   AlertTriangle, Loader2, Receipt, BarChart2, RefreshCw, Minus, Trash2,
+  ArrowRight, Zap, ShoppingCart, Info, TrendingUp, ScanBarcode, PackagePlus, ChevronDown as ChevronDownIcon,
 } from 'lucide-react';
-import { useStore, type StockTransfer, type Product } from '@/lib/store';
+import { useStore, type StockTransfer, type Product, type Supplier } from '@/lib/store';
 import { gql } from '@/lib/gql';
 import {
   M_INITIATE_TRANSFER, M_APPROVE_TRANSFER, M_REJECT_TRANSFER, M_DELETE_TRANSFER, Q_BRANCHES,
@@ -85,6 +86,7 @@ export default function StockTransferPage() {
   const {
     stockTransfers, loadingTransfers, refetchTransfers,
     products, me, refetchProducts, refetchLedger, refetchPurchases, refetchInvoices,
+    createProduct,
   } = useStore();
 
   // ── Branches ──────────────────────────────────────────────────────────────
@@ -143,13 +145,26 @@ export default function StockTransferPage() {
   const [productSearch, setProductSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createError, setCreateError] = useState('');
+  // ── Quick Add Product ──────────────────────────────────────────────────────
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [qaName, setQaName] = useState('');
+  const [qaCost, setQaCost] = useState('');
+  const [qaSell, setQaSell] = useState('');
+  const [qaCategory, setQaCategory] = useState('MISCELLANEOUS');
+  const [qaAdding, setQaAdding] = useState(false);
+  const [qaError, setQaError] = useState('');
 
   const productMatches = useMemo(() => {
     if (!productSearch.trim()) return [];
     const q = productSearch.toLowerCase();
     return products
-      .filter(p => p.stockQuantity > 0 && (p.name.toLowerCase().includes(q) || (p.genericName || '').toLowerCase().includes(q)))
-      .slice(0, 8);
+      .filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        (p.genericName || '').toLowerCase().includes(q) ||
+        (p.brand || '').toLowerCase().includes(q) ||
+        (p.category || '').toLowerCase().includes(q)
+      )
+      .slice(0, 12);
   }, [products, productSearch]);
 
   const addProduct = (p: Product) => {
@@ -171,6 +186,42 @@ export default function StockTransferPage() {
 
   const totalTransferValue = lineItems.reduce((s, l) => s + l.quantity * l.transferPrice, 0);
 
+  const resetQuickAdd = () => {
+    setShowQuickAdd(false);
+    setQaName('');
+    setQaCost('');
+    setQaSell('');
+    setQaCategory('MISCELLANEOUS');
+    setQaError('');
+  };
+
+  const handleQuickAddProduct = async () => {
+    const name = qaName.trim();
+    const cost = parseFloat(qaCost);
+    const sell = parseFloat(qaSell);
+    if (!name) { setQaError('Product name is required'); return; }
+    if (isNaN(cost) || cost < 0) { setQaError('Enter a valid cost price'); return; }
+    if (isNaN(sell) || sell < 0) { setQaError('Enter a valid selling price'); return; }
+    setQaAdding(true);
+    setQaError('');
+    try {
+      const newProduct = await createProduct({
+        name,
+        category: qaCategory,
+        costPrice: cost,
+        sellingPrice: sell,
+        stockQuantity: 0,
+      });
+      resetQuickAdd();
+      setProductSearch('');
+      addProduct(newProduct);
+    } catch (err: any) {
+      setQaError(err?.message || 'Failed to create product');
+    } finally {
+      setQaAdding(false);
+    }
+  };
+
   const handleCreateTransfer = async () => {
     setCreateError('');
     if (!sourceBranchId || !destBranchId) { setCreateError('Select both source and destination branches'); return; }
@@ -178,10 +229,6 @@ export default function StockTransferPage() {
     if (lineItems.length === 0) { setCreateError('Add at least one product'); return; }
     for (const l of lineItems) {
       if (l.quantity <= 0) { setCreateError(`Quantity for "${l.product.name}" must be > 0`); return; }
-      if (l.quantity > l.product.stockQuantity) {
-        setCreateError(`"${l.product.name}" has only ${l.product.stockQuantity} in stock`);
-        return;
-      }
     }
     setIsSubmitting(true);
     try {
@@ -202,6 +249,8 @@ export default function StockTransferPage() {
       setNotes('');
       setSourceBranchId('');
       setDestBranchId('');
+      resetQuickAdd();
+      setProductSearch('');
     } catch (err: any) {
       setCreateError(err?.message || 'Failed to initiate transfer');
     } finally {
@@ -716,197 +765,470 @@ export default function StockTransferPage() {
 
       {/* ── Create Transfer Modal ─────────────────────────────────────────────── */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-          style={{ background: 'rgba(0,0,0,0.65)' }}>
-          <div className="rounded-t-3xl sm:rounded-3xl w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto shadow-2xl"
-            style={{ background: c.card, border: `1px solid ${c.border}` }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.75)' }}
+          onClick={() => { setShowCreate(false); setCreateError(''); setLineItems([]); resetQuickAdd(); setProductSearch(''); }}>
+          <div className="rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl"
+            style={{ background: c.card, border: `1px solid ${c.border}` }}
+            onClick={e => e.stopPropagation()}>
 
-            {/* Create header */}
-            <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-4 border-b"
-              style={{ borderColor: c.border, background: c.card }}>
-              <div className="flex items-center gap-2">
-                <Plus size={18} style={{ color: c.primary }} />
-                <p className="font-black text-base" style={{ color: c.text }}>Initiate Stock Transfer</p>
+            {/* ── Modal Header ── */}
+            <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0"
+              style={{ borderColor: c.border }}>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl" style={{ background: `${c.primary}18` }}>
+                  <ArrowRightLeft size={18} style={{ color: c.primary }} />
+                </div>
+                <div>
+                  <h2 className="font-black text-base" style={{ color: c.text }}>Initiate Stock Transfer</h2>
+                  <p className="text-[11px]" style={{ color: c.muted }}>Move stock between branches with automatic invoice & ledger generation</p>
+                </div>
               </div>
-              <button onClick={() => { setShowCreate(false); setCreateError(''); setLineItems([]); }}
-                className="p-2 rounded-xl" style={{ background: c.inputBg }}>
-                <X size={16} style={{ color: c.muted }} />
+              <button onClick={() => { setShowCreate(false); setCreateError(''); setLineItems([]); resetQuickAdd(); setProductSearch(''); }}
+                className="p-2 rounded-xl transition-colors" style={{ background: c.inputBg, color: c.muted }}>
+                <X size={16} />
               </button>
             </div>
 
-            <div className="p-6 space-y-5">
-              {/* Branch selectors */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: c.muted }}>
-                    Source Branch (Supplier)
-                  </label>
-                  <select value={sourceBranchId} onChange={e => setSourceBranchId(e.target.value)}
-                    className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none"
-                    style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
-                    <option value="">— Select source —</option>
-                    {branches.map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: c.muted }}>
-                    Destination Branch
-                  </label>
-                  <select value={destBranchId} onChange={e => setDestBranchId(e.target.value)}
-                    className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none"
-                    style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
-                    <option value="">— Select destination —</option>
-                    {branches.filter(b => b.id !== sourceBranchId).map(b => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+            {/* ── Two-column body ── */}
+            <div className="flex flex-1 min-h-0 overflow-hidden">
 
-              {/* Product search */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: c.muted }}>
-                  Add Products
-                </label>
-                <div className="relative">
-                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
-                  <input value={productSearch} onChange={e => setProductSearch(e.target.value)}
-                    placeholder="Search product by name or generic..."
-                    className="w-full pl-8 pr-3 py-2.5 rounded-xl text-sm focus:outline-none"
-                    style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
-                  {productMatches.length > 0 && (
-                    <div className="absolute top-full left-0 right-0 z-20 mt-1 rounded-xl shadow-2xl border overflow-hidden"
-                      style={{ background: c.card, borderColor: c.border }}>
-                      {productMatches.map(p => (
-                        <button key={p.id} onClick={() => addProduct(p)}
-                          className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:opacity-80 transition-all border-b last:border-0"
-                          style={{ borderColor: c.border }}>
-                          <div>
-                            <p className="text-sm font-bold" style={{ color: c.text }}>{p.name}</p>
-                            <p className="text-[11px]" style={{ color: c.muted }}>{p.genericName || p.category} · {p.strength || ''}</p>
+              {/* ── LEFT: Form ── */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-5 border-r" style={{ borderColor: c.border }}>
+
+                {/* Route selector */}
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: c.muted }}>Transfer Route</p>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>From (Source)</label>
+                      <div className="relative">
+                        <Building2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.primary }} />
+                        <select value={sourceBranchId} onChange={e => setSourceBranchId(e.target.value)}
+                          className="w-full rounded-xl pl-8 pr-3 py-2.5 text-sm focus:outline-none appearance-none"
+                          style={{ background: c.inputBg, border: `1px solid ${sourceBranchId ? c.primary : c.border}`, color: c.text }}>
+                          <option value="">— Select source branch —</option>
+                          {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex-shrink-0 mt-5">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center"
+                        style={{ background: sourceBranchId && destBranchId ? `${c.primary}20` : c.inputBg }}>
+                        <ArrowRight size={15} style={{ color: sourceBranchId && destBranchId ? c.primary : c.muted }} />
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>To (Destination)</label>
+                      <div className="relative">
+                        <Building2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.success }} />
+                        <select value={destBranchId} onChange={e => setDestBranchId(e.target.value)}
+                          className="w-full rounded-xl pl-8 pr-3 py-2.5 text-sm focus:outline-none appearance-none"
+                          style={{ background: c.inputBg, border: `1px solid ${destBranchId ? c.success : c.border}`, color: c.text }}>
+                          <option value="">— Select destination branch —</option>
+                          {branches.filter(b => b.id !== sourceBranchId).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Product Search */}
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: c.muted }}>Add Products</p>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.muted }} />
+                    <input
+                      value={productSearch}
+                      onChange={e => setProductSearch(e.target.value)}
+                      placeholder="Type product name, generic name, or category..."
+                      className="w-full pl-9 pr-4 py-3 rounded-xl text-sm focus:outline-none"
+                      style={{
+                        background: c.inputBg,
+                        border: `1px solid ${productSearch ? c.primary : c.border}`,
+                        color: c.text,
+                        boxShadow: productSearch ? `0 0 0 2px ${c.primary}20` : 'none',
+                      }}
+                    />
+                    {productSearch && (
+                      <button onClick={() => setProductSearch('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2"
+                        style={{ color: c.muted }}>
+                        <X size={13} />
+                      </button>
+                    )}
+                    {/* Dropdown */}
+                    {productMatches.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 z-30 mt-1.5 rounded-xl shadow-2xl border overflow-hidden"
+                        style={{ background: c.card, borderColor: c.border }}>
+                        <div className="px-3 py-2 border-b" style={{ borderColor: c.border, background: c.headerBg }}>
+                          <p className="text-[10px] font-bold" style={{ color: c.muted }}>{productMatches.length} RESULTS — click to add</p>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          {productMatches.map(p => {
+                            const alreadyAdded = lineItems.some(l => l.product.id === p.id);
+                            const isOutOfStock = p.stockQuantity === 0;
+                            const isLowStock = p.stockQuantity > 0 && p.stockQuantity <= 10;
+                            return (
+                              <button key={p.id} onClick={() => addProduct(p)}
+                                disabled={alreadyAdded}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-left border-b last:border-0 transition-all"
+                                style={{
+                                  borderColor: c.border,
+                                  background: alreadyAdded ? `${c.success}08` : 'transparent',
+                                  opacity: alreadyAdded ? 0.6 : 1,
+                                  cursor: alreadyAdded ? 'not-allowed' : 'pointer',
+                                }}
+                                onMouseEnter={e => { if (!alreadyAdded) (e.currentTarget as HTMLElement).style.background = `${c.primary}10`; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = alreadyAdded ? `${c.success}08` : 'transparent'; }}>
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                                  style={{ background: alreadyAdded ? `${c.success}20` : isOutOfStock ? `${c.danger}15` : `${c.primary}15` }}>
+                                  {alreadyAdded
+                                    ? <CheckCircle size={14} style={{ color: c.success }} />
+                                    : <Package size={14} style={{ color: isOutOfStock ? c.danger : c.primary }} />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-bold truncate" style={{ color: c.text }}>{p.name}</p>
+                                    {isOutOfStock && (
+                                      <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0"
+                                        style={{ background: `${c.danger}18`, color: c.danger }}>Out of Stock</span>
+                                    )}
+                                  </div>
+                                  <p className="text-[11px] truncate" style={{ color: c.muted }}>
+                                    {p.genericName ? `${p.genericName} · ` : ''}{p.category}{p.strength ? ` · ${p.strength}` : ''}
+                                  </p>
+                                </div>
+                                <div className="text-right flex-shrink-0 space-y-0.5">
+                                  <p className="text-xs font-black" style={{ color: c.success }}>GH₵ {p.sellingPrice.toFixed(2)}</p>
+                                  <p className="text-[11px]" style={{ color: c.muted }}>Cost: GH₵ {p.costPrice.toFixed(2)}</p>
+                                  <p className="text-[10px] font-bold" style={{ color: isOutOfStock ? c.danger : isLowStock ? c.warning : c.muted }}>
+                                    {isOutOfStock ? '✕ 0 units' : isLowStock ? `⚠ ${p.stockQuantity} left` : `${p.stockQuantity} in stock`}
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {productSearch.trim() && productMatches.length === 0 && (
+                      <div className="absolute top-full left-0 right-0 z-30 mt-1.5 rounded-xl border shadow-2xl overflow-hidden"
+                        style={{ background: c.card, borderColor: c.border }}>
+                        {!showQuickAdd ? (
+                          <div className="p-4">
+                            <p className="text-sm font-bold mb-3" style={{ color: c.text }}>
+                              No products found matching &ldquo;{productSearch}&rdquo;
+                            </p>
+                            <button
+                              onClick={() => { setQaName(productSearch.trim()); setShowQuickAdd(true); }}
+                              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-black text-white transition-all"
+                              style={{ background: c.primary }}>
+                              <PackagePlus size={15} /> Add &ldquo;{productSearch.trim()}&rdquo; as New Product
+                            </button>
                           </div>
-                          <div className="text-right ml-3">
-                            <p className="text-xs font-bold" style={{ color: c.success }}>GH₵ {p.sellingPrice.toFixed(2)}</p>
-                            <p className="text-[11px]" style={{ color: p.stockQuantity <= 10 ? c.warning : c.muted }}>
-                              {p.stockQuantity} in stock
+                        ) : (
+                          <div className="p-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-black" style={{ color: c.text }}>Quick Add Product</p>
+                              <button onClick={resetQuickAdd} style={{ color: c.muted }}><X size={14} /></button>
+                            </div>
+                            {/* Name */}
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: c.muted }}>Product Name *</label>
+                              <input value={qaName} onChange={e => setQaName(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none"
+                                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
+                                placeholder="e.g. Zymox 500mg Cap" />
+                            </div>
+                            {/* Category */}
+                            <div>
+                              <label className="block text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: c.muted }}>Category *</label>
+                              <select value={qaCategory} onChange={e => setQaCategory(e.target.value)}
+                                className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none appearance-none"
+                                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                                {['ANALGESICS_NSAIDS','ANTIBIOTICS','ANTIMALARIALS','ANTIFUNGALS','ANTIVIRALS',
+                                  'CARDIOVASCULAR','DERMATOLOGY','DIABETES','ENT','GASTROINTESTINAL',
+                                  'NEUROLOGY','RESPIRATORY','VITAMINS_SUPPLEMENTS','MISCELLANEOUS'].map(cat => (
+                                  <option key={cat} value={cat}>{cat.replace(/_/g,' ')}</option>
+                                ))}
+                              </select>
+                            </div>
+                            {/* Prices */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: c.muted }}>Cost Price (GH₵) *</label>
+                                <input type="number" min={0} step={0.01} value={qaCost} onChange={e => setQaCost(e.target.value)}
+                                  className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none"
+                                  style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
+                                  placeholder="0.00" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: c.muted }}>Selling Price (GH₵) *</label>
+                                <input type="number" min={0} step={0.01} value={qaSell} onChange={e => setQaSell(e.target.value)}
+                                  className="w-full px-3 py-2 rounded-xl text-sm focus:outline-none"
+                                  style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
+                                  placeholder="0.00" />
+                              </div>
+                            </div>
+                            {qaError && (
+                              <p className="text-xs flex items-center gap-1" style={{ color: c.danger }}>
+                                <AlertTriangle size={11} /> {qaError}
+                              </p>
+                            )}
+                            <div className="flex gap-2">
+                              <button onClick={resetQuickAdd}
+                                className="flex-1 py-2 rounded-xl text-sm font-bold border"
+                                style={{ borderColor: c.border, color: c.muted }}>Cancel</button>
+                              <button onClick={handleQuickAddProduct} disabled={qaAdding}
+                                className="flex-1 py-2 rounded-xl text-sm font-black text-white flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                style={{ background: c.primary }}>
+                                {qaAdding ? <><Loader2 size={13} className="animate-spin" /> Adding…</> : <><PackagePlus size={13} /> Create & Add</>}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Line Items Table */}
+                {lineItems.length > 0 ? (
+                  <div className="rounded-xl border overflow-hidden" style={{ borderColor: c.border }}>
+                    {/* Header */}
+                    <div className="grid items-center px-4 py-2.5 text-[10px] font-black uppercase tracking-widest"
+                      style={{ background: c.headerBg, color: c.muted, gridTemplateColumns: '1fr 90px 90px 110px 120px 90px 28px' }}>
+                      <span>Product</span>
+                      <span className="text-center">Stock</span>
+                      <span className="text-center">Cost Price</span>
+                      <span className="text-center">Selling Price</span>
+                      <span className="text-center">Qty to Transfer</span>
+                      <span className="text-center">Subtotal</span>
+                      <span />
+                    </div>
+                    {lineItems.map((l, idx) => {
+                      const qty = l.quantity;
+                      const stock = l.product.stockQuantity;
+                      const isOut = stock === 0;
+                      const isLow = stock > 0 && stock <= 10;
+                      const stockColor = isOut ? c.danger : isLow ? c.warning : c.success;
+                      const overQty = qty > stock && stock > 0;
+                      return (
+                        <div key={l.product.id}
+                          className="grid items-center px-4 py-3 border-t gap-2"
+                          style={{ borderColor: c.border, gridTemplateColumns: '1fr 90px 90px 110px 120px 90px 28px',
+                            background: overQty ? `${c.warning}06` : 'transparent' }}>
+                          {/* Product info */}
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold truncate" style={{ color: c.text }}>{l.product.name}</p>
+                            <p className="text-[10px] truncate" style={{ color: c.muted }}>
+                              {l.product.category}{l.product.strength ? ` · ${l.product.strength}` : ''}
+                            </p>
+                            {overQty && (
+                              <p className="text-[10px] font-bold flex items-center gap-0.5 mt-0.5" style={{ color: c.warning }}>
+                                <AlertTriangle size={9} /> Exceeds available stock
+                              </p>
+                            )}
+                          </div>
+                          {/* Stock level */}
+                          <div className="text-center">
+                            <span className="text-xs font-black px-2 py-0.5 rounded-lg inline-block"
+                              style={{ background: `${stockColor}18`, color: stockColor }}>
+                              {isOut ? '0 — OOS' : `${stock} units`}
+                            </span>
+                          </div>
+                          {/* Cost price (read-only reference) */}
+                          <div className="text-center">
+                            <p className="text-xs font-bold" style={{ color: c.muted }}>
+                              GH₵ {Number(l.product.costPrice).toFixed(2)}
                             </p>
                           </div>
-                        </button>
+                          {/* Selling price (editable transfer price) */}
+                          <div>
+                            <div className="flex items-center rounded-lg overflow-hidden"
+                              style={{ border: `1px solid ${c.border}`, background: c.inputBg }}>
+                              <span className="pl-2 text-[11px] flex-shrink-0" style={{ color: c.muted }}>GH₵</span>
+                              <input type="number" min={0} step={0.01}
+                                value={l.transferPrice}
+                                onChange={e => updateLine(idx, 'transferPrice', Math.max(0, Number(e.target.value)))}
+                                className="flex-1 py-1.5 pr-2 text-sm font-bold text-right focus:outline-none bg-transparent"
+                                style={{ color: c.text }} />
+                            </div>
+                            <p className="text-[9px] text-center mt-0.5" style={{ color: c.muted }}>
+                              orig GH₵ {Number(l.product.sellingPrice).toFixed(2)}
+                            </p>
+                          </div>
+                          {/* Qty stepper */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => updateLine(idx, 'quantity', Math.max(1, qty - 1))}
+                              className="w-6 h-6 rounded flex items-center justify-center font-bold text-sm flex-shrink-0"
+                              style={{ background: c.inputBg, color: c.muted, border: `1px solid ${c.border}` }}>−</button>
+                            <input type="number" min={1}
+                              value={qty}
+                              onChange={e => updateLine(idx, 'quantity', Math.max(1, Number(e.target.value)))}
+                              className="w-12 text-center rounded py-1 text-sm font-bold focus:outline-none"
+                              style={{ background: c.inputBg, border: `1px solid ${overQty ? c.warning : c.border}`, color: overQty ? c.warning : c.text }} />
+                            <button
+                              onClick={() => updateLine(idx, 'quantity', qty + 1)}
+                              className="w-6 h-6 rounded flex items-center justify-center font-bold text-sm flex-shrink-0"
+                              style={{ background: c.inputBg, color: c.muted, border: `1px solid ${c.border}` }}>+</button>
+                          </div>
+                          {/* Subtotal */}
+                          <div className="text-right">
+                            <p className="text-xs font-black" style={{ color: c.success }}>
+                              GH₵ {(qty * l.transferPrice).toFixed(2)}
+                            </p>
+                            <p className="text-[9px]" style={{ color: c.muted }}>{qty} × {l.transferPrice.toFixed(2)}</p>
+                          </div>
+                          {/* Remove */}
+                          <div className="flex justify-center">
+                            <button onClick={() => removeLine(idx)}
+                              className="w-6 h-6 rounded-lg flex items-center justify-center"
+                              style={{ background: `${c.danger}15`, color: c.danger }}>
+                              <X size={11} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {/* Totals footer */}
+                    <div className="grid items-center px-4 py-2.5 border-t"
+                      style={{ borderColor: c.border, background: c.headerBg, gridTemplateColumns: '1fr 90px 90px 110px 120px 90px 28px' }}>
+                      <p className="text-xs font-bold" style={{ color: c.muted }}>
+                        {lineItems.reduce((s, l) => s + l.quantity, 0)} total units · {lineItems.length} product{lineItems.length !== 1 ? 's' : ''}
+                      </p>
+                      <span /><span /><span /><span />
+                      <p className="text-sm font-black text-right" style={{ color: c.success }}>
+                        GH₵ {totalTransferValue.toFixed(2)}
+                      </p>
+                      <span />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border-2 border-dashed flex flex-col items-center justify-center py-8 gap-2"
+                    style={{ borderColor: c.border }}>
+                    <ScanBarcode size={28} style={{ color: c.muted, opacity: 0.4 }} />
+                    <p className="text-sm" style={{ color: c.muted }}>Search and add products above</p>
+                  </div>
+                )}
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: c.muted }}>Notes (optional)</label>
+                  <textarea value={notes} onChange={e => setNotes(e.target.value)}
+                    placeholder="Reason for transfer, batch requirements, special instructions..."
+                    rows={2}
+                    className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none"
+                    style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                </div>
+
+                {createError && (
+                  <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
+                    style={{ background: `${c.danger}12`, color: c.danger, border: `1px solid ${c.danger}30` }}>
+                    <AlertTriangle size={14} className="flex-shrink-0" /> {createError}
+                  </div>
+                )}
+              </div>
+
+              {/* ── RIGHT: Summary Panel ── */}
+              <div className="w-72 flex-shrink-0 flex flex-col overflow-y-auto" style={{ background: c.headerBg }}>
+                <div className="p-5 space-y-4 flex-1">
+
+                  {/* Route preview */}
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: c.muted }}>Transfer Route</p>
+                    <div className="rounded-xl p-3 space-y-2" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: c.primary }} />
+                        <p className="text-xs font-bold truncate" style={{ color: sourceBranchId ? c.text : c.muted }}>
+                          {sourceBranchId ? branches.find(b => b.id === sourceBranchId)?.name : 'Select source…'}
+                        </p>
+                      </div>
+                      <div className="ml-0.5 border-l-2 border-dashed h-3" style={{ borderColor: c.border }} />
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: destBranchId ? c.success : c.border }} />
+                        <p className="text-xs font-bold truncate" style={{ color: destBranchId ? c.text : c.muted }}>
+                          {destBranchId ? branches.find(b => b.id === destBranchId)?.name : 'Select destination…'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Product count */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl p-3 text-center" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                      <p className="text-xl font-black" style={{ color: c.primary }}>{lineItems.length}</p>
+                      <p className="text-[10px] uppercase tracking-wider" style={{ color: c.muted }}>Products</p>
+                    </div>
+                    <div className="rounded-xl p-3 text-center" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                      <p className="text-xl font-black" style={{ color: c.text }}>{lineItems.reduce((s, l) => s + l.quantity, 0)}</p>
+                      <p className="text-[10px] uppercase tracking-wider" style={{ color: c.muted }}>Total Units</p>
+                    </div>
+                  </div>
+
+                  {/* Value */}
+                  <div className="rounded-xl p-4" style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: c.muted }}>Invoice Total</p>
+                    <p className="text-2xl font-black" style={{ color: c.success }}>GH₵ {totalTransferValue.toFixed(2)}</p>
+                    {lineItems.length > 0 && (
+                      <p className="text-[11px] mt-0.5" style={{ color: c.muted }}>
+                        avg GH₵ {(totalTransferValue / lineItems.reduce((s, l) => s + l.quantity, 0) || 0).toFixed(2)}/unit
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Line items mini list */}
+                  {lineItems.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: c.muted }}>Items</p>
+                      {lineItems.map(l => (
+                        <div key={l.product.id} className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-2"
+                          style={{ background: c.card, border: `1px solid ${c.border}` }}>
+                          <p className="text-[11px] font-bold truncate flex-1" style={{ color: c.text }}>{l.product.name}</p>
+                          <p className="text-[11px] font-black flex-shrink-0" style={{ color: c.muted }}>
+                            ×{l.quantity}
+                          </p>
+                          <p className="text-[11px] font-black flex-shrink-0" style={{ color: c.success }}>
+                            GH₵{(l.quantity * l.transferPrice).toFixed(2)}
+                          </p>
+                        </div>
                       ))}
                     </div>
                   )}
-                </div>
-              </div>
 
-              {/* Line items */}
-              {lineItems.length > 0 && (
-                <div className="rounded-2xl border overflow-hidden" style={{ borderColor: c.border }}>
-                  <div className="px-4 py-2.5 grid grid-cols-12 gap-2 text-[10px] font-bold uppercase tracking-widest"
-                    style={{ background: c.headerBg, color: c.muted }}>
-                    <div className="col-span-4">Product</div>
-                    <div className="col-span-2 text-center">Available</div>
-                    <div className="col-span-2 text-center">Qty</div>
-                    <div className="col-span-3 text-center">Transfer Price</div>
-                    <div className="col-span-1"></div>
-                  </div>
-                  {lineItems.map((l, idx) => (
-                    <div key={l.product.id}
-                      className="px-4 py-3 grid grid-cols-12 gap-2 items-center border-t"
-                      style={{ borderColor: c.border }}>
-                      <div className="col-span-4">
-                        <p className="text-xs font-bold leading-tight" style={{ color: c.text }}>{l.product.name}</p>
-                        <p className="text-[10px]" style={{ color: c.muted }}>{l.product.category}</p>
-                      </div>
-                      <div className="col-span-2 text-center">
-                        <p className="text-xs font-bold" style={{ color: l.product.stockQuantity <= 10 ? c.warning : c.muted }}>
-                          {l.product.stockQuantity}
-                        </p>
-                      </div>
-                      <div className="col-span-2 text-center">
-                        <input type="number" min={1} max={l.product.stockQuantity}
-                          value={l.quantity}
-                          onChange={e => updateLine(idx, 'quantity', Math.max(1, Math.min(l.product.stockQuantity, Number(e.target.value))))}
-                          className="w-full text-center rounded-lg py-1 text-sm focus:outline-none"
-                          style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
-                      </div>
-                      <div className="col-span-3 text-center">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs" style={{ color: c.muted }}>GH₵</span>
-                          <input type="number" min={0} step={0.01}
-                            value={l.transferPrice}
-                            onChange={e => updateLine(idx, 'transferPrice', Math.max(0, Number(e.target.value)))}
-                            className="w-full text-center rounded-lg py-1 text-sm focus:outline-none"
-                            style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
-                        </div>
-                      </div>
-                      <div className="col-span-1 flex justify-center">
-                        <button onClick={() => removeLine(idx)}
-                          className="p-1 rounded-lg" style={{ color: c.danger }}>
-                          <Minus size={13} />
-                        </button>
-                      </div>
+                  {/* Info box */}
+                  <div className="rounded-xl p-3" style={{ background: `${c.primary}08`, border: `1px solid ${c.primary}25` }}>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Zap size={12} style={{ color: c.primary }} />
+                      <p className="text-[10px] font-black" style={{ color: c.primary }}>Auto-generated on approval</p>
                     </div>
-                  ))}
-                  {/* Totals row */}
-                  <div className="px-4 py-3 border-t flex justify-between items-center"
-                    style={{ borderColor: c.border, background: c.headerBg }}>
-                    <p className="text-xs font-bold" style={{ color: c.muted }}>
-                      {lineItems.reduce((s, l) => s + l.quantity, 0)} total units
-                    </p>
-                    <p className="text-sm font-black" style={{ color: c.success }}>
-                      Invoice Total: GH₵ {totalTransferValue.toFixed(2)}
-                    </p>
+                    <ul className="text-[10px] space-y-1" style={{ color: c.muted }}>
+                      <li>✓ Stock deducted from source</li>
+                      <li>✓ Stock credited to destination</li>
+                      <li>✓ Supplier invoice created</li>
+                      <li>✓ Ledger entries posted</li>
+                    </ul>
                   </div>
                 </div>
-              )}
 
-              {/* Notes */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: c.muted }}>
-                  Notes (optional)
-                </label>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)}
-                  placeholder="Reason for transfer, special instructions..."
-                  rows={2}
-                  className="w-full rounded-xl px-3 py-2.5 text-sm focus:outline-none resize-none"
-                  style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
-              </div>
-
-              {/* What happens info box */}
-              <div className="p-4 rounded-2xl border" style={{ borderColor: `${c.primary}30`, background: `${c.primary}08` }}>
-                <p className="text-xs font-black mb-1.5" style={{ color: c.primary }}>What happens when approved:</p>
-                <ul className="text-[11px] space-y-0.5" style={{ color: c.muted }}>
-                  <li>• Stock is immediately deducted from source on submission</li>
-                  <li>• On approval: stock is credited to destination branch</li>
-                  <li>• A purchase record + supplier invoice is auto-generated for destination</li>
-                  <li>• Ledger entries posted: Revenue on source, Liability on destination</li>
-                  <li>• All accounting dashboards sync automatically</li>
-                </ul>
-              </div>
-
-              {createError && (
-                <div className="flex items-center gap-2 p-3 rounded-xl text-sm"
-                  style={{ background: `${c.danger}15`, color: c.danger }}>
-                  <AlertTriangle size={14} /> {createError}
+                {/* Action buttons pinned to bottom */}
+                <div className="p-4 border-t space-y-2 flex-shrink-0" style={{ borderColor: c.border }}>
+                  <button onClick={handleCreateTransfer}
+                    disabled={isSubmitting || lineItems.length === 0 || !sourceBranchId || !destBranchId}
+                    className="w-full py-3 rounded-xl font-black text-white text-sm flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+                    style={{ background: c.primary }}>
+                    {isSubmitting
+                      ? <><Loader2 size={15} className="animate-spin" /> Initiating…</>
+                      : <><Truck size={15} /> Initiate Transfer</>}
+                  </button>
+                  <button onClick={() => { setShowCreate(false); setCreateError(''); setLineItems([]); resetQuickAdd(); setProductSearch(''); }}
+                    className="w-full py-2.5 rounded-xl font-bold text-sm border transition-all"
+                    style={{ borderColor: c.border, color: c.muted }}>
+                    Cancel
+                  </button>
                 </div>
-              )}
-
-              <div className="flex gap-3">
-                <button onClick={() => { setShowCreate(false); setCreateError(''); setLineItems([]); }}
-                  className="flex-1 py-3 rounded-xl font-bold border text-sm"
-                  style={{ borderColor: c.border, color: c.muted }}>
-                  Cancel
-                </button>
-                <button onClick={handleCreateTransfer}
-                  disabled={isSubmitting || lineItems.length === 0}
-                  className="flex-1 py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                  style={{ background: c.primary }}>
-                  {isSubmitting
-                    ? <><Loader2 size={15} className="animate-spin" /> Initiating…</>
-                    : <><Truck size={15} /> Initiate Transfer</>}
-                </button>
               </div>
             </div>
           </div>

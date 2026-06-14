@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
 import { gql, M_CREATE_PRESCRIPTION, M_DISPENSE_PRESCRIPTION } from '@/lib/gql';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 import { 
   Search, Plus, Eye, CheckCircle, Clock, XCircle, FileText, Camera, Pill,
   User, Phone, Calendar, ArrowRight, Loader2, X, AlertCircle
@@ -23,6 +25,8 @@ export default function PrescriptionsPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { prescriptions, loadingPrescriptions, refetchPrescriptions, me, products } = useStore();
+  const branchFilter = useBranchFilter();
+  const branchPrescriptions = branchFilter(prescriptions);
 
   useEffect(() => {
     setMounted(true);
@@ -171,7 +175,7 @@ export default function PrescriptionsPage() {
     }
   };
 
-  const filtered = prescriptions.filter(rx => {
+  const filtered = branchPrescriptions.filter(rx => {
     const matchSearch =
       rx.rxNumber.toLowerCase().includes(search.toLowerCase()) ||
       rx.patientName.toLowerCase().includes(search.toLowerCase()) ||
@@ -181,17 +185,17 @@ export default function PrescriptionsPage() {
   });
 
   const counts = {
-    total: prescriptions.length,
-    pending: prescriptions.filter(r => r.status === 'PENDING').length,
-    dispensed: prescriptions.filter(r => r.status === 'DISPENSED').length,
-    partial: prescriptions.filter(r => r.status === 'PARTIAL').length,
+    total: branchPrescriptions.length,
+    pending: branchPrescriptions.filter(r => r.status === 'PENDING').length,
+    dispensed: branchPrescriptions.filter(r => r.status === 'DISPENSED').length,
+    partial: branchPrescriptions.filter(r => r.status === 'PARTIAL').length,
   };
 
   if (!mounted) return null;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 relative">
-
+      <BranchBanner />
       {/* Page Message Toasts */}
       {message && (
         <div className="fixed top-20 right-6 z-[100] max-w-sm rounded-2xl border p-4 backdrop-blur-xl shadow-2xl flex gap-3 animate-in slide-in-from-right-4 duration-300"

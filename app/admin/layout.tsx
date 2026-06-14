@@ -26,7 +26,8 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   Bell,
-  Menu
+  Menu,
+  Tags
 } from 'lucide-react';
 
 const adminItems = [
@@ -35,6 +36,7 @@ const adminItems = [
   { label: 'Customer Relations', href: '/admin/customers', icon: Contact, color: '#14B8A6' },
   { label: 'Authorizations', href: '/admin/authorizations', icon: ShieldCheck, color: '#10B981' },
   { label: 'Stock Transfers', href: '/admin/transfers', icon: ArrowRightLeft, color: '#EC4899' },
+  { label: 'Price Control', href: '/admin/price-control', icon: Tags, color: '#F97316' },
   { label: 'Supplier Invoices', href: '/admin/invoices', icon: Truck, color: '#F59E0B' },
   { label: 'Financials', href: '/admin/financials', icon: CreditCard, color: '#A855F7' },
   { label: 'Reports', href: '/admin/reports', icon: FileText, color: '#3B82F6' },
@@ -301,7 +303,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     className="font-data text-[10px] uppercase"
                     style={{ color: isDark ? '#64748B' : '#94A3B8' }}
                   >
-                    {(me?.branch?.name || '').toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}
+                    {me?.branch?.name ?? me?.branchId ?? 'Branch'}
                   </p>
                 </div>
               </div>

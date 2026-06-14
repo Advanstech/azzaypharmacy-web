@@ -15,6 +15,8 @@ import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
 import { usePagination } from '@/hooks/use-pagination';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 const PAYMENT_METHODS = {
   CASH: { label: 'Cash', color: '#10B981', icon: '💵' },
@@ -529,9 +531,13 @@ export default function EnhancedSalesPage() {
     inputBg: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC',
   };
 
+  // Branch filter
+  const branchFilter = useBranchFilter();
+  const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
+
   // Enhanced sales data with analytics
   const enrichedSales = useMemo(() => {
-    return sales.map(sale => ({
+    return branchSales.map(sale => ({
       ...sale,
       profit: sale.totalAmount * 0.3, // Assuming 30% profit margin
       itemsCount: sale.items?.length || 0,
@@ -540,7 +546,7 @@ export default function EnhancedSalesPage() {
       timeOfDay: new Date(sale.createdAt).getHours(),
       dayOfWeek: new Date(sale.createdAt).toLocaleDateString('en-US', { weekday: 'short' }),
     }));
-  }, [sales]);
+  }, [branchSales]);
 
   // Filter sales
   const filteredSales = useMemo(() => {
@@ -679,6 +685,7 @@ export default function EnhancedSalesPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>

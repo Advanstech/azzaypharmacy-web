@@ -142,7 +142,7 @@ export async function gql<T = unknown>(
 export const Q_PRODUCTS = `
   query GetProducts {
     products {
-      id name genericName brand category sellingPrice costPrice
+      id name genericName brand category sellingPrice costPrice branchId
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
       stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
@@ -173,7 +173,7 @@ export const Q_SALES = `
       id totalAmount amountPaid change paymentMethod
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
-      customerType notes isRefunded refundReason refundedAt createdAt cashierId
+      customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
       user { id name role }
       items {
         id quantity unitPrice total batchNo
@@ -190,7 +190,7 @@ export const Q_SALES_PAGINATED = `
       id totalAmount amountPaid change paymentMethod
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
-      customerType notes isRefunded refundReason refundedAt createdAt cashierId
+      customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
       user { id name role }
       items {
         id quantity unitPrice total batchNo
@@ -516,6 +516,14 @@ export const M_UPDATE_PRODUCT_PRICES = `
   }
 `;
 
+export const M_BULK_UPDATE_PRODUCT_PRICES = `
+  mutation BulkUpdateProductPrices($updates: String!) {
+    bulkUpdateProductPrices(updates: $updates) {
+      id name costPrice sellingPrice stockQuantity markup
+    }
+  }
+`;
+
 export const M_UPDATE_PRODUCT_SUPPLIER = `
   mutation UpdateProductSupplier($productId: ID!, $supplierId: ID!) {
     updateProductSupplier(productId: $productId, supplierId: $supplierId) {
@@ -632,7 +640,7 @@ export const Q_EXPENSES = `
   query GetExpenses {
     expenses {
       items {
-        id amount description date receiptUrl status createdAt
+        id amount description date receiptUrl status createdAt branchId
         category { id name }
       }
     }

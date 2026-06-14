@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
+import { useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 export default function RefundPage() {
   const { theme, resolvedTheme } = useTheme();
@@ -20,6 +22,9 @@ export default function RefundPage() {
   const role = me?.role || user?.user_metadata?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
+  const branchFilter = useBranchFilter();
+  const branchSales = branchFilter(sales);
+
   const [receiptSearch, setReceiptSearch] = useState('');
   const [foundSale, setFoundSale] = useState<any>(null);
   const [refundReason, setRefundReason] = useState('');
@@ -27,8 +32,9 @@ export default function RefundPage() {
 
   const lookupReceipt = () => {
     const q = receiptSearch.trim().toLowerCase();
-    const match = sales.find(s =>
+    const match = branchSales.find(s =>
       s.id.toLowerCase().includes(q) ||
+      (s.receiptNo || '').toLowerCase().includes(q) ||
       (s.customerName || '').toLowerCase().includes(q)
     );
     setFoundSale(match || null);
@@ -82,12 +88,14 @@ export default function RefundPage() {
     }
   };
 
+  const pendingRefunds = refundRequests.filter(r => r.status === 'PENDING');
   const processedRefunds = refundRequests.filter(r => r.status === 'APPROVED' || r.status === 'REJECTED').slice(0, 20);
 
   if (!mounted) return null;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>Sales Refunds</h1>
@@ -167,16 +175,16 @@ export default function RefundPage() {
           </div>
 
           {/* Pending Requests */}
-          {refundRequests.filter(r => r.status === 'PENDING').length > 0 && (
+          {pendingRefunds.length > 0 && (
             <div className="rounded-[32px] border backdrop-blur-xl overflow-hidden" style={{ background: c.bg, borderColor: c.border }}>
               <div className="p-6 border-b flex items-center justify-between" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC', borderColor: c.border }}>
                 <h3 className="font-display text-sm font-bold uppercase tracking-widest" style={{ color: c.text }}>
                   {isManager ? 'Pending Authorizations' : 'Your Refund Requests'}
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">{refundRequests.filter(r => r.status === 'PENDING').length}</span>
+                <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">{pendingRefunds.length}</span>
               </div>
               <div className="divide-y" style={{ borderColor: c.border }}>
-                {refundRequests.filter(r => r.status === 'PENDING').map((r) => (
+                {pendingRefunds.map((r) => (
                   <div key={r.id} className="p-6 flex items-center justify-between hover:bg-white/5 transition-all">
                     <div className="flex items-center gap-4">
                       <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center border border-slate-700">

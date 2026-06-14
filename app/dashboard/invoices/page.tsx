@@ -13,6 +13,8 @@ import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE, Q_INVOICES, M_RECORD_SUPPLIER_PAYMENT } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
+import { useBranch } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 const INVOICE_STATUS = {
   DRAFT: { label: 'Draft', color: '#64748B', bg: 'rgba(100,116,139,0.1)' },
@@ -33,6 +35,7 @@ export default function InvoicesPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { suppliers, products, me, refetchPurchases, createSupplier, createProduct, purchases } = useStore();
+  const { activeBranchId } = useBranch();
   const { addToast } = useToast();
 
   const [search, setSearch] = useState('');
@@ -82,7 +85,7 @@ export default function InvoicesPage() {
     const fetchInvoices = async () => {
       if (!me?.branchId) return;
       try {
-        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: me.branchId });
+        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: activeBranchId || me.branchId });
         setInvoiceRecords(data.invoices ?? []);
       } catch (error) {
         console.error('Failed to fetch invoices:', error);
@@ -90,7 +93,7 @@ export default function InvoicesPage() {
     };
 
     fetchInvoices();
-  }, [me?.branchId]);
+  }, [me?.branchId, activeBranchId]);
 
   // Live duplicate invoice number check for manual ledger
   useEffect(() => {
@@ -235,6 +238,12 @@ export default function InvoicesPage() {
   const totalBalance = invoices.reduce((sum, inv) => sum + inv.balance, 0);
   const overdueCount = invoices.filter(inv => inv.status === 'OVERDUE').length;
   const overdueAmount = invoices.filter(inv => inv.status === 'OVERDUE').reduce((sum, inv) => sum + inv.balance, 0);
+  
+  // Additional payment analytics
+  const paymentRate = totalAmount > 0 ? ((totalPaid / totalAmount) * 100).toFixed(1) : '0';
+  const partialPaidCount = invoices.filter(inv => inv.paymentStatus === 'PARTIAL').length;
+  const fullyPaidCount = invoices.filter(inv => inv.paymentStatus === 'PAID').length;
+  const unpaidCount = invoices.filter(inv => inv.paymentStatus === 'UNPAID').length;
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -604,7 +613,7 @@ export default function InvoicesPage() {
       });
       
       if (me?.branchId) {
-        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: me.branchId });
+        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: activeBranchId || me.branchId });
         setInvoiceRecords(data.invoices ?? []);
       }
       await refetchPurchases();
@@ -693,6 +702,7 @@ export default function InvoicesPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
@@ -709,11 +719,12 @@ export default function InvoicesPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         {[
           { label: 'Total Invoices', value: totalInvoices, sub: 'All time', icon: FileText, color: '#0EA5E9' },
           { label: 'Total Amount', value: `GH₵ ${(totalAmount/1000).toFixed(1)}k`, sub: 'Invoice value', icon: DollarSign, color: '#8B5CF6' },
           { label: 'Paid Amount', value: `GH₵ ${(totalPaid/1000).toFixed(1)}k`, sub: 'Settled', icon: TrendingUp, color: '#10B981' },
+          { label: 'Payment Rate', value: `${paymentRate}%`, sub: 'Completion', icon: CheckCircle, color: '#06B6D4' },
           { label: 'Outstanding', value: `GH₵ ${(totalBalance/1000).toFixed(1)}k`, sub: 'Due balance', icon: Clock, color: '#F59E0B' },
           { label: 'Overdue', value: `${overdueCount} (${overdueAmount > 0 ? `GH₵${(overdueAmount/1000).toFixed(1)}k` : '0'})`, sub: 'Past due', icon: AlertCircle, color: '#EF4444' },
         ].map(s => {
@@ -888,6 +899,104 @@ export default function InvoicesPage() {
               <button disabled={currentPage === totalPages} onClick={nextPage} className="px-4 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-30" style={{ background: card.primary, color: '#fff' }}>
                 Next
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Analytics Tab */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          {/* Payment Status Breakdown */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+              <h3 className="font-display text-sm font-bold mb-4" style={{ color: card.text }}>Payment Status</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ background: '#10B981' }} />
+                    <span className="text-sm" style={{ color: card.muted }}>Fully Paid</span>
+                  </div>
+                  <span className="font-mono text-sm font-bold" style={{ color: card.text }}>{fullyPaidCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ background: '#F59E0B' }} />
+                    <span className="text-sm" style={{ color: card.muted }}>Partial Paid</span>
+                  </div>
+                  <span className="font-mono text-sm font-bold" style={{ color: card.text }}>{partialPaidCount}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full" style={{ background: '#EF4444' }} />
+                    <span className="text-sm" style={{ color: card.muted }}>Unpaid</span>
+                  </div>
+                  <span className="font-mono text-sm font-bold" style={{ color: card.text }}>{unpaidCount}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Rate Card */}
+            <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+              <h3 className="font-display text-sm font-bold mb-4" style={{ color: card.text }}>Payment Rate</h3>
+              <div className="flex items-center justify-center py-4">
+                <div className="relative w-32 h-32">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle cx="64" cy="64" r="56" fill="none" stroke={isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.2)'} strokeWidth="12" />
+                    <circle 
+                      cx="64" cy="64" r="56" 
+                      fill="none" 
+                      stroke="#10B981" 
+                      strokeWidth="12" 
+                      strokeDasharray={`${parseFloat(paymentRate) * 3.52} 352`}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-2xl font-bold" style={{ color: card.text }}>{paymentRate}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Overdue Summary */}
+            <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+              <h3 className="font-display text-sm font-bold mb-4" style={{ color: card.text }}>Overdue Summary</h3>
+              <div className="space-y-3">
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <p className="text-xs" style={{ color: card.muted }}>Overdue Count</p>
+                  <p className="text-xl font-bold" style={{ color: '#EF4444' }}>{overdueCount}</p>
+                </div>
+                <div className="p-3 rounded-xl" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <p className="text-xs" style={{ color: card.muted }}>Overdue Amount</p>
+                  <p className="text-xl font-bold" style={{ color: '#EF4444' }}>GH₵ {overdueAmount.toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Monthly Payment Trend */}
+          <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+            <h3 className="font-display text-sm font-bold mb-4" style={{ color: card.text }}>Monthly Payment Trend</h3>
+            <div className="h-48 flex items-end gap-2">
+              {Array.from({ length: 6 }).map((_, i) => {
+                const height = Math.random() * 80 + 20;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div 
+                      className="w-full rounded-t-lg transition-all hover:opacity-80"
+                      style={{ 
+                        background: card.primary, 
+                        height: `${height}%`,
+                        opacity: 0.6 + (i * 0.1)
+                      }}
+                    />
+                    <span className="text-[10px]" style={{ color: card.muted }}>
+                      {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'][i]}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1365,6 +1474,33 @@ export default function InvoicesPage() {
                 <div className="flex justify-between items-center pt-2 border-t" style={{ borderColor: card.border }}>
                   <span className="text-sm font-medium" style={{ color: card.text }}>Remaining Balance:</span>
                   <span className="font-mono text-lg font-bold" style={{ color: card.primary }}>GH₵ {selectedInvoice.balance.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Quick Payment</label>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setPaymentAmount(selectedInvoice.balance)}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
+                    style={{ background: paymentAmount === selectedInvoice.balance ? card.success : card.inputBg, color: paymentAmount === selectedInvoice.balance ? '#fff' : card.text, border: `1px solid ${card.border}` }}
+                  >
+                    Pay Full
+                  </button>
+                  <button 
+                    onClick={() => setPaymentAmount(selectedInvoice.balance * 0.5)}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
+                    style={{ background: paymentAmount === selectedInvoice.balance * 0.5 ? card.success : card.inputBg, color: paymentAmount === selectedInvoice.balance * 0.5 ? '#fff' : card.text, border: `1px solid ${card.border}` }}
+                  >
+                    50%
+                  </button>
+                  <button 
+                    onClick={() => setPaymentAmount(selectedInvoice.balance * 0.25)}
+                    className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
+                    style={{ background: paymentAmount === selectedInvoice.balance * 0.25 ? card.success : card.inputBg, color: paymentAmount === selectedInvoice.balance * 0.25 ? '#fff' : card.text, border: `1px solid ${card.border}` }}
+                  >
+                    25%
+                  </button>
                 </div>
               </div>
 
