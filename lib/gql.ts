@@ -391,8 +391,6 @@ export const Q_SHIFT_RECONCILIATION_BY_ID = `
       branch { id name }
       pharmacist { id name email }
       approvedBy { id name email }
-      approvedAt
-      pharmacistId
     }
   }
 `;

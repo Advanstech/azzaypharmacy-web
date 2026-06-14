@@ -231,10 +231,6 @@ export default function ShiftReconciliationDetailPage({ params }: { params: Prom
               <span>Approved By:</span>
               <span>${shift.approvedBy.name}</span>
             </div>
-            <div class="info-row">
-              <span>Approved At:</span>
-              <span>${new Date(shift.approvedAt).toLocaleString('en-GB')}</span>
-            </div>
           ` : ''}
 
           ${shift.notes ? `
@@ -471,15 +467,6 @@ export default function ShiftReconciliationDetailPage({ params }: { params: Prom
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <Clock size={18} style={{ color: card.subtle }} />
-                        <div>
-                          <p className="text-xs" style={{ color: card.muted }}>Approved At</p>
-                          <p className="text-sm font-bold" style={{ color: card.text }}>
-                            {new Date(shift.approvedAt).toLocaleString('en-GB')}
-                          </p>
-                        </div>
-                      </div>
                     </>
                   ) : (
                     <div className="flex items-center gap-3">
@@ -572,8 +559,8 @@ export default function ShiftReconciliationDetailPage({ params }: { params: Prom
                   <p className="font-mono" style={{ color: card.text }}>{shift.id}</p>
                 </div>
                 <div>
-                  <p className="font-bold" style={{ color: card.muted }}>User ID</p>
-                  <p className="font-mono" style={{ color: card.text }}>{shift.pharmacistId}</p>
+                  <p className="font-bold" style={{ color: card.muted }}>Pharmacist ID</p>
+                  <p className="font-mono" style={{ color: card.text }}>{shift.pharmacist?.id}</p>
                 </div>
               </div>
             </div>

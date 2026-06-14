@@ -279,10 +279,9 @@ function POSInner() {
         </head>
         <body>
           <div class="center">
-            <div class="store-name">AZZAY PHARMACY</div>
-            <div class="store-info">Dormaa Central, Ghana</div>
-            <div class="store-info">Tel: +233 24 000 0000</div>
-            <div class="store-info">TIN: C0001234567</div>
+            <div class="store-name">${me?.branch?.name || 'AZZAY PHARMACY'}</div>
+            <div class="store-info">${me?.branch?.location || 'Dormaa Central, Ghana'}</div>
+            ${me?.branch?.phone ? `<div class="store-info">Tel: ${me.branch.phone}</div>` : ''}
           </div>
 
           <div class="divider"></div>
@@ -301,7 +300,7 @@ function POSInner() {
           </div>
           <div class="info-row">
             <span>Customer:</span>
-            <span>${selectedCustomer?.name || 'Walk-in'}</span>
+            <span>${sale.customer?.name || selectedCustomer?.name || 'Walk-in'}</span>
           </div>
 
           <div class="divider"></div>
