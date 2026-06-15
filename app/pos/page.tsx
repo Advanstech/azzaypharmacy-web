@@ -106,6 +106,7 @@ function POSInner() {
   const [showReceipt, setShowReceipt] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [completedSale, setCompletedSale] = useState<any>(null);
+  const submissionLockRef = useRef(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
@@ -553,8 +554,12 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
   };
 
   const handleComplete = async () => {
-    if (cart.length === 0 || submitting) return;
+    if (cart.length === 0 || submitting || submissionLockRef.current) return;
+    
+    // Set lock immediately to prevent race conditions
+    submissionLockRef.current = true;
     setSubmitting(true);
+    
     try {
       const sale = await createSale({
         items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
@@ -595,6 +600,10 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       alert(`❌ SALE FAILED\n\n${err?.message || 'Unknown error. Check your connection and try again.'}\n\nPlease try again or contact support.`);
     } finally {
       setSubmitting(false);
+      // Release lock after a short delay to prevent rapid retries
+      setTimeout(() => {
+        submissionLockRef.current = false;
+      }, 500);
     }
   };
 
