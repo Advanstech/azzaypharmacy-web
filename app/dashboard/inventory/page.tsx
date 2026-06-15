@@ -949,6 +949,7 @@ export default function InventoryPage() {
       return;
     }
 
+    // Set loading state immediately to prevent double-clicks
     setIsCreatingInvoiceSupplier(true);
     try {
       const existing = getSupplierMatchByName(draftName);
