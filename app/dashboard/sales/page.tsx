@@ -15,7 +15,7 @@ import { useStore } from '@/lib/store';
 import { useAuth } from '@/lib/auth-context';
 import { usePagination } from '@/hooks/use-pagination';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
-import { useBranchFilter } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 
 const PAYMENT_METHODS = {
@@ -39,6 +39,7 @@ export default function EnhancedSalesPage() {
   const [mounted, setMounted] = useState(false);
   const { sales, loadingSales, refetchSales, me, products, customers, requestRefund, deleteSale } = useStore();
   const { user } = useAuth();
+  const { branches } = useBranch();
 
   const role = me?.role || user?.user_metadata?.role;
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
@@ -77,6 +78,7 @@ export default function EnhancedSalesPage() {
   const handlePrint = (sale: any) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
+    const saleBranch = branches.find(b => b.id === sale.branchId);
 
     // Optimized for 80mm thermal printer with high-contrast black & white clarity
     const itemsHtml = sale.items.map((item: any) => {
@@ -233,8 +235,9 @@ export default function EnhancedSalesPage() {
         <body>
           <div class="center">
             <div class="store-name">AZZAY PHARMACY</div>
-            <div class="store-info">Accra, Ghana</div>
-            <div class="store-info">Tel: +233 24 000 0000</div>
+            <div class="store-info">${saleBranch?.name || me?.branch?.name || 'Branch'}</div>
+            <div class="store-info">${saleBranch?.location || me?.branch?.location || 'Dormaa Central, Ghana'}</div>
+            <div class="store-info">Tel: +233 54 335 8934</div>
             <div class="store-info">TIN: C0001234567</div>
           </div>
 

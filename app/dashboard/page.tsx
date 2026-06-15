@@ -342,11 +342,11 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           <div className="flex items-center justify-center py-6">
             <div className="w-8 h-8 rounded-full border-2 animate-spin" style={{ borderTopColor: 'transparent', borderColor: s.accent }} />
           </div>
-        ) : sales.length === 0 ? (
+        ) : branchSales.length === 0 ? (
           <p className="text-xs text-center py-4" style={{ color: s.textMuted }}>No transactions recorded yet</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {[...sales].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 3).map(sale => (
+            {[...branchSales].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 3).map(sale => (
               <div key={sale.id} className="flex items-center gap-4 px-4 py-3.5 rounded-xl transition-all hover:scale-[1.01]"
                 style={{ background: isDark ? 'rgba(148,163,184,0.06)' : 'rgba(203,213,225,0.2)' }}>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${s.success}15` }}>

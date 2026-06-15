@@ -29,7 +29,7 @@ export function BranchSwitcher({ isDark }: { isDark: boolean }) {
   const activeBg = isDark ? 'rgba(0,217,255,0.12)' : 'rgba(14,165,233,0.12)';
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative z-[1002]" ref={ref}>
       <button
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all border shadow-sm"
@@ -51,8 +51,12 @@ export function BranchSwitcher({ isDark }: { isDark: boolean }) {
 
       {open && (
         <div
-          className="absolute top-full right-0 mt-2 w-56 rounded-2xl border shadow-2xl z-50 overflow-hidden"
-          style={{ background: cardBg, borderColor: border }}
+          className="absolute top-full right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border shadow-2xl z-[1003] overflow-hidden"
+          style={{
+            background: cardBg,
+            borderColor: border,
+            boxShadow: isDark ? '0 24px 60px rgba(0,0,0,0.55)' : '0 24px 60px rgba(15,23,42,0.18)',
+          }}
         >
           <div className="px-3 py-2 border-b" style={{ borderColor: border }}>
             <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: textMuted }}>

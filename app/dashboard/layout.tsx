@@ -514,10 +514,10 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── MAIN CONTENT ─────────────────────────────────────────────── */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col min-w-0">
         {/* Top Bar */}
         <header
-          className="h-16 shrink-0 border-b backdrop-blur-xl flex items-center justify-between px-4 md:px-6 gap-3 md:gap-6"
+          className="relative z-[1000] h-16 shrink-0 border-b backdrop-blur-xl flex items-center justify-between px-4 md:px-6 gap-3 md:gap-6"
           style={{
             background: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(255, 255, 255, 0.8)',
             borderColor: isDark ? 'rgba(0, 217, 255, 0.1)' : 'rgba(14, 165, 233, 0.15)',
@@ -586,7 +586,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
           </div>
 
           {/* Right: Branch Switcher + Date */}
-          <div className="flex items-center gap-3 min-w-max">
+          <div className="relative z-[1001] flex items-center gap-3 min-w-max">
             <BranchSwitcher isDark={isDark} />
             <span
               className="font-data text-xs hidden md:block"
@@ -602,7 +602,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24">
+        <div className="relative z-0 flex-1 overflow-y-auto p-4 md:p-6 pb-24">
           <PageTransition>{children}</PageTransition>
         </div>
       </main>

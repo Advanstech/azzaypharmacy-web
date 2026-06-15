@@ -19,6 +19,7 @@ export interface Branch {
   name: string;
   location?: string;
   phone?: string;
+  equivalentBranchIds?: string[];
 }
 
 export const MANAGERIAL_ROLES = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'];
@@ -42,6 +43,35 @@ const BranchContext = createContext<BranchContextValue>({
 });
 
 const STORAGE_KEY = 'azzay_active_branch';
+const MAIN_BRANCH_ALIAS_NAMES = ['main branch', 'dormaa central main branch'];
+
+function isMainBranchAlias(branch?: Branch) {
+  return !!branch && MAIN_BRANCH_ALIAS_NAMES.includes(branch.name.trim().toLowerCase());
+}
+
+function normalizeBranches(branches: Branch[]) {
+  const hasDormaaMain = branches.some(b => b.name.trim().toLowerCase() === 'dormaa central main branch');
+  if (!hasDormaaMain) return branches;
+  const aliasIds = branches.filter(isMainBranchAlias).map(b => b.id);
+  return branches
+    .filter(b => b.name.trim().toLowerCase() !== 'main branch')
+    .map(b => isMainBranchAlias(b) ? { ...b, equivalentBranchIds: aliasIds } : b);
+}
+
+function getEquivalentBranchIds(branches: Branch[], activeBranchId: string | null) {
+  if (!activeBranchId) return [];
+  const selectedBranch = branches.find(b => b.id === activeBranchId);
+  if (selectedBranch?.equivalentBranchIds?.length) return selectedBranch.equivalentBranchIds;
+  if (!isMainBranchAlias(selectedBranch)) return [activeBranchId];
+  return branches.filter(isMainBranchAlias).map(b => b.id);
+}
+
+function getCanonicalBranchId(branches: Branch[], activeBranchId: string | null) {
+  if (!activeBranchId) return null;
+  const selectedBranch = branches.find(b => b.id === activeBranchId);
+  if (!isMainBranchAlias(selectedBranch)) return activeBranchId;
+  return branches.find(b => b.name.trim().toLowerCase() === 'dormaa central main branch')?.id ?? activeBranchId;
+}
 
 export function BranchProvider({
   children,
@@ -88,16 +118,18 @@ export function BranchProvider({
     } catch {}
   }, [isManager]);
 
-  const activeBranchName = activeBranchId
-    ? (branches.find(b => b.id === activeBranchId)?.name ?? assignedBranchName ?? 'Branch')
+  const displayBranches = normalizeBranches(branches);
+  const canonicalActiveBranchId = isManager ? getCanonicalBranchId(branches, activeBranchId) : (assignedBranchId ?? null);
+  const activeBranchName = canonicalActiveBranchId
+    ? (displayBranches.find(b => b.id === canonicalActiveBranchId)?.name ?? branches.find(b => b.id === canonicalActiveBranchId)?.name ?? assignedBranchName ?? 'Branch')
     : isManager
       ? 'All Branches'
       : (assignedBranchName ?? 'My Branch');
 
   return (
     <BranchContext.Provider value={{
-      branches,
-      activeBranchId: isManager ? activeBranchId : (assignedBranchId ?? null),
+      branches: displayBranches,
+      activeBranchId: canonicalActiveBranchId,
       activeBranchName,
       setActiveBranch,
       canSwitchBranch: isManager,
@@ -118,11 +150,11 @@ export function useBranch() {
  * Everyone else sees only their active branch.
  */
 export function useBranchFilter() {
-  const { activeBranchId, canSwitchBranch } = useBranch();
+  const { branches, activeBranchId, canSwitchBranch } = useBranch();
   return useCallback(<T extends { branchId?: string }>(items: T[]): T[] => {
     if (canSwitchBranch && activeBranchId === null) return items; // All branches
-    const targetId = activeBranchId;
-    if (!targetId) return items;
-    return items.filter(item => item.branchId === targetId);
-  }, [activeBranchId, canSwitchBranch]);
+    const targetIds = getEquivalentBranchIds(branches, activeBranchId);
+    if (targetIds.length === 0) return items;
+    return items.filter(item => item.branchId && targetIds.includes(item.branchId));
+  }, [activeBranchId, branches, canSwitchBranch]);
 }
