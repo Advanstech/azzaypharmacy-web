@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
-import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react';
+import { X, CheckCircle, AlertCircle, AlertTriangle, Info, Copy, Check, Mail } from 'lucide-react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -11,6 +11,8 @@ export interface Toast {
   title?: string;
   message: string;
   duration?: number;
+  copyable?: boolean;
+  onEmail?: () => void;
 }
 
 interface ToastContextValue {
@@ -101,6 +103,7 @@ function ToastContainer({ toasts, removeToast }: { toasts: Toast[]; removeToast:
 
 function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   const [isVisible, setIsVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
   const Icon = toastIcons[toast.type];
   const styles = toastStyles[toast.type];
 
@@ -112,6 +115,27 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   const handleClose = () => {
     setIsVisible(false);
     setTimeout(onClose, 300);
+  };
+
+  const handleCopy = async () => {
+    const textToCopy = toast.title ? `${toast.title}\n\n${toast.message}` : toast.message;
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const handleEmail = () => {
+    if (toast.onEmail) {
+      toast.onEmail();
+    } else {
+      const subject = encodeURIComponent(toast.title || 'Notification');
+      const body = encodeURIComponent(toast.title ? `${toast.title}\n\n${toast.message}` : toast.message);
+      window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+    }
   };
 
   return (
@@ -141,12 +165,36 @@ function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
           {toast.message}
         </p>
       </div>
-      <button
-        onClick={handleClose}
-        className="flex-shrink-0 p-1 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-white/60"
-      >
-        <X size={16} />
-      </button>
+      <div className="flex flex-col gap-1 items-end">
+        {(toast.copyable || toast.onEmail) && (
+          <div className="flex gap-1">
+            {toast.copyable && (
+              <button
+                onClick={handleCopy}
+                className="flex-shrink-0 p-1.5 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-white/60"
+                title="Copy notification"
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+              </button>
+            )}
+            {toast.onEmail && (
+              <button
+                onClick={handleEmail}
+                className="flex-shrink-0 p-1.5 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-white/60"
+                title="Send via email"
+              >
+                <Mail size={14} />
+              </button>
+            )}
+          </div>
+        )}
+        <button
+          onClick={handleClose}
+          className="flex-shrink-0 p-1 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 dark:text-white/60"
+        >
+          <X size={16} />
+        </button>
+      </div>
     </div>
   );
 }

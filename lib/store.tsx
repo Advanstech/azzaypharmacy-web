@@ -327,6 +327,10 @@ export interface StockMovement {
   reference?: string;
   user?: string;
   date: string;
+  branchId?: string;
+  branchName?: string;
+  supplierId?: string;
+  supplierName?: string;
 }
 
 export interface CartItem {
@@ -916,6 +920,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         reference: newSale.id,
         user: me?.name,
         date: new Date().toISOString(),
+        branchId: me?.branchId,
+        branchName: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : ''),
       });
       return { ...p, stockQuantity: Math.max(0, p.stockQuantity - soldItem.quantity) };
     }));
@@ -1112,6 +1118,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     const newProduct = data.createProduct;
     setProducts(prev => [newProduct, ...prev]);
     if (args.stockQuantity > 0) {
+      const supplier = suppliers.find(s => s.id === args.supplierId);
       setStockMovements(prev => [{
         id: `mv-${Date.now()}`,
         productId: newProduct.id,
@@ -1121,6 +1128,10 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         reason: 'Initial stock on product creation',
         user: me?.name,
         date: new Date().toISOString(),
+        branchId: args.branchId || me?.branchId,
+        branchName: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : ''),
+        supplierId: args.supplierId,
+        supplierName: supplier?.name,
       }, ...prev].slice(0, 200));
     }
     return newProduct;
@@ -1148,6 +1159,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     const data = await gql<{ updateProductStock: Product }>(M_UPDATE_PRODUCT_STOCK, { productId, quantity, reason });
     const updated = data.updateProductStock;
     setProducts(prev => prev.map(p => p.id === productId ? { ...p, stockQuantity: updated.stockQuantity } : p));
+    const product = products.find(p => p.id === productId);
+    const supplier = suppliers.find(s => s.id === product?.supplierId);
     setStockMovements(prev => [{
       id: `mv-${Date.now()}`,
       productId,
@@ -1157,8 +1170,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       reason,
       user: me?.name,
       date: new Date().toISOString(),
+      branchId: me?.branchId,
+      branchName: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : ''),
+      supplierId: product?.supplierId,
+      supplierName: supplier?.name,
     }, ...prev].slice(0, 200));
-  }, [me]);
+  }, [me, products, suppliers]);
 
   const createSupplier = useCallback(async (args: {
     name: string; contact?: string; phone?: string; email?: string;

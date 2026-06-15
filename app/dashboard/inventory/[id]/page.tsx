@@ -1136,6 +1136,7 @@ export default function ProductDetailedPaper() {
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Date</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Type</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Quantity</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Branch/Supplier</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>Reason</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase" style={{ color: card.subtle }}>User</th>
                     </tr>
@@ -1157,6 +1158,15 @@ export default function ProductDetailedPaper() {
                         </td>
                         <td className="px-5 py-4 font-mono font-bold" style={{ color: card.text }}>
                           {m.type === 'in' ? '+' : '-'}{m.quantity}
+                        </td>
+                        <td className="px-5 py-4" style={{ color: card.muted }}>
+                          {m.branchName && (
+                            <p className="font-medium" style={{ color: card.text }}>{m.branchName}</p>
+                          )}
+                          {m.supplierName && (
+                            <p className="text-[10px]" style={{ color: card.subtle }}>Supplier: {m.supplierName}</p>
+                          )}
+                          {!m.branchName && !m.supplierName && '-'}
                         </td>
                         <td className="px-5 py-4" style={{ color: card.muted }}>{m.reason}</td>
                         <td className="px-5 py-4" style={{ color: card.text }}>{m.user || 'System'}</td>

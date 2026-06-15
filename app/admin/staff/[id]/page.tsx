@@ -211,9 +211,15 @@ function toActivityDate(timestamp: string): number {
 function formatActivityTime(timestamp: string): string {
   const date = new Date(timestamp.includes('T') ? timestamp : timestamp.replace(' ', 'T'));
   if (Number.isNaN(date.getTime())) {
-    return timestamp.split(' ')[1] || timestamp;
+    return timestamp;
   }
-  return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString('en-GB', { 
+    day: '2-digit', 
+    month: '2-digit', 
+    year: 'numeric',
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
 }
 
 function getNameParts(staff: StaffDetail) {

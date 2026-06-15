@@ -10,6 +10,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { StaffMember } from '@/lib/store';
 import { useTheme } from 'next-themes';
 import { gql, Q_BRANCHES } from '@/lib/gql';
+import { useToast } from '@/components/pharma-toast';
 import Link from 'next/link';
 
 const STAFF_ASSIGNMENT_BRANCH_NAMES = ['dormaa central main branch', 'yesu mmo chemical shop'];
@@ -21,6 +22,7 @@ function normalizeStaffAssignmentBranches(branches: any[]) {
 export default function StaffIntelligencePage() {
   const { staff, sales, updateDutyStatus, updateStaffProfile, createStaffAccount, me, deleteStaff } = useStore();
   const { theme, resolvedTheme } = useTheme();
+  const { addToast } = useToast();
   const isDark = resolvedTheme === 'dark' || theme === 'dark';
   const [mounted, setMounted] = useState(false);
 
@@ -175,7 +177,19 @@ export default function StaffIntelligencePage() {
       });
 
       if (success) {
-        alert(`Staff account for ${formName} created successfully!\nEmail: ${formEmail}\nPassword: ${formPassword}\n\nPlease share these credentials with the new staff member.`);
+        const credentials = `Staff account for ${formName} created successfully!\n\nEmail: ${formEmail}\nPassword: ${formPassword}\n\nPlease share these credentials with the new staff member.`;
+        addToast({
+          type: 'success',
+          title: 'Staff Account Created',
+          message: credentials,
+          copyable: true,
+          onEmail: () => {
+            const subject = encodeURIComponent(`Staff Account Created - ${formName}`);
+            const body = encodeURIComponent(credentials);
+            window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
+          },
+          duration: 0,
+        });
         // Reset form
         setFormName('');
         setFormEmail('');

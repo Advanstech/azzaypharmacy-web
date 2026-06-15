@@ -1520,6 +1520,7 @@ export default function InventoryPage() {
                       <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Product</th>
                       <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Type</th>
                       <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Quantity</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Branch/Supplier</th>
                       <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Reason/Ref</th>
                     </tr>
                   </thead>
@@ -1546,6 +1547,15 @@ export default function InventoryPage() {
                         </td>
                         <td className="px-4 py-3 text-center font-mono font-bold" style={{ color: mv.quantity < 0 ? '#EF4444' : '#10B981' }}>
                           {mv.quantity > 0 ? '+' : ''}{mv.quantity}
+                        </td>
+                        <td className="px-4 py-3 text-xs" style={{ color: card.muted }}>
+                          {mv.branchName && (
+                            <p className="font-medium" style={{ color: card.text }}>{mv.branchName}</p>
+                          )}
+                          {mv.supplierName && (
+                            <p className="text-[10px]" style={{ color: card.subtle }}>Supplier: {mv.supplierName}</p>
+                          )}
+                          {!mv.branchName && !mv.supplierName && '-'}
                         </td>
                         <td className="px-4 py-3 text-xs" style={{ color: card.muted }}>
                           {mv.reason || mv.reference || '-'}
