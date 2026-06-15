@@ -225,6 +225,7 @@ export default function SupplierProductsPage() {
         requiresRx: addForm.requiresRx,
         dosageForm: 'TABLET',
         expiryDate: addForm.expiryDate || undefined,
+        branchId: me?.branchId || undefined,
       });
       setShowAddModal(false);
       refetchProducts();

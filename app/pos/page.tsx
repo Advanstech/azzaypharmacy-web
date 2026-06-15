@@ -12,6 +12,7 @@ import {
   BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { useBranchFilter } from '@/lib/branch-context';
 
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
@@ -54,7 +55,7 @@ function POSInner() {
   const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const { 
-    products: liveProducts, 
+    products: storeProducts, 
     suppliers,
     sales, 
     customers,
@@ -68,6 +69,8 @@ function POSInner() {
     refetchAll,
     syncStatus
   } = useStore();
+  const branchFilter = useBranchFilter();
+  const liveProducts = useMemo(() => branchFilter(storeProducts), [storeProducts, branchFilter]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme ?? theme) === 'dark';

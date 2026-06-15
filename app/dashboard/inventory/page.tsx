@@ -16,7 +16,7 @@ import { useAuth } from '@/lib/auth-context';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
-import { useBranchFilter } from '@/lib/branch-context';
+import { useBranchFilter, useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 
 const STATUS_CONFIG = {
@@ -93,7 +93,24 @@ export default function InventoryPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addModalTab, setAddModalTab] = useState<'basic' | 'pricing' | 'supplier'>('basic');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
-  const [newProduct, setNewProduct] = useState({
+  const [newProduct, setNewProduct] = useState<{
+    name: string;
+    genericName: string;
+    brand: string;
+    category: string;
+    costPrice: number;
+    sellingPrice: number;
+    stockQuantity: number;
+    supplierId: string;
+    strength: string;
+    dosageForm: string;
+    barcode: string;
+    nafdacNo: string;
+    classification: string;
+    imageUrl: string;
+    expiryDate: string;
+    branchId: string;
+  }>({
     name: '',
     genericName: '',
     brand: '',
@@ -108,7 +125,8 @@ export default function InventoryPage() {
     nafdacNo: '',
     classification: 'OTC', // 'OTC', 'POM', 'CONTROLLED'
     imageUrl: '',
-    expiryDate: ''
+    expiryDate: '',
+    branchId: me?.branchId || ''
   });
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
   const [addModalFromInvoice, setAddModalFromInvoice] = useState(false);
@@ -131,7 +149,8 @@ export default function InventoryPage() {
     nafdacNo: '',
     classification: 'OTC',
     imageUrl: '',
-    expiryDate: ''
+    expiryDate: '',
+    branchId: me?.branchId || ''
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -215,6 +234,7 @@ export default function InventoryPage() {
 
   const branchFilter = useBranchFilter();
   const branchProducts = branchFilter(storeProducts);
+  const { branches, canSwitchBranch } = useBranch();
 
   const products = branchProducts.map((p: any) => {
     const isPOM = ['ANTIBIOTICS', 'CARDIOVASCULAR', 'ANTIMALARIALS'].includes(p.category);
@@ -572,6 +592,7 @@ export default function InventoryPage() {
         stockQuantity: 0,
         supplierId: resolvedSupplierId,
         dosageForm: 'OTHER',
+        branchId: me?.branchId || undefined,
       });
 
       setInvoiceItems(prev => prev.map(item => item.id === itemId
@@ -635,6 +656,7 @@ export default function InventoryPage() {
         barcode: newProduct.barcode || undefined,
         nafdacNo: newProduct.nafdacNo || undefined,
         requiresRx: newProduct.classification === 'POM' || newProduct.classification === 'CONTROLLED',
+        branchId: newProduct.branchId || undefined,
         isControlled: newProduct.classification === 'CONTROLLED',
         imageUrl: newProduct.imageUrl || undefined,
         expiryDate: newProduct.expiryDate || undefined,
@@ -660,7 +682,7 @@ export default function InventoryPage() {
       setShowAddModal(false);
       setAddModalFromInvoice(false);
       setAddModalTab('basic');
-      setNewProduct({ name: '', genericName: '', brand: '', category: PRODUCT_CATEGORIES[0], costPrice: 0, sellingPrice: 0, stockQuantity: 0, supplierId: '', strength: '', dosageForm: 'TABLET', barcode: '', nafdacNo: '', classification: 'OTC', imageUrl: '', expiryDate: '' });
+      setNewProduct({ name: '', genericName: '', brand: '', category: PRODUCT_CATEGORIES[0], costPrice: 0, sellingPrice: 0, stockQuantity: 0, supplierId: '', strength: '', dosageForm: 'TABLET', barcode: '', nafdacNo: '', classification: 'OTC', imageUrl: '', expiryDate: '', branchId: me?.branchId || '' });
     } catch (error) {
       console.error('Failed to create product:', error);
     } finally {
@@ -688,6 +710,7 @@ export default function InventoryPage() {
         requiresRx: editForm.classification === 'POM' || editForm.classification === 'CONTROLLED',
         isControlled: editForm.classification === 'CONTROLLED',
         imageUrl: editForm.imageUrl || undefined,
+        branchId: editForm.branchId || undefined,
       });
 
       if (editForm.stockQuantity !== undefined && editForm.stockQuantity !== editingProduct.stockQuantity) {
@@ -724,7 +747,8 @@ export default function InventoryPage() {
       barcode: raw.barcode || '',
       nafdacNo: raw.nafdacNo || '',
       classification: cls,
-      imageUrl: raw.imageUrl || ''
+      imageUrl: raw.imageUrl || '',
+      branchId: raw.branchId || me?.branchId || ''
     });
     setEditModalTab('basic');
     setShowEditModal(true);
@@ -1045,6 +1069,7 @@ export default function InventoryPage() {
             stockQuantity: 0,
             supplierId: resolvedSupplierId,
             dosageForm: 'OTHER',
+            branchId: me?.branchId || undefined,
           });
           resolvedItems.push({
             ...item,
@@ -1711,6 +1736,22 @@ export default function InventoryPage() {
               {/* Tab 1: Basic Info */}
               {addModalTab === 'basic' && (
                 <div className="grid grid-cols-2 gap-5 animate-in fade-in slide-in-from-right-4 duration-300">
+                  {canSwitchBranch && (
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Branch *</label>
+                      <select 
+                        value={newProduct.branchId} 
+                        onChange={e => setNewProduct({...newProduct, branchId: e.target.value})} 
+                        className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" 
+                        style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}
+                      >
+                        <option value="">Select Branch</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="col-span-2">
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Product Name *</label>
                     <input type="text" placeholder="e.g. Paracetamol 500mg" value={newProduct.name} onChange={e => setNewProduct({...newProduct, name: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
@@ -2058,6 +2099,22 @@ export default function InventoryPage() {
               {/* Tab 1: Basic Info */}
               {editModalTab === 'basic' && (
                 <div className="grid grid-cols-2 gap-5 animate-in fade-in slide-in-from-right-4 duration-300">
+                  {canSwitchBranch && (
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Branch</label>
+                      <select 
+                        value={editForm.branchId} 
+                        onChange={e => setEditForm({...editForm, branchId: e.target.value})} 
+                        className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" 
+                        style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}
+                      >
+                        <option value="">Select Branch</option>
+                        {branches.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div className="col-span-2">
                     <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Product Name</label>
                     <input type="text" placeholder="Leave blank to keep current" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />

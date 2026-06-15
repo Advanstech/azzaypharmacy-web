@@ -12,6 +12,7 @@ import {
   Sparkles, Wand2, Camera, RefreshCw, FileText, Move, Loader2
 } from 'lucide-react';
 import { usePagination } from '@/hooks/use-pagination';
+import { useBranch } from '@/lib/branch-context';
 
 export default function ProductDetailedPaper() {
   const params = useParams();
@@ -48,7 +49,8 @@ export default function ProductDetailedPaper() {
     nafdacNo: '',
     classification: 'OTC', // 'OTC', 'POM', 'CONTROLLED'
     imageUrl: '',
-    expiryDate: ''
+    expiryDate: '',
+    branchId: me?.branchId || ''
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -56,6 +58,7 @@ export default function ProductDetailedPaper() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const isAdmin = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
   const canEdit = isAdmin;
+  const { branches, canSwitchBranch } = useBranch();
 
   // Ensure products are loaded
   useEffect(() => {
@@ -297,6 +300,7 @@ export default function ProductDetailedPaper() {
         isControlled: editForm.classification === 'CONTROLLED',
         imageUrl: editForm.imageUrl || undefined,
         expiryDate: editForm.expiryDate || undefined,
+        branchId: editForm.branchId || undefined,
       });
 
       if (editForm.stockQuantity !== currentStock) {
@@ -349,7 +353,8 @@ export default function ProductDetailedPaper() {
         imageUrl: product.imageUrl || '',
         expiryDate: product.stockItems?.[0]?.expiryDate
           ? new Date(product.stockItems[0].expiryDate).toISOString().split('T')[0]
-          : ''
+          : '',
+        branchId: (product as any).branchId || me?.branchId || ''
       });
 
       // Background auto-generator for missing or placeholder product images
@@ -774,6 +779,22 @@ export default function ProductDetailedPaper() {
                 {/* Tab 1: Basic Info */}
                 {editModalTab === 'basic' && (
                   <div className="grid grid-cols-2 gap-5 animate-in fade-in slide-in-from-right-4 duration-300">
+                    {canSwitchBranch && (
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Branch</label>
+                        <select 
+                          value={editForm.branchId} 
+                          onChange={e => setEditForm({...editForm, branchId: e.target.value})} 
+                          className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" 
+                          style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}
+                        >
+                          <option value="">Select Branch</option>
+                          {branches.map(b => (
+                            <option key={b.id} value={b.id}>{b.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <div className="col-span-2">
                       <label className="text-[10px] font-bold uppercase tracking-wider mb-1.5 block" style={{ color: card.subtle }}>Product Name *</label>
                       <input type="text" placeholder="e.g. Paracetamol 500mg" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />

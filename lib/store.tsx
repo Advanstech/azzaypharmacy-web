@@ -489,6 +489,7 @@ interface StoreState {
     isControlled?: boolean;
     imageUrl?: string;
     expiryDate?: string;
+    branchId?: string;
   }) => Promise<Product>;
 
   deleteProduct: (productId: string) => Promise<void>;
@@ -1105,6 +1106,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     barcode?: string; nafdacNo?: string; requiresRx?: boolean; isControlled?: boolean;
     imageUrl?: string;
     expiryDate?: string;
+    branchId?: string;
   }): Promise<Product> => {
     const data = await gql<{ createProduct: Product }>(M_CREATE_PRODUCT, args);
     const newProduct = data.createProduct;
@@ -1140,7 +1142,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     const updated = data.updateProduct;
     setProducts(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
     return updated;
-  }, []);
+  }, [me?.branchId]);
 
   const adjustProductStock = useCallback(async (productId: string, quantity: number, reason: string): Promise<void> => {
     const data = await gql<{ updateProductStock: Product }>(M_UPDATE_PRODUCT_STOCK, { productId, quantity, reason });

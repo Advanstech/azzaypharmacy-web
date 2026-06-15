@@ -696,6 +696,7 @@ export const M_CREATE_PRODUCT = `
     $isControlled: Boolean
     $imageUrl: String
     $expiryDate: String
+    $branchId: String
   ) {
     createProduct(
       name: $name
@@ -714,6 +715,7 @@ export const M_CREATE_PRODUCT = `
       isControlled: $isControlled
       imageUrl: $imageUrl
       expiryDate: $expiryDate
+      branchId: $branchId
     ) {
       id name brand category sellingPrice costPrice
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
@@ -754,6 +756,7 @@ export const M_UPDATE_PRODUCT = `
     $barcode: String
     $nafdacNo: String
     $expiryDate: String
+    $branchId: String
   ) {
     updateProduct(
       id: $id
@@ -772,6 +775,7 @@ export const M_UPDATE_PRODUCT = `
       barcode: $barcode
       nafdacNo: $nafdacNo
       expiryDate: $expiryDate
+      branchId: $branchId
     ) {
       id name genericName brand category sellingPrice costPrice
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled barcode nafdacNo

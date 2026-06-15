@@ -562,6 +562,7 @@ export default function InvoicesPage() {
               stockQuantity: 0,
               supplierId: resolvedSupplierId,
               dosageForm: 'OTHER',
+              branchId: me?.branchId || undefined,
             });
             resolvedProductId = createdProduct.id;
           }
