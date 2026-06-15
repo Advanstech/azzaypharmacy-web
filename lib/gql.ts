@@ -204,6 +204,7 @@ export const Q_LOGIN_STAFF = `
   query GetLoginStaff {
     loginStaff {
       id name email role avatarUrl position phone
+      branch { id name location phone }
     }
   }
 `;

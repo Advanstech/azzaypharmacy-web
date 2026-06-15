@@ -1025,8 +1025,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       const u = updated.find(u => u.id === p.id);
       return u ? { ...p, ...u } : p;
     }));
+    await Promise.all([refetchProducts(), refetchPurchases(), refetchInvoices(), refetchLedger()]);
     return updated;
-  }, []);
+  }, [refetchProducts, refetchPurchases, refetchInvoices, refetchLedger]);
 
   const updateProductSupplier = useCallback(async (productId: string, supplierId: string) => {
     try {

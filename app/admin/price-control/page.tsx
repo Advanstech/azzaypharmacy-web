@@ -8,9 +8,10 @@ import {
   TrendingUp, TrendingDown, DollarSign, Package, Filter,
   ChevronUp, ChevronDown, Save, RotateCcw, Percent,
   ArrowUpRight, ArrowDownRight, Info, CheckCheck, Edit3,
-  SortAsc, SortDesc,
+  SortAsc, SortDesc, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { useStore, type Product } from '@/lib/store';
+import { usePagination } from '@/hooks/use-pagination';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,6 +106,7 @@ export default function PriceControlPage() {
   const [bulkMode, setBulkMode] = useState<'none' | 'markup' | 'cost' | 'sell'>('none');
   const [bulkPct, setBulkPct] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [itemsPerPage, setItemsPerPage] = useState(25);
 
   const canEdit = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER'].includes(me?.role || '');
 
@@ -143,6 +145,9 @@ export default function PriceControlPage() {
   const pendingEdits = useMemo(() => Object.values(edits).filter(e =>
     e.costPrice !== e.originalCost || e.sellingPrice !== e.originalSell
   ), [edits]);
+
+  const pagination = usePagination({ data: filtered, itemsPerPage });
+  const pageProducts = pagination.paginatedData;
 
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
@@ -192,7 +197,7 @@ export default function PriceControlPage() {
   const applyBulkPercent = useCallback(() => {
     const pct = parseFloat(bulkPct);
     if (isNaN(pct)) return;
-    const targets = selectedIds.size > 0 ? filtered.filter(p => selectedIds.has(p.id)) : filtered;
+    const targets = selectedIds.size > 0 ? filtered.filter(p => selectedIds.has(p.id)) : pageProducts;
     setEdits(prev => {
       const n = { ...prev };
       targets.forEach(p => {
@@ -209,7 +214,7 @@ export default function PriceControlPage() {
     });
     setBulkPct('');
     setBulkMode('none');
-  }, [bulkPct, bulkMode, filtered, selectedIds]);
+  }, [bulkPct, bulkMode, filtered, pageProducts, selectedIds]);
 
   const handleSave = async () => {
     if (!canEdit || pendingEdits.length === 0) return;
@@ -244,8 +249,18 @@ export default function PriceControlPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === filtered.length) setSelectedIds(new Set());
-    else setSelectedIds(new Set(filtered.map(p => p.id)));
+    const pageIds = pageProducts.map(p => p.id);
+    const allPageSelected = pageIds.length > 0 && pageIds.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      if (allPageSelected) pageIds.forEach(id => n.delete(id));
+      else pageIds.forEach(id => n.add(id));
+      return n;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedIds(new Set(filtered.map(p => p.id)));
   };
 
   if (!mounted) return null;
@@ -366,7 +381,7 @@ export default function PriceControlPage() {
         {canEdit && (
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t" style={{ borderColor: c.border }}>
             <p className="text-[11px] font-bold" style={{ color: c.muted }}>
-              Bulk Apply{selectedIds.size > 0 ? ` (${selectedIds.size} selected)` : ` (all ${filtered.length} visible)`}:
+              Bulk Apply{selectedIds.size > 0 ? ` (${selectedIds.size} selected)` : ` (current page: ${pageProducts.length})`}:
             </p>
             {(['sell', 'cost', 'markup'] as const).map(mode => (
               <button key={mode} onClick={() => setBulkMode(bulkMode === mode ? 'none' : mode)}
@@ -401,6 +416,13 @@ export default function PriceControlPage() {
                   <X size={12} />
                 </button>
               </div>
+            )}
+            {selectedIds.size > 0 && (
+              <button onClick={() => setSelectedIds(new Set())}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                style={{ background: c.inputBg, color: c.muted, border: `1px solid ${c.border}` }}>
+                Clear Selection
+              </button>
             )}
           </div>
         )}
@@ -437,7 +459,7 @@ export default function PriceControlPage() {
           style={{ borderColor: c.border, background: c.headerBg }}>
           <div className="flex items-center gap-3">
             {canEdit && (
-              <input type="checkbox" checked={selectedIds.size === filtered.length && filtered.length > 0}
+              <input type="checkbox" checked={pageProducts.length > 0 && pageProducts.every(p => selectedIds.has(p.id))}
                 onChange={toggleSelectAll}
                 className="w-4 h-4 rounded accent-orange-500 cursor-pointer" />
             )}
@@ -449,7 +471,16 @@ export default function PriceControlPage() {
               </span>
             </p>
           </div>
-          {loadingProducts && <Loader2 size={14} className="animate-spin" style={{ color: c.muted }} />}
+          <div className="flex items-center gap-2">
+            {canEdit && selectedIds.size > 0 && selectedIds.size < filtered.length && (
+              <button onClick={selectAllFiltered}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
+                style={{ background: `${c.primary}12`, color: c.primary, border: `1px solid ${c.primary}30` }}>
+                Select all {filtered.length} filtered
+              </button>
+            )}
+            {loadingProducts && <Loader2 size={14} className="animate-spin" style={{ color: c.muted }} />}
+          </div>
         </div>
 
         {/* Column headers */}
@@ -486,7 +517,7 @@ export default function PriceControlPage() {
           </div>
         ) : (
           <div className="divide-y" style={{ borderColor: c.border }}>
-            {filtered.map((p, i) => {
+            {pageProducts.map((p, i) => {
               const edit = getEdit(p);
               const costChanged = edit.costPrice !== edit.originalCost;
               const sellChanged = edit.sellingPrice !== edit.originalSell;
@@ -614,6 +645,49 @@ export default function PriceControlPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {filtered.length > 0 && (
+          <div className="px-5 py-3 border-t flex flex-col md:flex-row md:items-center justify-between gap-3"
+            style={{ borderColor: c.border, background: c.headerBg }}>
+            <div className="flex items-center gap-3">
+              <p className="text-xs font-bold" style={{ color: c.muted }}>
+                Showing {pagination.startIndex}-{pagination.endIndex} of {pagination.totalItems}
+              </p>
+              <select
+                value={itemsPerPage}
+                onChange={e => setItemsPerPage(Number(e.target.value))}
+                className="px-2 py-1.5 rounded-lg text-xs font-bold focus:outline-none"
+                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
+              >
+                {[10, 25, 50, 100].map(size => (
+                  <option key={size} value={size}>{size} / page</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={pagination.prevPage}
+                disabled={pagination.currentPage === 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
+              >
+                <ChevronLeft size={13} /> Previous
+              </button>
+              <span className="text-xs font-black" style={{ color: c.text }}>
+                Page {pagination.currentPage} of {pagination.totalPages}
+              </span>
+              <button
+                onClick={pagination.nextPage}
+                disabled={pagination.currentPage === pagination.totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold disabled:opacity-40"
+                style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
+              >
+                Next <ChevronRight size={13} />
+              </button>
+            </div>
           </div>
         )}
 

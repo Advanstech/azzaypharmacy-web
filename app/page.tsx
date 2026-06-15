@@ -129,7 +129,7 @@ function StaffSelectorModal({
                       <div className="flex items-center gap-2 mt-0.5">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider" 
                           style={{ background: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)', color: isDark ? '#00D9FF' : '#0EA5E9' }}>
-                          {person.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}
+                          {person.branch?.name || 'Branch not assigned'}
                         </span>
                         <span className="text-[11px] opacity-40" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>{person.email}</span>
                       </div>
@@ -1309,9 +1309,7 @@ export default function LoginPage() {
                     : 'Welcome to NEXUS'}
                 </h2>
                 <p className="text-sm opacity-50 mt-2">
-                  {staff.find(s => s.email === email)?.branch?.name?.toLowerCase().includes('chemical')
-                    ? 'Chemical Shop'
-                    : 'Main Branch'}
+                  {staff.find(s => s.email === email)?.branch?.name || 'Branch not assigned'}
                 </p>
               </div>
               <div className="w-48 h-1 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>

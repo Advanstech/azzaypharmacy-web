@@ -12,6 +12,12 @@ import { useTheme } from 'next-themes';
 import { gql, Q_BRANCHES } from '@/lib/gql';
 import Link from 'next/link';
 
+const STAFF_ASSIGNMENT_BRANCH_NAMES = ['dormaa central main branch', 'yesu mmo chemical shop'];
+
+function normalizeStaffAssignmentBranches(branches: any[]) {
+  return branches.filter(branch => STAFF_ASSIGNMENT_BRANCH_NAMES.includes(branch.name?.trim().toLowerCase()));
+}
+
 export default function StaffIntelligencePage() {
   const { staff, sales, updateDutyStatus, updateStaffProfile, createStaffAccount, me, deleteStaff } = useStore();
   const { theme, resolvedTheme } = useTheme();
@@ -51,9 +57,10 @@ export default function StaffIntelligencePage() {
     setLoadingBranches(true);
     try {
       const data = await gql<{ branches: any[] }>(Q_BRANCHES);
-      setBranches(data.branches || []);
-      if (data.branches?.length > 0) {
-        setFormBranchId(data.branches[0].id);
+      const validBranches = normalizeStaffAssignmentBranches(data.branches || []);
+      setBranches(validBranches);
+      if (validBranches.length > 0) {
+        setFormBranchId(validBranches[0].id);
       }
     } catch (e) {
       console.error("Failed to fetch branches", e);

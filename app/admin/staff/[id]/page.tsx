@@ -62,6 +62,22 @@ type BranchOption = {
   phone?: string;
 };
 
+const STAFF_ASSIGNMENT_BRANCH_NAMES = ['dormaa central main branch', 'yesu mmo chemical shop'];
+
+function normalizeStaffAssignmentBranches(branches: BranchOption[]) {
+  return branches.filter(branch => STAFF_ASSIGNMENT_BRANCH_NAMES.includes(branch.name.trim().toLowerCase()));
+}
+
+function resolveStaffBranchId(branches: BranchOption[], branchId?: string, branchName?: string) {
+  const cleanName = branchName?.trim().toLowerCase();
+  if (cleanName === 'main branch') {
+    return branches.find(branch => branch.name.trim().toLowerCase() === 'dormaa central main branch')?.id || branchId || '';
+  }
+  if (branchId && branches.some(branch => branch.id === branchId)) return branchId;
+  if (cleanName) return branches.find(branch => branch.name.trim().toLowerCase() === cleanName)?.id || '';
+  return '';
+}
+
 const STAFF: StaffMember[] = [
   { id: '1', firstName: 'Kwame', lastName: 'Asante', email: 'kwame@azzay.app', phone: '+233 24 000 0001', role: 'OWNER', branch: 'Azzay Pharmacy', status: 'active', lastLogin: '2 min ago', joinedDate: '2023-01-15', licenseNumber: 'GPhC-2023-001', address: 'Dormaa Central, Bono Region', emergencyContact: '+233 24 111 1111', shiftsThisWeek: 7, totalSales: 125000, performanceScore: 98 },
   { id: '2', firstName: 'Abena', lastName: 'Mensah', email: 'abena@azzay.app', phone: '+233 24 000 0002', role: 'PHARMACIST', branch: 'Azzay Pharmacy', status: 'active', lastLogin: '1 hr ago', joinedDate: '2023-03-10', licenseNumber: 'GPhC-2023-045', specialization: 'Clinical Pharmacy', address: 'Dormaa Ahenkro', emergencyContact: '+233 24 222 2222', shiftsThisWeek: 5, totalSales: 45000, performanceScore: 94 },
@@ -294,7 +310,7 @@ export default function StaffDetailPage() {
       try {
         const data = await gql<{ branches: BranchOption[] }>(Q_BRANCHES);
         if (!cancelled) {
-          setBranches(data.branches || []);
+          setBranches(normalizeStaffAssignmentBranches(data.branches || []));
         }
       } catch (err) {
         console.error('Failed to fetch branches', err);
@@ -588,14 +604,14 @@ export default function StaffDetailPage() {
               onClick={() => {
                 const branchIdFromStaff = (staff as any).branchId || (typeof staff.branch === 'object' ? (staff.branch as any)?.id : '') || '';
                 const branchNameFromStaff = typeof staff.branch === 'string' ? staff.branch : (staff.branch as any)?.name;
-                const matchedByName = branchNameFromStaff ? branches.find(b => b.name === branchNameFromStaff)?.id : '';
+                const matchedBranchId = resolveStaffBranchId(branches, branchIdFromStaff, branchNameFromStaff);
 
                 setEditForm({
                   name: getFullName(staff) || '',
                   email: staff.email || '',
                   phone: (staff as any).phone || '',
                   position: (staff as any).position || '',
-                  branchId: branchIdFromStaff || matchedByName || '',
+                  branchId: matchedBranchId,
                   isActive: (staff as any).isActive !== false,
                 });
                 setShowEditModal(true);
@@ -1028,7 +1044,7 @@ export default function StaffDetailPage() {
                       <option value="">Select branch</option>
                       {branches.map((branch) => (
                         <option key={branch.id} value={branch.id}>
-                          {branch.name} ({branch.id})
+                          {branch.name}
                         </option>
                       ))}
                     </select>
