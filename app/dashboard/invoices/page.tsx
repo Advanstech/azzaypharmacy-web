@@ -204,6 +204,7 @@ export default function InvoicesPage() {
         fileUrl: '',
         payments: invoice.payments || [],
         uploadedBy: invoice.uploadedBy,
+        createdAt: invoice.createdAt,
       };
     });
   }, [invoiceRecords]);
@@ -839,6 +840,13 @@ export default function InvoicesPage() {
                         </div>
                       </td>
                       <td className="px-5 py-4">
+                        <p className="text-xs" style={{ color: card.muted }}>Submitted:</p>
+                        <p className="text-sm" style={{ color: card.text }}>{invoice.createdAt ? new Date(invoice.createdAt).toLocaleString('en-GB', { 
+                          day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+                        }) : 'N/A'}</p>
+                      </td>
+                      <td className="px-5 py-4">
+                        <p className="text-xs" style={{ color: card.muted }}>Issue:</p>
                         <p className="text-sm" style={{ color: card.text }}>{invoice.issueDate}</p>
                       </td>
                       <td className="px-5 py-4">

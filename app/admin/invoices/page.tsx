@@ -254,6 +254,11 @@ export default function SupplierInvoicesPage() {
                         <div>
                           <p className="font-bold text-sm group-hover:text-blue-500 transition-colors" style={{ color: textC }}>{invoice.invoiceNo}</p>
                           <p className="text-xs font-medium mt-0.5" style={{ color: mutedC }}>
+                            Submitted: {invoice.createdAt ? new Date(invoice.createdAt).toLocaleString('en-GB', { 
+                              day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+                            }) : 'N/A'}
+                          </p>
+                          <p className="text-xs font-medium mt-0.5" style={{ color: mutedC }}>
                             Due: {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}
                           </p>
                           {invoice.uploadedBy && (
