@@ -70,7 +70,11 @@ function POSInner() {
     syncStatus
   } = useStore();
   const branchFilter = useBranchFilter();
-  const liveProducts = useMemo(() => branchFilter(storeProducts), [storeProducts, branchFilter]);
+  const liveProducts = useMemo(() => {
+    const filtered = branchFilter(storeProducts);
+    console.log(`[POS] Store products: ${storeProducts.length}, Filtered products: ${filtered.length}`);
+    return filtered;
+  }, [storeProducts, branchFilter]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme ?? theme) === 'dark';

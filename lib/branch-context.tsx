@@ -147,14 +147,23 @@ export function useBranch() {
 /**
  * Returns a filter function for any array of items that have a `branchId` field.
  * Managers with activeBranchId=null see everything.
- * Everyone else sees only their active branch.
+ * Everyone else sees only their active branch (exact match, no equivalent branches).
  */
 export function useBranchFilter() {
   const { branches, activeBranchId, canSwitchBranch } = useBranch();
   return useCallback(<T extends { branchId?: string }>(items: T[]): T[] => {
-    if (canSwitchBranch && activeBranchId === null) return items; // All branches
-    const targetIds = getEquivalentBranchIds(branches, activeBranchId);
-    if (targetIds.length === 0) return items;
-    return items.filter(item => item.branchId && targetIds.includes(item.branchId));
-  }, [activeBranchId, branches, canSwitchBranch]);
+    console.log(`[BranchFilter] canSwitchBranch=${canSwitchBranch}, activeBranchId=${activeBranchId}, items.length=${items.length}`);
+    if (canSwitchBranch && activeBranchId === null) {
+      console.log(`[BranchFilter] Returning all items (manager with null branch)`);
+      return items; // All branches for managers
+    }
+    if (!activeBranchId) {
+      console.log(`[BranchFilter] No active branch, returning all items`);
+      return items; // No branch filter if no active branch
+    }
+    // For non-managers, use exact branch match only (no equivalent branches)
+    const filtered = items.filter(item => item.branchId === activeBranchId);
+    console.log(`[BranchFilter] Filtered to ${filtered.length} items for branch ${activeBranchId}`);
+    return filtered;
+  }, [activeBranchId, canSwitchBranch]);
 }
