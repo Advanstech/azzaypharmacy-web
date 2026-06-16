@@ -22,7 +22,7 @@ export interface Branch {
   equivalentBranchIds?: string[];
 }
 
-export const MANAGERIAL_ROLES = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'];
+export const MANAGERIAL_ROLES = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'];
 
 interface BranchContextValue {
   branches: Branch[];
@@ -150,20 +150,11 @@ export function useBranch() {
  * Everyone else sees only their active branch (exact match, no equivalent branches).
  */
 export function useBranchFilter() {
-  const { branches, activeBranchId, canSwitchBranch } = useBranch();
+  const { activeBranchId, canSwitchBranch } = useBranch();
   return useCallback(<T extends { branchId?: string }>(items: T[]): T[] => {
-    console.log(`[BranchFilter] canSwitchBranch=${canSwitchBranch}, activeBranchId=${activeBranchId}, items.length=${items.length}`);
-    if (canSwitchBranch && activeBranchId === null) {
-      console.log(`[BranchFilter] Returning all items (manager with null branch)`);
-      return items; // All branches for managers
-    }
-    if (!activeBranchId) {
-      console.log(`[BranchFilter] No active branch, returning all items`);
-      return items; // No branch filter if no active branch
-    }
+    if (canSwitchBranch && activeBranchId === null) return items; // All branches for managers
+    if (!activeBranchId) return items; // No branch filter if no active branch
     // For non-managers, use exact branch match only (no equivalent branches)
-    const filtered = items.filter(item => item.branchId === activeBranchId);
-    console.log(`[BranchFilter] Filtered to ${filtered.length} items for branch ${activeBranchId}`);
-    return filtered;
+    return items.filter(item => item.branchId === activeBranchId);
   }, [activeBranchId, canSwitchBranch]);
 }

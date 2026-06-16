@@ -12,7 +12,6 @@ import {
   BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { useBranchFilter } from '@/lib/branch-context';
 
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
@@ -69,12 +68,12 @@ function POSInner() {
     refetchAll,
     syncStatus
   } = useStore();
-  const branchFilter = useBranchFilter();
+
   const liveProducts = useMemo(() => {
-    const filtered = branchFilter(storeProducts);
-    console.log(`[POS] Store products: ${storeProducts.length}, Filtered products: ${filtered.length}`);
-    return filtered;
-  }, [storeProducts, branchFilter]);
+    // Backend already filters products by branchId for non-global roles (PHARMACIST, CASHIER, etc.)
+    // No need for additional frontend filtering - use storeProducts as-is
+    return storeProducts;
+  }, [storeProducts]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme ?? theme) === 'dark';

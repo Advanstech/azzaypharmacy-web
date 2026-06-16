@@ -255,7 +255,7 @@ export const Q_STAFF = `
   query GetStaff {
     staff {
       id supabaseId email name avatarUrl role
-      branchId isOnDuty lastSeen position isActive
+      branchId isOnDuty lastSeen position isActive phone
       branch { id name location phone }
     }
   }
@@ -278,7 +278,7 @@ export const Q_ME = `
   query Me {
     me {
       id supabaseId email name avatarUrl role
-      branchId isOnDuty lastSeen position isActive
+      branchId isOnDuty lastSeen position isActive phone
       branch { id name location phone }
     }
   }
@@ -497,6 +497,7 @@ export const M_UPDATE_STAFF_PROFILE = `
       isActive: $isActive
     ) {
       id name email role branchId position isActive isOnDuty phone
+      branch { id name location phone }
     }
   }
 `;

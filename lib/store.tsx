@@ -986,7 +986,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }): Promise<StaffMember> => {
     const data = await gql<{ updateStaffProfile: StaffMember }>(M_UPDATE_STAFF_PROFILE, args);
     const updated = data.updateStaffProfile;
-    setStaff(prev => prev.map(s => s.id === updated.id ? { ...s, ...updated } : s));
+    setStaff(prev => {
+      const nextStaff = prev.map(s => s.id === updated.id ? { ...s, ...updated } : s);
+      saveToCache('staff_cache', nextStaff).catch(err => console.warn('[store] failed to cache staff on update:', err));
+      return nextStaff;
+    });
     return updated;
   }, []);
 
