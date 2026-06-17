@@ -1032,39 +1032,46 @@ export default function StaffDetailPage() {
                   />
                 </div>
 
-                {/* Branch */}
-                <div>
-                  <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
-                    <Building size={11} /> Branch
-                  </label>
-                  {branches.length > 0 ? (
-                    <select
-                      className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2"
-                      style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
-                      value={editForm.branchId}
-                      onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
-                    >
-                      <option value="">Select branch</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      placeholder={loadingBranches ? 'Loading branches...' : 'Branch UUID'}
-                      className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 font-mono"
-                      style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
-                      value={editForm.branchId}
-                      onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
-                    />
-                  )}
-                  <p className="text-[10px] mt-1.5" style={{ color: card.muted }}>
-                    {loadingBranches ? 'Loading branch list...' : editForm.branchId ? `Selected branch ID: ${editForm.branchId}` : 'Select a branch name to set branch ID.'}
-                  </p>
-                </div>
+                {/* Branch - Only for managerial roles */}
+                {(() => {
+                  const staffRole = (staff as any).role || '';
+                  const isManagerial = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(staffRole);
+                  if (!isManagerial) return null;
+                  return (
+                    <div>
+                      <label className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest opacity-50 mb-1.5" style={{ color: card.text }}>
+                        <Building size={11} /> Branch
+                      </label>
+                      {branches.length > 0 ? (
+                        <select
+                          className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2"
+                          style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                          value={editForm.branchId}
+                          onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
+                        >
+                          <option value="">Select branch</option>
+                          {branches.map((branch) => (
+                            <option key={branch.id} value={branch.id}>
+                              {branch.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder={loadingBranches ? 'Loading branches...' : 'Branch UUID'}
+                          className="w-full px-4 py-2.5 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 font-mono"
+                          style={{ background: isDark ? 'rgba(0,0,0,0.25)' : '#F8FAFC', border: `1.5px solid ${card.border}`, color: card.text }}
+                          value={editForm.branchId}
+                          onChange={e => setEditForm(f => ({ ...f, branchId: e.target.value }))}
+                        />
+                      )}
+                      <p className="text-[10px] mt-1.5" style={{ color: card.muted }}>
+                        {loadingBranches ? 'Loading branch list...' : editForm.branchId ? `Selected branch ID: ${editForm.branchId}` : 'Select a branch name to set branch ID.'}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {/* Active Status */}
                 <div
