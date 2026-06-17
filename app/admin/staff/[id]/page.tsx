@@ -62,7 +62,7 @@ type BranchOption = {
   phone?: string;
 };
 
-const STAFF_ASSIGNMENT_BRANCH_NAMES = ['dormaa central main branch', 'yesu mmo chemical shop'];
+const STAFF_ASSIGNMENT_BRANCH_NAMES = ['main branch', 'yesu mmo chemical shop'];
 
 function normalizeStaffAssignmentBranches(branches: BranchOption[]) {
   return branches.filter(branch => STAFF_ASSIGNMENT_BRANCH_NAMES.includes(branch.name.trim().toLowerCase()));
@@ -70,9 +70,6 @@ function normalizeStaffAssignmentBranches(branches: BranchOption[]) {
 
 function resolveStaffBranchId(branches: BranchOption[], branchId?: string, branchName?: string) {
   const cleanName = branchName?.trim().toLowerCase();
-  if (cleanName === 'main branch') {
-    return branches.find(branch => branch.name.trim().toLowerCase() === 'dormaa central main branch')?.id || branchId || '';
-  }
   if (branchId && branches.some(branch => branch.id === branchId)) return branchId;
   if (cleanName) return branches.find(branch => branch.name.trim().toLowerCase() === cleanName)?.id || '';
   return '';
