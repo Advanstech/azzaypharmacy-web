@@ -620,7 +620,7 @@ function ActiveBranchLabel() {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const { me } = useStore();
-  const role = (user?.user_metadata?.role as string) ?? '';
+  const role = (me?.role || (user?.user_metadata?.role as string)) ?? '';
   return (
     <BranchProvider
       role={role}
