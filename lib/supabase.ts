@@ -8,6 +8,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    debug: false, // Enable Supabase auth debug logging (includes OTP tokens in console)
   },
 });
 

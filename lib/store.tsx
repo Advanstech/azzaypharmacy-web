@@ -22,7 +22,7 @@ import {
   M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND,
   Q_STOCK_TRANSFERS
 } from './gql';
-import { saveToCache, getFromCache } from './offline';
+import { saveToCache, getFromCache, savePendingSale, isOnline } from './offline';
 import { initTauriSync } from './tauri-sync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -832,6 +832,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }): Promise<Sale> => {
     if (!me) throw new Error('Not authenticated');
 
+    // Check if online before attempting API call
+    const online = isOnline();
+    if (!online) {
+      console.warn('[store] ⚠️ Device is offline - saving sale locally');
+    }
+
     const variables = {
       userId: me.id,
       branchId: me.branchId || '',
@@ -846,28 +852,39 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       customerEmail: args.customerEmail,
     };
 
-    let newSale: Sale;
+    let newSale: Sale | undefined;
     let isSynced = false;
-    try {
-      console.log('[store] 📤 Sending createSale mutation...', variables);
-      const data = await gql<{ createSale: Sale }>(M_CREATE_SALE, variables);
-      newSale = data.createSale;
-      isSynced = true;
-      console.log('[store] ✅ Sale synced to backend!', { id: newSale.id, total: newSale.totalAmount });
-    } catch (err: any) {
-      console.error('[store] ❌ Online sale failed:', {
-        error: err?.message,
-        status: err?.status,
-        response: err?.response,
-        stack: err?.stack
-      });
-      
+
+    // Calculate total amount for both online and offline paths
+    const totalAmount = args.items.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0);
+
+    // Only try API if online
+    if (online) {
+      try {
+        console.log('[store] 📤 Sending createSale mutation...', variables);
+        const data = await gql<{ createSale: Sale }>(M_CREATE_SALE, variables);
+        newSale = data.createSale;
+        isSynced = true;
+        console.log('[store] ✅ Sale synced to backend!', { id: newSale.id, total: newSale.totalAmount });
+      } catch (err: any) {
+        console.error('[store] ❌ Online sale failed:', {
+          error: err?.message,
+          status: err?.status,
+          response: err?.response,
+          stack: err?.stack
+        });
+        // Fall through to offline path
+      }
+    }
+
+    // If offline or API failed, create offline sale
+    if (!isSynced) {
       // Create a mock sale for immediate UI
       newSale = {
         id: `offline-${Date.now()}`,
-        totalAmount: args.items.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0),
+        totalAmount,
         amountPaid: args.amountPaid,
-        change: Math.max(0, args.amountPaid - args.items.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0)),
+        change: Math.max(0, args.amountPaid - totalAmount),
         paymentMethod: args.paymentMethod,
         customerName: args.customerName || 'Walk-in',
         createdAt: new Date().toISOString(),
@@ -882,8 +899,18 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         }))
       };
 
-      // Save to IndexedDB
-      await saveToCache('pending_sales', [newSale]);
+      // Save to IndexedDB with proper PendingSale structure for tauri-sync
+      await savePendingSale({
+        id: newSale.id,
+        items: args.items.map(i => ({ name: i.product.id, qty: i.quantity, price: i.product.sellingPrice })),
+        total: totalAmount,
+        payment_method: args.paymentMethod,
+        cashier_name: me?.name || 'Unknown',
+        cashier_id: me?.id,
+        branch_name: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
+        branch_id: me?.branchId,
+        timestamp: Date.now()
+      });
 
       // Register sync if possible
       if ('serviceWorker' in navigator && 'SyncManager' in window) {
@@ -896,6 +923,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
 
       console.warn('[store] 📱 Sale saved locally (offline mode). Will sync when connection restored.');
+    }
+
+    // Ensure newSale is assigned (TypeScript safety)
+    if (!newSale) {
+      throw new Error('Sale creation failed: no sale data available');
     }
 
     // Mark if synced or pending

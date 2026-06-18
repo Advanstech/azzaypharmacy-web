@@ -12,6 +12,7 @@ import {
   BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { manualSync } from '@/lib/tauri-sync';
 
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
@@ -65,8 +66,7 @@ function POSInner() {
     loadingCustomers,
     error: storeError,
     refetchProducts,
-    refetchAll,
-    syncStatus
+    refetchAll
   } = useStore();
 
   const liveProducts = useMemo(() => {
@@ -125,6 +125,7 @@ function POSInner() {
   const [previewSupplier, setPreviewSupplier] = useState<string | null>(null);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Toggle layout mode
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing'>('synced');
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
   // Thermal Receipt Print Function
@@ -703,10 +704,23 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
         <div className="flex items-center gap-4">
           <button 
-            onClick={() => refetchAll()} 
+            onClick={async () => {
+              setSyncStatus('syncing');
+              try {
+                const result = await manualSync();
+                console.log('[POS] Manual sync result:', result);
+                if (result.synced > 0) {
+                  await refetchAll();
+                }
+              } catch (err) {
+                console.error('[POS] Manual sync failed:', err);
+              } finally {
+                setSyncStatus('synced');
+              }
+            }}
             className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-white/30 hover:bg-white/10 transition-colors text-[10px] sm:text-xs font-medium"
           >
-            <Wifi size={14} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
+            <RefreshCw size={14} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">{syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}</span>
           </button>
           <div className="text-right flex flex-col items-end">

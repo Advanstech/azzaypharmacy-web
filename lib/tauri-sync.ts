@@ -31,10 +31,11 @@ export async function initTauriSync() {
   // Detect connection changes
   setupConnectionDetection();
   
-  // Initial sync check
-  if (isOnline()) {
-    await syncPendingSales();
-  }
+  // Note: Auto-sync disabled on startup to prevent errors with invalid offline data
+  // Users can manually trigger sync via manualSync() function
+  // if (isOnline()) {
+  //   await syncPendingSales();
+  // }
 }
 
 /**
@@ -109,8 +110,9 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
       
       try {
         // Reconstruct the createSale mutation variables from cached data
+        // Note: Items should have productId, not name. If using name, we need to look up the product first
         const result = await gql<any>(`
-          mutation SyncSale($userId: ID!, $branchId: ID!, $items: [SaleItemInput!]!, $paymentMethod: PaymentMethod!, $amountPaid: Float!) {
+          mutation SyncSale($userId: String!, $branchId: String!, $items: [SaleItemInput!]!, $paymentMethod: PaymentMethod!, $amountPaid: Float!) {
             createSale(userId: $userId, branchId: $branchId, items: $items, paymentMethod: $paymentMethod, amountPaid: $amountPaid) {
               id receiptNo totalAmount
             }
@@ -118,8 +120,11 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
         `, {
           userId: (sale as any).cashier_id || 'unknown',
           branchId: (sale as any).branch_id || 'unknown',
-          items: sale.items.map(item => ({ productId: item.name, quantity: item.qty })),
-          paymentMethod: sale.payment_method,
+          items: sale.items.map((item: any) => ({ 
+            productId: item.productId || item.id || item.name, // Try productId first, then id, then name as fallback
+            quantity: item.qty || item.quantity 
+          })),
+          paymentMethod: sale.payment_method.toUpperCase(),
           amountPaid: sale.total,
         });
 
@@ -129,9 +134,16 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
           syncedCount++;
           console.log(`[tauri-sync] ✅ Synced sale ${i + 1}/${totalPending}: ${sale.id}`);
         }
-      } catch (err) {
+      } catch (err: any) {
         failedCount++;
-        console.error(`[tauri-sync] ❌ Failed to sync sale ${sale.id}:`, err);
+        const errorMsg = err?.message || 'Unknown error';
+        console.error(`[tauri-sync] ❌ Failed to sync sale ${sale.id}:`, errorMsg);
+        
+        // If the error is about invalid data (e.g., product not found), delete the pending sale to prevent repeated errors
+        if (errorMsg.includes('not found') || errorMsg.includes('Invalid') || errorMsg.includes('GRAPHQL_VALIDATION')) {
+          console.warn(`[tauri-sync] Deleting invalid pending sale ${sale.id} due to data error`);
+          await deletePendingSale(sale.id);
+        }
       }
 
       // Emit progress event

@@ -78,7 +78,9 @@ export interface PendingSale {
   total: number;
   payment_method: string;
   cashier_name: string;
+  cashier_id?: string;
   branch_name: string;
+  branch_id?: string;
   timestamp: number;
 }
 

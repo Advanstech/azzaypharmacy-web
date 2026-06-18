@@ -49,7 +49,14 @@ const API_CANDIDATES = buildApiCandidates(API);
 
 // Token can be set externally by the StoreProvider once auth is ready
 let _token: string | null = null;
-export function setAuthToken(token: string | null) { _token = token; }
+export function setAuthToken(token: string | null) {
+  _token = token;
+  if (token) {
+    console.log('[gql] Auth token set:', token);
+  } else {
+    console.log('[gql] Auth token cleared');
+  }
+}
 
 async function resolveAuthToken(): Promise<string | null> {
   try {
@@ -885,6 +892,18 @@ export const M_GUARD_LOGIN_TOKEN_REQUEST = `
 export const M_GUARD_LOGIN_TOKEN_VERIFY = `
   mutation GuardLoginTokenVerify($email: String!) {
     guardLoginTokenVerify(email: $email)
+  }
+`;
+
+export const M_GENERATE_CUSTOM_LOGIN_TOKEN = `
+  mutation GenerateCustomLoginToken($email: String!) {
+    generateCustomLoginToken(email: $email)
+  }
+`;
+
+export const M_VERIFY_CUSTOM_LOGIN_TOKEN = `
+  mutation VerifyCustomLoginToken($email: String!, $otp: String!) {
+    verifyCustomLoginToken(email: $email, otp: $otp)
   }
 `;
 

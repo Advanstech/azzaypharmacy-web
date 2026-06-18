@@ -8,6 +8,8 @@ import {
   M_GUARD_LOGIN_TOKEN_REQUEST,
   M_GUARD_LOGIN_TOKEN_VERIFY,
   M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT,
+  M_GENERATE_CUSTOM_LOGIN_TOKEN,
+  M_VERIFY_CUSTOM_LOGIN_TOKEN,
 } from '@/lib/gql';
 import type { User, Session } from '@supabase/supabase-js';
 
@@ -142,7 +144,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: cleanEmail,
       });
 
-      const { error: emailError } = await supabase.auth.signInWithOtp({
+      // Generate custom OTP for logging (parallel to Supabase OTP)
+      gql<{ generateCustomLoginToken: boolean }>(M_GENERATE_CUSTOM_LOGIN_TOKEN, {
+        email: cleanEmail,
+      }).catch((err) => {
+        if (DEBUG_AUTH) console.warn('[AUTH][OTP] Custom OTP generation failed (non-blocking):', err?.message);
+      });
+
+      const { data: emailData, error: emailError } = await supabase.auth.signInWithOtp({
         email: cleanEmail,
         options: {
           shouldCreateUser: false,
@@ -155,12 +164,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ok: !emailError,
           error: emailError?.message ?? null,
         });
+        // Log the OTP if available in development
+        if (emailData) {
+          console.log('[AUTH][OTP] 🔐 6-DIGIT EMAIL TOKEN (development):', emailData);
+        }
       }
 
       let smsError: string | null = null;
       const cleanPhone = phone?.trim();
       if (cleanPhone) {
-        const { error } = await supabase.auth.signInWithOtp({
+        const { data: smsData, error } = await supabase.auth.signInWithOtp({
           phone: cleanPhone,
           options: { shouldCreateUser: false },
         });
@@ -172,6 +185,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             ok: !smsError,
             error: smsError,
           });
+          // Log the OTP if available in development
+          if (smsData) {
+            console.log('[AUTH][OTP] 🔐 6-DIGIT SMS TOKEN (development):', smsData);
+          }
         }
       }
 
@@ -222,7 +239,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // Try email OTP first
+      // Try custom OTP verification first (for development - uses backend terminal OTP)
+      let customOtpAccessToken: string | null = null;
+      try {
+        const verifyResult = await gql<{ verifyCustomLoginToken: string }>(M_VERIFY_CUSTOM_LOGIN_TOKEN, {
+          email: cleanEmail,
+          token,
+        });
+        customOtpAccessToken = verifyResult.verifyCustomLoginToken || null;
+        
+        if (DEBUG_AUTH) {
+          console.log('[AUTH][OTP] Custom OTP verification', {
+            email: maskEmail(cleanEmail),
+            hasAccessToken: !!customOtpAccessToken,
+          });
+        }
+      } catch (err: any) {
+        if (DEBUG_AUTH) {
+          console.log('[AUTH][OTP] Custom OTP verification failed (non-fatal)', {
+            error: err?.message,
+          });
+        }
+      }
+
+      if (customOtpAccessToken) {
+        // Custom OTP verified - use the access token to set Supabase session
+        try {
+          const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+            access_token: customOtpAccessToken,
+            refresh_token: customOtpAccessToken,
+          });
+
+          if (DEBUG_AUTH) {
+            console.log('[AUTH][OTP] Supabase session set from custom OTP', {
+              ok: !sessionError,
+              error: sessionError?.message,
+              hasSession: !!sessionData?.session,
+            });
+          }
+
+          if (!sessionError && sessionData?.session) {
+            setSession(sessionData.session);
+            setUser(sessionData.session.user);
+            setAuthToken(sessionData.session.access_token);
+
+            gql<{ recordLoginTokenVerifyAttempt: boolean }>(M_RECORD_LOGIN_TOKEN_VERIFY_ATTEMPT, {
+              email: cleanEmail,
+              success: true,
+              reason: null,
+            }).catch(() => null);
+            return { data: sessionData, error: null };
+          }
+        } catch (sessionErr: any) {
+          if (DEBUG_AUTH) {
+            console.error('[AUTH][OTP] Failed to set Supabase session from custom OTP', sessionErr);
+          }
+        }
+      }
+
+      // Try email OTP (Supabase - this is the actual authentication)
       const { data: emailData, error: emailError } = await supabase.auth.verifyOtp({
         email: cleanEmail,
         token,
