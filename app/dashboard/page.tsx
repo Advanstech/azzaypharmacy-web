@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { useStore } from '@/lib/store';
+import { gql, Q_DASHBOARD_STATS } from '@/lib/gql';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
 import { useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -55,82 +56,57 @@ function useCardStyles(isDark: boolean) {
 //  MANAGEMENT VIEW — God's Eye Executive Overview
 // ═══════════════════════════════════════════════════════════════
 function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
-  const { products, sales, staff, customers, todayRevenue, todayTransactions, lowStockProducts, loadingProducts, loadingSales } = useStore();
+  const { me, branchId: selectedBranchId } = useStore() as any; // Using useStore for minimal state if needed
   const branchFilter = useBranchFilter();
+  const [stats, setStats] = useState<any>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+
+  // We still fetch some raw sales if needed for the transactions list at the bottom, 
+  // but let's avoid calculating stats from it.
+  const { sales, loadingSales } = useStore();
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
-  const branchProducts = useMemo(() => branchFilter(products), [branchFilter, products]);
 
-  // Compute derived analytics
-  const now = new Date();
-  const weekAgo = new Date(now.getTime() - 7 * 86400000);
-  const weekRevenue = branchSales.filter(s => new Date(s.createdAt) >= weekAgo).reduce((sum, s) => sum + s.totalAmount, 0);
-  const weekTxns = branchSales.filter(s => new Date(s.createdAt) >= weekAgo).length;
-  const avgTicket = todayTransactions > 0 ? todayRevenue / todayTransactions : 0;
-  const outOfStock = lowStockProducts.filter(p => p.stockQuantity === 0).length;
-  const lowStock = lowStockProducts.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10).length;
-  const staffOnDuty = staff.filter(s => s.isOnDuty).length;
-  const totalStaff = staff.length;
-
-  // Revenue by day for sparkline (last 7 days)
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const dayMap: Record<string, number> = {};
-  branchSales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => {
-    const d = new Date(s.createdAt).toLocaleDateString('en-GB', { weekday: 'short' });
-    dayMap[d] = (dayMap[d] || 0) + s.totalAmount;
-  });
-  const sparkData = days.map(d => ({ day: d, amount: dayMap[d] || 0 }));
-
-  // Top products by revenue — scoped to last 7 days
-  const topProducts = useMemo(() => {
-    const map: Record<string, { name: string; revenue: number; qty: number }> = {};
-    branchSales.filter(s => new Date(s.createdAt) >= weekAgo).forEach(s => s.items.forEach(item => {
-      const n = item.product?.name || 'Unknown';
-      if (!map[n]) map[n] = { name: n, revenue: 0, qty: 0 };
-      map[n].revenue += item.total;
-      map[n].qty += item.quantity;
-    }));
-    return Object.values(map).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
-  }, [branchSales, weekAgo]);
-
-  // Payment method breakdown by revenue (all-time)
-  const paymentMix = useMemo(() => {
-    const amounts: Record<'CASH' | 'MOMO' | 'CARD' | 'NHIS', number> = {
-      CASH: 0,
-      MOMO: 0,
-      CARD: 0,
-      NHIS: 0,
-    };
-
-    branchSales.forEach((s) => {
-      const method = (s.paymentMethod || '').toUpperCase().replace(/\s+/g, '_');
-      if (method === 'MOMO' || method === 'MOBILE_MONEY') {
-        amounts.MOMO += s.totalAmount;
-      } else if (method === 'CASH' || method === 'CARD' || method === 'NHIS') {
-        amounts[method] += s.totalAmount;
+  useEffect(() => {
+    async function loadStats() {
+      setLoadingStats(true);
+      try {
+        const branchIdToUse = selectedBranchId || me?.branchId || '';
+        console.log('[Dashboard] Loading stats for branchId:', branchIdToUse, 'selectedBranchId:', selectedBranchId, 'me.branchId:', me?.branchId);
+        const res = await gql<{ dashboardStats: any }>(Q_DASHBOARD_STATS, { branchId: branchIdToUse });
+        console.log('[Dashboard] Stats loaded:', res.dashboardStats);
+        setStats(res.dashboardStats);
+      } catch (err) {
+        console.error('Failed to load dashboard stats:', err);
+      } finally {
+        setLoadingStats(false);
       }
-    });
+    }
+    loadStats();
+  }, [selectedBranchId, me?.branchId]);
 
-    const total = (amounts.CASH + amounts.MOMO + amounts.CARD + amounts.NHIS) || 1;
-    return [
-      { label: 'Cash', pct: Math.round(((amounts['CASH'] || 0) / total) * 100), color: '#0EA5E9', icon: Banknote },
-      { label: 'MoMo', pct: Math.round(((amounts['MOMO'] || 0) / total) * 100), color: '#10B981', icon: Smartphone },
-      { label: 'Card', pct: Math.round(((amounts['CARD'] || 0) / total) * 100), color: '#8B5CF6', icon: CreditCard },
-      { label: 'NHIS', pct: Math.round(((amounts['NHIS'] || 0) / total) * 100), color: '#F59E0B', icon: ShieldAlert },
-    ].filter(pm => pm.pct > 0);
-  }, [branchSales]);
+  const weekRevenue = stats?.weekRevenue || 0;
+  const weekTxns = stats?.weekTransactions || 0;
+  const todayRevenue = stats?.todayRevenue || 0;
+  const todayTransactions = stats?.todayTransactions || 0;
+  const avgTicket = todayTransactions > 0 ? todayRevenue / todayTransactions : 0;
+  const outOfStock = stats?.outOfStock || 0;
+  const lowStock = stats?.lowStock || 0;
+  const totalProducts = stats?.totalProducts || 0;
+  const staffOnDuty = stats?.staffOnDuty || 0;
+  const totalStaff = stats?.totalStaff || 0;
 
-  // Sales by staff for manager overview
-  const staffSales = useMemo(() => {
-    const today = new Date().toDateString();
-    const map: Record<string, { name: string; revenue: number; count: number }> = {};
-    branchSales.filter(s => new Date(s.createdAt).toDateString() === today).forEach(s => {
-      const name = s.user?.name || 'Unknown Staff';
-      if (!map[name]) map[name] = { name, revenue: 0, count: 0 };
-      map[name].revenue += s.totalAmount;
-      map[name].count += 1;
-    });
-    return Object.values(map).sort((a, b) => b.revenue - a.revenue);
-  }, [branchSales]);
+  const sparkData = stats?.revenueTrajectory || [];
+  const topProducts = stats?.topProducts || [];
+  const paymentMix = (stats?.paymentMix || []).map((pm: any) => {
+    let icon = Banknote;
+    let color = '#0EA5E9';
+    if (pm.label === 'Cash') { icon = Banknote; color = '#0EA5E9'; }
+    if (pm.label === 'MoMo') { icon = Smartphone; color = '#10B981'; }
+    if (pm.label === 'Card') { icon = CreditCard; color = '#8B5CF6'; }
+    if (pm.label === 'NHIS') { icon = ShieldAlert; color = '#F59E0B'; }
+    return { ...pm, icon, color };
+  });
+  const staffSales = stats?.staffSales || [];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -158,10 +134,10 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       {/* ── EXECUTIVE KPI ROW ────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Today's Revenue", value: loadingSales ? '…' : `GH₵${todayRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${todayTransactions} txns · Avg GH₵${avgTicket.toFixed(2)}`, icon: DollarSign, color: s.accent },
-          { label: '7-Day Revenue', value: loadingSales ? '…' : `GH₵${weekRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${weekTxns} transactions this week`, icon: TrendingUp, color: '#10B981' },
-          { label: 'Inventory Health', value: loadingProducts ? '…' : `${outOfStock}`, sub: `${lowStock} low stock · ${products.length} total SKUs`, icon: Package, color: outOfStock > 0 ? '#EF4444' : '#F59E0B' },
-          { label: 'Staff on Duty', value: `${staffOnDuty}/${totalStaff}`, sub: `${totalStaff - staffOnDuty} off duty · ${staff.filter(s => !s.isActive).length} inactive`, icon: UserCheck, color: '#6366F1' },
+          { label: "Today's Revenue", value: loadingStats ? '…' : `GH₵${todayRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${todayTransactions} txns · Avg GH₵${avgTicket.toFixed(2)}`, icon: DollarSign, color: s.accent },
+          { label: '7-Day Revenue', value: loadingStats ? '…' : `GH₵${weekRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${weekTxns} transactions this week`, icon: TrendingUp, color: '#10B981' },
+          { label: 'Inventory Health', value: loadingStats ? '…' : `${outOfStock}`, sub: `${lowStock} low stock · ${totalProducts} total SKUs`, icon: Package, color: outOfStock > 0 ? '#EF4444' : '#F59E0B' },
+          { label: 'Staff on Duty', value: loadingStats ? '…' : `${staffOnDuty}/${totalStaff}`, sub: `${totalStaff - staffOnDuty} off duty`, icon: UserCheck, color: '#6366F1' },
         ].map(kpi => (
           <div key={kpi.label} className="rounded-2xl border p-5 backdrop-blur-xl transition-all hover:scale-[1.01]"
             style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: s.border, boxShadow: s.shadow }}>
@@ -209,7 +185,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           <h3 className="font-display text-sm font-bold mb-1" style={{ color: s.textMain }}>Payment Mix</h3>
           <p className="text-[11px] mb-5" style={{ color: s.textDim }}>All-time method distribution</p>
           <div className="space-y-4">
-            {paymentMix.map(pm => (
+            {paymentMix.map((pm: any) => (
               <div key={pm.label} className="flex items-center gap-3">
                 <div className="p-2 rounded-lg shrink-0" style={{ background: `${pm.color}18`, color: pm.color }}>
                   <pm.icon size={16} />
@@ -239,7 +215,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           <div className="space-y-3">
             {topProducts.length === 0 ? (
               <p className="text-xs text-center py-4" style={{ color: s.textMuted }}>No sales data yet</p>
-            ) : topProducts.map((p, i) => (
+            ) : topProducts.map((p: any, i: number) => (
               <div key={p.name} className="flex items-center gap-3">
                 <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
                   style={{ background: i === 0 ? `${s.accent}20` : `${s.textDim}15`, color: i === 0 ? s.accent : s.textDim }}>
@@ -267,26 +243,20 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
             )}
           </div>
           <div className="space-y-2 max-h-48 overflow-y-auto">
-            {lowStockProducts.length === 0 ? (
+            {loadingStats ? (
+               <div className="py-4 text-center text-xs">Loading...</div>
+            ) : lowStock === 0 && outOfStock === 0 ? (
               <div className="flex flex-col items-center py-4 text-center">
                 <div className="p-2 rounded-lg mb-2" style={{ background: `${s.success}18` }}>
                   <Package size={20} style={{ color: s.success }} />
                 </div>
                 <p className="text-xs font-medium" style={{ color: s.success }}>All inventory healthy</p>
               </div>
-            ) : lowStockProducts.slice(0, 6).map(p => (
-              <div key={p.id} className="flex items-center gap-3 p-2.5 rounded-xl"
-                style={{ background: p.stockQuantity === 0 ? '#EF444408' : '#F59E0B08', border: `1px solid ${p.stockQuantity === 0 ? '#EF444420' : '#F59E0B20'}` }}>
-                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: p.stockQuantity === 0 ? '#EF4444' : '#F59E0B' }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium truncate" style={{ color: s.textMain }}>{p.name}</p>
-                  <p className="text-[10px]" style={{ color: s.textDim }}>{p.brand || p.category}</p>
-                </div>
-                <span className="text-xs font-mono font-bold" style={{ color: p.stockQuantity === 0 ? '#EF4444' : '#F59E0B' }}>
-                  {p.stockQuantity === 0 ? 'ZERO' : `${p.stockQuantity} left`}
-                </span>
-              </div>
-            ))}
+            ) : (
+               <div className="flex flex-col items-center py-4 text-center">
+                 <p className="text-xs font-medium text-amber-500">Check inventory page for alerts</p>
+               </div>
+            )}
           </div>
           <Link href="/dashboard/inventory" className="flex items-center justify-center gap-1 mt-3 py-2 rounded-xl text-[11px] font-medium transition-colors"
             style={{ background: `${s.accent}10`, color: s.accent }}>
@@ -304,7 +274,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
             {staffSales.length === 0 ? (
               <p className="text-xs text-center py-4" style={{ color: s.textMuted }}>No staff sales recorded today</p>
-            ) : staffSales.map((staff, i) => (
+            ) : staffSales.map((staff: any, i: number) => (
               <div key={staff.name} className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0"
                   style={{ background: i === 0 ? `${s.success}15` : `${s.textDim}10`, color: i === 0 ? s.success : s.textDim }}>
@@ -596,9 +566,14 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
 function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
   const { sales, todayRevenue, todayTransactions, lowStockProducts, loadingSales, me, updateDutyStatus } = useStore();
 
+  console.log('[SalesOverview] Total sales loaded:', sales.length, 'me.id:', me?.id, 'me.name:', me?.name);
+  console.log('[SalesOverview] Sample sale user IDs:', sales.slice(0, 3).map(s => ({ id: s.id, userId: s.user?.id, userName: s.user?.name })));
+
   const myTodaySales = sales.filter(s => s.user?.id === me?.id && new Date(s.createdAt).toDateString() === new Date().toDateString());
   const myRevenue = myTodaySales.reduce((sum, s) => sum + s.totalAmount, 0);
   const myTxns = myTodaySales.length;
+
+  console.log('[SalesOverview] My today sales:', myTxns, 'My revenue:', myRevenue);
 
   // Hourly Activity for today
   const hourlyData = useMemo(() => {

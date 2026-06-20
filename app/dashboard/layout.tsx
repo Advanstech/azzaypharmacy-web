@@ -107,7 +107,17 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
-  const role = (user.user_metadata?.role as string) ?? '';
+  // Prioritize API role (me.role) over Supabase metadata role
+  const role = (me?.role || (user.user_metadata?.role as string)) ?? '';
+
+  console.log('[DashboardLayout] Role check:', { 
+    email: user.email, 
+    metadataRole: user.user_metadata?.role, 
+    meRole: me?.role, 
+    finalRole: role,
+    isSuperAdmin: role === 'SE_ADMIN' || user.email === 'root@azzaypharmacy.com',
+    isManagement: ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role),
+  });
 
   // Role Categories
   const isSuperAdmin = role === 'SE_ADMIN' || user.email === 'root@azzaypharmacy.com';

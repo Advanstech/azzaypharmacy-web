@@ -299,6 +299,26 @@ export const Q_CUSTOMERS = `
   }
 `;
 
+export const Q_DASHBOARD_STATS = `
+  query GetDashboardStats($branchId: String!) {
+    dashboardStats(branchId: $branchId) {
+      todayRevenue
+      todayTransactions
+      weekRevenue
+      weekTransactions
+      outOfStock
+      lowStock
+      totalProducts
+      staffOnDuty
+      totalStaff
+      revenueTrajectory { day amount }
+      paymentMix { label pct amount }
+      topProducts { name revenue qty }
+      staffSales { name revenue count }
+    }
+  }
+`;
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
 export const M_CREATE_SALE = `

@@ -11,7 +11,7 @@ import {
 } from 'react';
 import {
   gql, setAuthToken,
-  Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_STAFF, Q_ME, Q_CUSTOMERS,
+  Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES, Q_REFUND_REQUESTS,
   M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD, M_DELETE_STAFF,
@@ -626,7 +626,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchSales = useCallback(async () => {
     setLoadingSales(true);
     try {
-      const data = await gql<{ sales: Sale[] }>(Q_SALES);
+      // Instead of all sales, load only recent ones to speed up initial render
+      const data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED, { limit: 200, offset: 0 });
       setSales(data.sales ?? []);
     } catch (e: any) {
       console.warn('[store] sales fetch failed:', e.message);

@@ -706,19 +706,32 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
           <button 
             onClick={async () => {
               setSyncStatus('syncing');
+              // Show immediate feedback
+              console.log('[POS] Starting manual sync...');
               try {
                 const result = await manualSync();
                 console.log('[POS] Manual sync result:', result);
                 if (result.synced > 0) {
                   await refetchAll();
+                  alert(`✅ Synced ${result.synced} sale(s) successfully`);
+                } else if (result.failed > 0) {
+                  alert(`⚠️ Synced ${result.synced} sale(s), ${result.failed} failed`);
+                } else {
+                  alert('ℹ️ No pending sales to sync');
                 }
               } catch (err) {
                 console.error('[POS] Manual sync failed:', err);
+                alert('❌ Sync failed. Check console for details.');
               } finally {
                 setSyncStatus('synced');
               }
             }}
-            className="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-white/30 hover:bg-white/10 transition-colors text-[10px] sm:text-xs font-medium"
+            disabled={syncStatus === 'syncing'}
+            className={`flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border transition-colors text-[10px] sm:text-xs font-medium ${
+              syncStatus === 'syncing' 
+                ? 'border-white/50 bg-white/5 cursor-not-allowed opacity-70' 
+                : 'border-white/30 hover:bg-white/10'
+            }`}
           >
             <RefreshCw size={14} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">{syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}</span>
