@@ -300,7 +300,7 @@ export const Q_CUSTOMERS = `
 `;
 
 export const Q_DASHBOARD_STATS = `
-  query GetDashboardStats($branchId: String!) {
+  query GetDashboardStats($branchId: String) {
     dashboardStats(branchId: $branchId) {
       todayRevenue
       todayTransactions

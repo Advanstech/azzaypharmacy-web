@@ -66,14 +66,24 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
   const { sales, loadingSales } = useStore();
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
 
+  // Check if user has management role to see all branches
+  const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role);
+
   useEffect(() => {
     async function loadStats() {
       setLoadingStats(true);
       try {
-        const branchIdToUse = selectedBranchId || me?.branchId || '';
-        console.log('[Dashboard] Loading stats for branchId:', branchIdToUse, 'selectedBranchId:', selectedBranchId, 'me.branchId:', me?.branchId);
-        const res = await gql<{ dashboardStats: any }>(Q_DASHBOARD_STATS, { branchId: branchIdToUse });
-        console.log('[Dashboard] Stats loaded:', res.dashboardStats);
+        // For management roles: if no branch selected, show all branches (undefined)
+        // For non-management roles: always use their assigned branch
+        let branchIdToUse;
+        if (isManagement) {
+          branchIdToUse = selectedBranchId || undefined; // undefined = all branches
+        } else {
+          branchIdToUse = me?.branchId || selectedBranchId;
+        }
+
+        const variables = branchIdToUse ? { branchId: branchIdToUse } : {};
+        const res = await gql<{ dashboardStats: any }>(Q_DASHBOARD_STATS, variables);
         setStats(res.dashboardStats);
       } catch (err) {
         console.error('Failed to load dashboard stats:', err);
