@@ -1,9 +1,7 @@
 /**
  * Azzay Pharmacy NEXUS — GraphQL Client
- * Authenticated requests using Supabase JWT
+ * Authenticated requests using custom JWT
  */
-
-import { getSessionSafe } from '@/lib/supabase';
 
 const RAW_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/graphql';
 const API = RAW_API;
@@ -58,18 +56,7 @@ export function setAuthToken(token: string | null) {
   }
 }
 
-async function resolveAuthToken(): Promise<string | null> {
-  try {
-    const { session } = await getSessionSafe();
-    const token = session?.access_token ?? null;
-    if (token) {
-      _token = token;
-      return token;
-    }
-  } catch (error) {
-    console.warn('[gql] Failed to resolve auth token from Supabase session', error);
-  }
-  // Fall back to externally-set token if session lookup failed
+function resolveAuthToken(): string | null {
   return _token;
 }
 
@@ -78,7 +65,7 @@ export async function gql<T = unknown>(
   variables?: Record<string, unknown>
 ): Promise<T> {
   const queryName = query.match(/(query|mutation) (\w+)/)?.[2] || 'Unknown';
-  const token = await resolveAuthToken();
+  const token = resolveAuthToken();
 
   console.log(`[gql] [${queryName}] Requesting...`, {
     token: token ? `YES (${token.substring(0, 10)}...)` : 'MISSING',
