@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -46,7 +46,7 @@ const adminItems = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user, session, loading, signOut } = useAuth();
+  const { user, session, loading, signOut } = useCustomAuth();
   const { me } = useStore();
   const router = useRouter();
   const pathname = usePathname();

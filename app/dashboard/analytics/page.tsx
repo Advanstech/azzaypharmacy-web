@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
 import { useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -41,8 +41,8 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState('7 Days');
 
   const { sales, products, staff, customers, loadingSales } = useStore();
-  const { user } = useAuth();
-  const role = (user?.user_metadata?.role as string) || '';
+  const { user } = useCustomAuth();
+  const role = (user?.role || user?.user_metadata?.role as string) || '';
   const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role);
 
   const branchFilter = useBranchFilter();

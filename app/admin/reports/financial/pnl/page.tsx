@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { getEffectiveDateRange } from '@/lib/effective-date';
 import { 
   ArrowLeft, Download, FileText, TrendingUp, TrendingDown,
   DollarSign, ShoppingCart, Receipt, ArrowUpRight, ArrowDownRight,
@@ -39,11 +40,16 @@ export default function ProfitLossReportPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Date range filter
-  const today = new Date();
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-  const [dateFrom, setDateFrom] = useState(firstOfMonth);
-  const [dateTo, setDateTo] = useState(today.toISOString().split('T')[0]);
+  // Date range filter — default to month of most recent sales data
+  const effectiveRange = useMemo(() => getEffectiveDateRange(sales), [sales]);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  useEffect(() => {
+    if (sales.length > 0 && !dateFrom) {
+      setDateFrom(effectiveRange.from);
+      setDateTo(effectiveRange.to);
+    }
+  }, [sales.length, effectiveRange, dateFrom]);
 
   // Calculate all financial metrics
   const metrics = useMemo(() => {
@@ -184,7 +190,7 @@ export default function ProfitLossReportPage() {
         <button onClick={() => { setDateFrom(''); setDateTo(''); }}
           className="px-3 py-1.5 rounded-lg text-xs font-bold"
           style={{ background: card.primaryBg, color: card.primary }}>All Time</button>
-        <button onClick={() => { setDateFrom(firstOfMonth); setDateTo(today.toISOString().split('T')[0]); }}
+        <button onClick={() => { setDateFrom(effectiveRange.from); setDateTo(effectiveRange.to); }}
           className="px-3 py-1.5 rounded-lg text-xs font-bold"
           style={{ background: card.primaryBg, color: card.primary }}>This Month</button>
       </div>

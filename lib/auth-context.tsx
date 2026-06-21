@@ -432,3 +432,6 @@ export function useAuth() {
   }
   return context;
 }
+
+// Re-export new auth hook under the old name for any remaining imports
+export { useCustomAuth as useAuthCompat } from '@/lib/custom-auth';

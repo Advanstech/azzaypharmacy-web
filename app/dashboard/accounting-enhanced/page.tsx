@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 import {
@@ -39,7 +39,7 @@ export default function EnhancedAccountingPage() {
   const branchFilter = useBranchFilter();
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
   const branchProducts = useMemo(() => branchFilter(products), [branchFilter, products]);
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'reports' | 'budget' | 'payables' | 'analytics'>('overview');
   const [dateRange, setDateRange] = useState<'month' | 'quarter' | 'year' | 'custom'>('month');
@@ -72,7 +72,7 @@ export default function EnhancedAccountingPage() {
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const role = me?.role || user?.user_metadata?.role;
+  const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'ACCOUNTANT'].includes(role || '');
 
   if (!isManager && mounted) {

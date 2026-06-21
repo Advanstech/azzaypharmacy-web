@@ -626,9 +626,15 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchSales = useCallback(async () => {
     setLoadingSales(true);
     try {
-      // Instead of all sales, load only recent ones to speed up initial render
+      // Serve stale cache instantly so dashboard paints immediately
+      const cached = await getFromCache('sales_cache');
+      if (cached?.length) setSales(cached);
+
       const data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED, { limit: 200, offset: 0 });
-      setSales(data.sales ?? []);
+      if (data.sales) {
+        setSales(data.sales);
+        await saveToCache('sales_cache', data.sales);
+      }
     } catch (e: any) {
       console.warn('[store] sales fetch failed:', e.message);
     } finally {
@@ -772,15 +778,33 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     setSyncStatus('syncing');
     setError(null);
     try {
-      // Phase 1a: Staff first (sets me+branchId needed by phase 2)
+      // ── Phase 1: Dashboard-critical — all in parallel ──────────────
+      // Staff must complete first so me?.branchId is available for invoices/ledger
       await refetchStaff();
-      // Phase 1b: Core data in small batches to stay within DB connection pool (limit: 5)
-      await Promise.all([refetchProducts(), refetchSuppliers()]);
-      await Promise.all([refetchSales(), refetchCustomers()]);
-      // Phase 2: ERP modules — batched to avoid pool exhaustion
-      await Promise.all([refetchPrescriptions(), refetchPurchases(), refetchInvoices()]);
-      await Promise.all([refetchExpenses(), refetchExpenseCategories(), refetchLedger(), refetchRefundRequests()]);
+
+      // Core data needed to paint the dashboard — launch all at once
+      await Promise.all([refetchProducts(), refetchSales()]);
+
       setSyncStatus('idle');
+
+      // ── Phase 2: ERP modules — deferred to background ──────────────
+      // These are not needed for initial dashboard render; load quietly.
+      setTimeout(() => {
+        Promise.all([
+          refetchSuppliers(),
+          refetchCustomers(),
+          refetchPrescriptions(),
+          refetchPurchases(),
+          refetchInvoices(),
+        ]).then(() =>
+          Promise.all([
+            refetchExpenses(),
+            refetchExpenseCategories(),
+            refetchLedger(),
+            refetchRefundRequests(),
+          ])
+        ).catch(err => console.warn('[store] Background ERP sync failed:', err));
+      }, 0);
     } catch (err) {
       console.error('[store] Sync failed:', err);
       setSyncStatus('error');
@@ -809,12 +833,34 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [token]);
 
+  // ── Auto-polling: refresh sales + products every 30s when tab is visible ─
+  useEffect(() => {
+    if (!token) return;
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try { await Promise.all([refetchSales(), refetchProducts()]); } catch { /* silent */ }
+    };
+    const interval = setInterval(poll, 30_000);
+    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
+  }, [token, refetchSales, refetchProducts]);
+
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const lowStockProducts = products.filter(p => p.stockQuantity <= 10);
 
-  const today = new Date().toDateString();
-  const todaySales = sales.filter(s => new Date(s.createdAt).toDateString() === today);
+  // "Today" = actual calendar today. If no sales exist for today, fall back to
+  // the most recent day that has sales (handles migrated/historical data gracefully).
+  const todayStr = new Date().toDateString();
+  const trueTodaySales = sales.filter(s => new Date(s.createdAt).toDateString() === todayStr);
+  const todaySales = trueTodaySales.length > 0
+    ? trueTodaySales
+    : (() => {
+        if (sales.length === 0) return [];
+        const latestDate = new Date(Math.max(...sales.map(s => new Date(s.createdAt).getTime()))).toDateString();
+        return sales.filter(s => new Date(s.createdAt).toDateString() === latestDate);
+      })();
   const todayRevenue = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
   const todayTransactions = todaySales.length;
 

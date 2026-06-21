@@ -8,7 +8,7 @@ import {
   XCircle, Search, Filter, ShieldCheck, CheckSquare, ListTodo, ClipboardCheck, History,
   ChevronLeft, ChevronRight, CalendarSearch, Eye
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { gql, Q_MY_SHIFT_RECONCILIATIONS, Q_ALL_SHIFT_RECONCILIATIONS } from '@/lib/gql';
 import { useRouter } from 'next/navigation';
@@ -17,7 +17,7 @@ import { BranchBanner } from '@/components/BranchBanner';
 
 export default function EndOfDayDashboardPage() {
   const { theme, resolvedTheme } = useTheme();
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { closeTerminal, todaySales, todayRevenue, todayTransactions, me, staff } = useStore();
@@ -49,7 +49,7 @@ export default function EndOfDayDashboardPage() {
     "Network issue with MoMo"
   ];
 
-  const role = me?.role || user?.user_metadata?.role;
+  const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   // Derived personal stats — robust multi-field matching

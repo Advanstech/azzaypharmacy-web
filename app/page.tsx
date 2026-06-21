@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Float, OrbitControls, Sphere, Trail, MeshDistortMaterial, Stars, Torus } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import * as THREE from 'three';
@@ -732,7 +732,7 @@ export default function LoginPage() {
   const [isFirstTimeLogin, setIsFirstTimeLogin] = useState(false);
   const [isSuccessTransition, setIsSuccessTransition] = useState(false);
   
-  const { signIn, requestLoginToken, verifyLoginToken, signOut } = useAuth();
+  const { signIn, requestLoginToken, verifyLoginToken, signOut } = useCustomAuth();
   const router                  = useRouter();
   const { resolvedTheme }       = useTheme();
   const passwordRef             = useRef<HTMLInputElement>(null);

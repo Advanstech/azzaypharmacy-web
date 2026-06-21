@@ -10,7 +10,7 @@ import {
   BarChart3, PieChart, Download, Calendar, ChevronDown, ChevronRight, ShieldAlert,
   ChevronLeft, ChevronsLeft, ChevronsRight
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 
 // No hardcoded data — all figures come from the live store
 
@@ -20,7 +20,7 @@ export default function FinancialsPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const { sales, products, ledger, purchases, invoices, expenses, expenseCategories, createExpense, refetchLedger, refetchInvoices, refetchSales, refetchProducts, refetchExpenses, me } = useStore();
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function FinancialsPage() {
     if (expenses.length === 0) refetchExpenses();
   }, [refetchLedger, refetchInvoices, refetchSales, refetchProducts, refetchExpenses, ledger.length, invoices.length, sales.length, products.length, expenses.length]);
 
-  const role = user?.user_metadata?.role || me?.role;
+  const role = user?.role || user?.user_metadata?.role || me?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'ACCOUNTANT'].includes(role || '');
 
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions' | 'payables' | 'analytics'>('overview');

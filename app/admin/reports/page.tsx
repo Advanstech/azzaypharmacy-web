@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { getEffectiveToday, getEffectiveDateRange } from '@/lib/effective-date';
 import { 
   FileText, Download, BarChart3, Package, DollarSign, Users, Calendar, 
   ChevronRight, TrendingUp, AlertTriangle, Eye, ArrowRight, Activity,
@@ -36,13 +37,18 @@ export default function ReportsPage() {
   const { sales, products, staff, customers, suppliers, expenses, purchases, prescriptions } = useStore();
   const [activeCategory, setActiveCategory] = useState('All');
   const [generating, setGenerating] = useState<string | null>(null);
-  const today = new Date().toISOString().split('T')[0];
-
-  // Date range filter
-  const firstOfMonth = new Date();
-  firstOfMonth.setDate(1);
-  const [dateFrom, setDateFrom] = useState(firstOfMonth.toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(today);
+  // Date range filter — use effective date (most recent day with data)
+  const effectiveRange = useMemo(() => getEffectiveDateRange(sales), [sales]);
+  const today = useMemo(() => getEffectiveToday(sales), [sales]);
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  // Initialise once data arrives
+  useEffect(() => {
+    if (sales.length > 0 && !dateFrom) {
+      setDateFrom(effectiveRange.from);
+      setDateTo(effectiveRange.to);
+    }
+  }, [sales.length, effectiveRange, dateFrom]);
 
   const rangeStart = useMemo(() => new Date(dateFrom + 'T00:00:00'), [dateFrom]);
   const rangeEnd = useMemo(() => new Date(dateTo + 'T23:59:59'), [dateTo]);
@@ -64,10 +70,10 @@ export default function ReportsPage() {
   const todayRevenue = useMemo(() => todaySales.reduce((sum, s) => sum + s.totalAmount, 0), [todaySales]);
   
   const monthlySales = useMemo(() => {
-    const now = new Date();
+    const ref = new Date(today);
     return sales.filter(s => {
       const d = new Date(s.createdAt);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      return d.getMonth() === ref.getMonth() && d.getFullYear() === ref.getFullYear();
     });
   }, [sales]);
   const monthlyRevenue = useMemo(() => monthlySales.reduce((sum, s) => sum + s.totalAmount, 0), [monthlySales]);

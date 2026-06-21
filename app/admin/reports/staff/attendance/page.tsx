@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { getEffectiveToday } from '@/lib/effective-date';
 import {
   ArrowLeft, Download, Users, Clock, CheckCircle, XCircle,
   Search, UserCircle, Wifi, WifiOff, Shield, Building2,
@@ -56,7 +57,7 @@ export default function StaffAttendancePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = useMemo(() => getEffectiveToday(sales), [sales]);
 
   // Filters
   const [search, setSearch] = useState('');

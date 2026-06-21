@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { getEffectiveToday } from '@/lib/effective-date';
 import { 
   ArrowLeft, Download, Calendar, Filter, RefreshCw, 
   TrendingUp, Users, ShoppingBag, CreditCard, Search,
@@ -31,7 +32,13 @@ export default function DailySalesReportPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { sales, products } = useStore();
+  const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  // Update to effective date once data loads
+  useEffect(() => {
+    if (sales.length > 0) setSelectedDate(effectiveDay);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sales.length, effectiveDay]);
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);

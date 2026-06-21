@@ -6,20 +6,20 @@ import {
   RotateCcw, Search, Filter, AlertCircle, Clock, CheckCircle, 
   ArrowLeft, Receipt, DollarSign, Package, XCircle
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 
 export default function RefundPage() {
   const { theme, resolvedTheme } = useTheme();
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests } = useStore();
-  const role = me?.role || user?.user_metadata?.role;
+  const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   const branchFilter = useBranchFilter();

@@ -7,7 +7,7 @@ import {
   Download, Printer, CheckCircle, XCircle, AlertCircle, 
   Receipt, Building2, Phone, Mail, MapPin, ShieldCheck
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { gql, Q_SHIFT_RECONCILIATION_BY_ID } from '@/lib/gql';
 import { useRouter } from 'next/navigation';
@@ -16,7 +16,7 @@ import Link from 'next/link';
 export default function ShiftReconciliationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { theme, resolvedTheme } = useTheme();
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { me } = useStore();

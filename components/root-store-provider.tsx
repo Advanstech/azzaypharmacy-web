@@ -1,12 +1,12 @@
 'use client';
 
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { StoreProvider } from '@/lib/store';
 import { useEffect, type ReactNode } from 'react';
 
 export function RootStoreProvider({ children }: { children: ReactNode }) {
-  const { session, loading } = useAuth();
-  const token = session?.access_token ?? null;
+  const { loading } = useCustomAuth();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
   useEffect(() => {
     console.log(`[RootStore] token=${token ? 'YES' : 'MISSING'} loading=${loading}`);

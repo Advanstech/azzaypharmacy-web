@@ -12,7 +12,7 @@ import {
   Download
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
@@ -79,7 +79,7 @@ export default function InventoryPage() {
     me,
     error: storeError
   } = useStore();
-  const { signOut } = useAuth();
+  const { signOut } = useCustomAuth();
   const router = useRouter();
   const { addToast } = useToast();
 

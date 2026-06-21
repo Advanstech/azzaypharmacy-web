@@ -3,8 +3,9 @@
 import { useTheme } from 'next-themes';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
+import { getEffectiveToday } from '@/lib/effective-date';
 import { gql, Q_DASHBOARD_STATS } from '@/lib/gql';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
 import { useBranchFilter } from '@/lib/branch-context';
@@ -27,13 +28,109 @@ import {
 
 // ─── Role Detection ────────────────────────────────────────────
 function useRole() {
-  const { user } = useAuth();
-  const role = (user?.user_metadata?.role as string) || '';
+  const { user } = useCustomAuth();
+  // Support both custom JWT format (user.role) and legacy Supabase format (user_metadata.role)
+  const role = (user?.role as string) || (user?.role || user?.user_metadata?.role as string) || '';
   const isSuperAdmin = role === 'SE_ADMIN' || user?.email === 'root@azzaypharmacy.com';
   const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role) || isSuperAdmin;
   const isClinical = ['PHARMACIST', 'TECHNICIAN'].includes(role) || isManagement;
   const isSales = ['CASHIER', 'CHEMICAL_CASHIER'].includes(role) || isClinical;
   return { role, isSuperAdmin, isManagement, isClinical, isSales };
+}
+
+// ─── Skeleton Loader ─────────────────────────────────────────────
+function Skeleton({ className, style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <div
+      className={`animate-pulse rounded-xl ${className || ''}`}
+      style={{ background: 'linear-gradient(90deg, rgba(148,163,184,0.12) 25%, rgba(148,163,184,0.22) 50%, rgba(148,163,184,0.12) 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.5s infinite', ...style }}
+    />
+  );
+}
+
+function DashboardSkeleton({ isDark }: { isDark: boolean }) {
+  const bg = isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)';
+  const border = isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)';
+  const card = { background: bg, borderColor: border };
+  return (
+    <div className="space-y-6">
+      {/* KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="rounded-2xl border p-5" style={card}>
+            <div className="flex items-center gap-2 mb-3">
+              <Skeleton className="w-9 h-9 rounded-lg" />
+              <Skeleton className="h-3 w-20" />
+            </div>
+            <Skeleton className="h-8 w-28 mb-2" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+        ))}
+      </div>
+      {/* Chart + Payment Mix */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 rounded-2xl border p-6" style={card}>
+          <Skeleton className="h-5 w-40 mb-2" />
+          <Skeleton className="h-3 w-52 mb-4" />
+          <Skeleton className="h-10 w-36 mb-4" />
+          <Skeleton className="h-44 w-full rounded-xl" />
+        </div>
+        <div className="rounded-2xl border p-6" style={card}>
+          <Skeleton className="h-5 w-28 mb-2" />
+          <Skeleton className="h-3 w-40 mb-6" />
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="flex items-center gap-3 mb-4">
+              <Skeleton className="w-9 h-9 rounded-lg shrink-0" />
+              <div className="flex-1">
+                <div className="flex justify-between mb-1.5">
+                  <Skeleton className="h-3 w-12" />
+                  <Skeleton className="h-3 w-8" />
+                </div>
+                <Skeleton className="h-1.5 w-full rounded-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Bottom grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="rounded-2xl border p-6" style={card}>
+            <Skeleton className="h-5 w-32 mb-4" />
+            {[...Array(4)].map((_, j) => (
+              <div key={j} className="flex items-center gap-3 mb-3">
+                <Skeleton className="w-8 h-8 rounded-xl shrink-0" />
+                <div className="flex-1">
+                  <Skeleton className="h-3 w-full mb-1" />
+                  <Skeleton className="h-2.5 w-20" />
+                </div>
+                <Skeleton className="h-3 w-14" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      {/* Recent transactions */}
+      <div className="rounded-2xl border p-6" style={card}>
+        <Skeleton className="h-5 w-40 mb-4" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3.5 rounded-xl" style={{ background: isDark ? 'rgba(148,163,184,0.06)' : 'rgba(203,213,225,0.2)' }}>
+              <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
+              <div className="flex-1">
+                <Skeleton className="h-3 w-24 mb-1" />
+                <Skeleton className="h-2.5 w-32" />
+              </div>
+              <div className="text-right">
+                <Skeleton className="h-4 w-16 mb-1" />
+                <Skeleton className="h-2.5 w-10" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Shared Card Styles ─────────────────────────────────────────
@@ -73,15 +170,12 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
     async function loadStats() {
       setLoadingStats(true);
       try {
-        // For management roles: if no branch selected, show all branches (undefined)
-        // For non-management roles: always use their assigned branch
         let branchIdToUse;
         if (isManagement) {
-          branchIdToUse = selectedBranchId || undefined; // undefined = all branches
+          branchIdToUse = selectedBranchId || undefined;
         } else {
           branchIdToUse = me?.branchId || selectedBranchId;
         }
-
         const variables = branchIdToUse ? { branchId: branchIdToUse } : {};
         const res = await gql<{ dashboardStats: any }>(Q_DASHBOARD_STATS, variables);
         setStats(res.dashboardStats);
@@ -92,6 +186,9 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       }
     }
     loadStats();
+    // Auto-refresh every 60 seconds
+    const interval = setInterval(loadStats, 60_000);
+    return () => clearInterval(interval);
   }, [selectedBranchId, me?.branchId]);
 
   const weekRevenue = stats?.weekRevenue || 0;
@@ -141,13 +238,14 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
         </span>
       </div>
 
+      {loadingStats && !stats ? <DashboardSkeleton isDark={isDark} /> : null}
       {/* ── EXECUTIVE KPI ROW ────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" style={{ display: loadingStats && !stats ? 'none' : undefined }}>
         {[
-          { label: "Today's Revenue", value: loadingStats ? '…' : `GH₵${todayRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${todayTransactions} txns · Avg GH₵${avgTicket.toFixed(2)}`, icon: DollarSign, color: s.accent },
-          { label: '7-Day Revenue', value: loadingStats ? '…' : `GH₵${weekRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${weekTxns} transactions this week`, icon: TrendingUp, color: '#10B981' },
-          { label: 'Inventory Health', value: loadingStats ? '…' : `${outOfStock}`, sub: `${lowStock} low stock · ${totalProducts} total SKUs`, icon: Package, color: outOfStock > 0 ? '#EF4444' : '#F59E0B' },
-          { label: 'Staff on Duty', value: loadingStats ? '…' : `${staffOnDuty}/${totalStaff}`, sub: `${totalStaff - staffOnDuty} off duty`, icon: UserCheck, color: '#6366F1' },
+          { label: "Today's Revenue", value: `GH₵${todayRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${todayTransactions} txns · Avg GH₵${avgTicket.toFixed(2)}`, icon: DollarSign, color: s.accent },
+          { label: '7-Day Revenue', value: `GH₵${weekRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${weekTxns} transactions this week`, icon: TrendingUp, color: '#10B981' },
+          { label: 'Inventory Health', value: `${outOfStock}`, sub: `${lowStock} low stock · ${totalProducts} total SKUs`, icon: Package, color: outOfStock > 0 ? '#EF4444' : '#F59E0B' },
+          { label: 'Staff on Duty', value: `${staffOnDuty}/${totalStaff}`, sub: `${totalStaff - staffOnDuty} off duty`, icon: UserCheck, color: '#6366F1' },
         ].map(kpi => (
           <div key={kpi.label} className="rounded-2xl border p-5 backdrop-blur-xl transition-all hover:scale-[1.01]"
             style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: s.border, boxShadow: s.shadow }}>
@@ -163,6 +261,8 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
         ))}
       </div>
 
+      {/* ── ALL SECTIONS hidden while skeleton shows ─────────── */}
+      <div style={{ display: loadingStats && !stats ? 'none' : undefined }}>
       {/* ── MAIN GRID: Sparkline + Top Products + Payments ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -345,6 +445,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           </div>
         )}
       </div>
+      </div>{/* end hidden-while-skeleton wrapper */}
     </div>
   );
 }
@@ -359,7 +460,8 @@ function ClinicalOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; 
     ['Antimalarial', 'Antibiotic', 'Chronic', 'Pain Relief'].includes(p.category)
   );
 
-  const myTodaySales = sales.filter(s => s.user?.id === me?.id && new Date(s.createdAt).toDateString() === new Date().toDateString());
+  const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
+  const myTodaySales = sales.filter(s => s.user?.id === me?.id && new Date(s.createdAt).toISOString().split('T')[0] === effectiveDay);
   const myRevenue = myTodaySales.reduce((sum, s) => sum + s.totalAmount, 0);
 
   const { isManagement } = useRole();
@@ -579,7 +681,8 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
   console.log('[SalesOverview] Total sales loaded:', sales.length, 'me.id:', me?.id, 'me.name:', me?.name);
   console.log('[SalesOverview] Sample sale user IDs:', sales.slice(0, 3).map(s => ({ id: s.id, userId: s.user?.id, userName: s.user?.name })));
 
-  const myTodaySales = sales.filter(s => s.user?.id === me?.id && new Date(s.createdAt).toDateString() === new Date().toDateString());
+  const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
+  const myTodaySales = sales.filter(s => s.user?.id === me?.id && new Date(s.createdAt).toISOString().split('T')[0] === effectiveDay);
   const myRevenue = myTodaySales.reduce((sum, s) => sum + s.totalAmount, 0);
   const myTxns = myTodaySales.length;
 
@@ -854,9 +957,16 @@ export default function DashboardOverview() {
 
   if (!mounted) {
     return (
-      <div className="w-full h-96 flex items-center justify-center">
-        <div className="w-10 h-10 rounded-full border-2 animate-spin"
-          style={{ borderTopColor: 'transparent', borderColor: isDark ? '#00D9FF' : '#0EA5E9' }} />
+      <div className="space-y-6 animate-pulse">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="rounded-2xl border p-5 h-28" style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)' }} />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 rounded-2xl border h-72" style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)' }} />
+          <div className="rounded-2xl border h-72" style={{ background: isDark ? 'rgba(15,23,42,0.35)' : 'rgba(240,249,255,0.6)', borderColor: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)' }} />
+        </div>
       </div>
     );
   }

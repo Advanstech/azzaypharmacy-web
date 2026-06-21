@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { getEffectiveToday } from '@/lib/effective-date';
 import { 
   ArrowLeft, Download, Calendar, TrendingUp, TrendingDown,
   ChevronLeft, ChevronRight, DollarSign, BarChart3, CreditCard,
@@ -32,10 +33,19 @@ export default function MonthlyRevenueReportPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { sales, products } = useStore();
+  const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
+  // Update to effective month once data loads
+  useEffect(() => {
+    if (sales.length > 0) {
+      const d = new Date(effectiveDay);
+      setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sales.length]);
 
   // Parse selected month
   const [year, month] = selectedMonth.split('-').map(Number);

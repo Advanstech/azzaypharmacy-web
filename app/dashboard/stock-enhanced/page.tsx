@@ -12,7 +12,7 @@ import {
   Thermometer, Droplets, Shield, Pill
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { usePagination } from '@/hooks/use-pagination';
 import { useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -80,7 +80,7 @@ export default function EnhancedStockPage() {
   } = useStore();
   const branchFilter = useBranchFilter();
   const branchProducts = useMemo(() => branchFilter(storeProducts), [branchFilter, storeProducts]);
-  const { signOut } = useAuth();
+  const { signOut } = useCustomAuth();
   const router = useRouter();
 
   const [search, setSearch] = useState('');

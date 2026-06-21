@@ -7,7 +7,7 @@ import {
   Filter, ArrowDownRight, CreditCard, Wallet, Smartphone, Landmark,
   CheckCircle, XCircle, Clock
 } from 'lucide-react';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { gql } from '@/lib/gql';
 import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
@@ -16,13 +16,13 @@ import { BranchBanner } from '@/components/BranchBanner';
 
 export default function ExpensesPage() {
   const { theme, resolvedTheme } = useTheme();
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { me, expenses: storeExpenses } = useStore();
-  const role = me?.role || user?.user_metadata?.role;
+  const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   const c = {

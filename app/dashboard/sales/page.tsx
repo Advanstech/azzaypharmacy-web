@@ -12,7 +12,8 @@ import {
   ChevronRight, X, Save, Loader2, Activity, ArrowUp, RotateCcw
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { useAuth } from '@/lib/auth-context';
+import { getEffectiveToday } from '@/lib/effective-date';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { usePagination } from '@/hooks/use-pagination';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
@@ -38,19 +39,28 @@ export default function EnhancedSalesPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { sales, loadingSales, refetchSales, me, products, customers, requestRefund, deleteSale } = useStore();
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const { branches } = useBranch();
 
-  const role = me?.role || user?.user_metadata?.role;
+  const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
   const canDeleteSales = ['ROOT', 'SE_ADMIN', 'OWNER'].includes(role || '');
 
   const [search, setSearch] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  });
+  const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
+  // Sync dateTo to effective date once sales load
+  useEffect(() => {
+    if (sales.length > 0) setDateTo(effectiveDay);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sales.length, effectiveDay]);
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [metricPeriod, setMetricPeriod] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('DAILY');
+  const [metricPeriod, setMetricPeriod] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('WEEKLY');
 
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -579,7 +589,7 @@ export default function EnhancedSalesPage() {
       
       switch (metricPeriod) {
         case 'DAILY':
-          return saleDate.toDateString() === now.toDateString();
+          return saleDate.toISOString().split('T')[0] === effectiveDay;
         case 'WEEKLY':
           const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
           return saleDate >= weekAgo;
@@ -684,7 +694,15 @@ export default function EnhancedSalesPage() {
     setModalItemsPage(1);
   }, [selectedSale?.id]);
 
-  if (!mounted) return null;
+  if (!mounted) return (
+    <div className="space-y-6 animate-pulse">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[...Array(4)].map((_, i) => <div key={i} className="rounded-2xl border h-28 bg-slate-200/40 dark:bg-slate-800/40" />)}
+      </div>
+      <div className="rounded-2xl border h-64 bg-slate-200/40 dark:bg-slate-800/40" />
+      <div className="rounded-2xl border h-96 bg-slate-200/40 dark:bg-slate-800/40" />
+    </div>
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

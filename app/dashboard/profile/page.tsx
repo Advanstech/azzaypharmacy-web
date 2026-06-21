@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useTheme } from 'next-themes';
 import { 
   User as UserIcon, Lock, Mail, Shield, Save, Key, 
@@ -10,7 +10,7 @@ import {
 import { gql, M_CHANGE_PASSWORD } from '@/lib/gql';
 
 export default function ProfilePage() {
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
@@ -120,7 +120,7 @@ export default function ProfilePage() {
                 <label className="text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>System Role</label>
                 <div className="flex items-center gap-3 p-4 rounded-2xl border bg-slate-500/5" style={{ borderColor: c.border }}>
                   <Shield size={18} style={{ color: c.muted }} />
-                  <span className="font-bold uppercase tracking-tighter" style={{ color: c.primary }}>{user?.user_metadata?.role || 'Staff'}</span>
+                  <span className="font-bold uppercase tracking-tighter" style={{ color: c.primary }}>{user?.role || user?.user_metadata?.role || 'Staff'}</span>
                 </div>
               </div>
             </div>

@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'azzay-offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export async function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -18,6 +18,9 @@ export async function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('staff_cache')) {
         db.createObjectStore('staff_cache', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('sales_cache')) {
+        db.createObjectStore('sales_cache', { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains('pending_sales')) {
         const store = db.createObjectStore('pending_sales', { keyPath: 'id' });
@@ -45,7 +48,7 @@ export async function saveToCache(storeName: string, items: any[]) {
 export async function clearCache(): Promise<void> {
   try {
     const db = await openDB();
-    const stores = ['products_cache', 'staff_cache', 'pending_sales'];
+    const stores = ['products_cache', 'staff_cache', 'sales_cache', 'pending_sales'];
     for (const storeName of stores) {
       const tx = db.transaction(storeName, 'readwrite');
       tx.objectStore(storeName).clear();

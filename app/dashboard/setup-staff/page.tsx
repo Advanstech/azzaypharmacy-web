@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { gql, M_GENERATE_STAFF_PASSWORDS, M_CREATE_STAFF_ACCOUNT } from '@/lib/gql';
 import { Shield, Users, Mail, Key, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 
@@ -20,7 +20,7 @@ export default function SetupStaffPage() {
     position: ''
   });
   
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const router = useRouter();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark';

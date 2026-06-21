@@ -8,6 +8,7 @@ import {
   CalendarClock, BarChart3, ChevronRight, Clock, DollarSign, TrendingDown
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { getEffectiveToday } from '@/lib/effective-date';
 import { useMemo, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/pharma-toast';
@@ -124,8 +125,8 @@ export default function AdminDashboardPage() {
   const staffOnDuty = useMemo(() => staff.filter(s => s.isOnDuty).length, [staff]);
   const stockValue = useMemo(() => products.reduce((acc, p) => acc + (p.stockQuantity * (p.costPrice || p.sellingPrice || 0)), 0), [products]);
 
-  // Today's metrics
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Today's metrics — use effective date (most recent day with data)
+  const todayStr = useMemo(() => getEffectiveToday(sales), [sales]);
   const todaySalesData = useMemo(() => sales.filter(s => new Date(s.createdAt).toISOString().split('T')[0] === todayStr), [sales, todayStr]);
   const todayRevenue = useMemo(() => todaySalesData.reduce((acc, s) => acc + s.totalAmount, 0), [todaySalesData]);
 

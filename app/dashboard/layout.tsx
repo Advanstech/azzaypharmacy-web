@@ -1,6 +1,6 @@
 'use client';
 
-import { useAuth } from '@/lib/auth-context';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { useRouter, usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -52,7 +52,7 @@ const navItems = [
 
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
-  const { user, session, loading, signOut } = useAuth();
+  const { user, session, loading, signOut } = useCustomAuth();
   const { me } = useStore();
   const router = useRouter();
   const pathname = usePathname();
@@ -108,7 +108,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   // Prioritize API role (me.role) over Supabase metadata role
-  const role = (me?.role || (user.user_metadata?.role as string)) ?? '';
+  const role = (me?.role || (user?.role as string) || (user?.user_metadata?.role as string)) ?? '';
 
   // Role Categories
   const isSuperAdmin = role === 'SE_ADMIN' || user.email === 'root@azzaypharmacy.com';
@@ -619,9 +619,9 @@ function ActiveBranchLabel() {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user } = useCustomAuth();
   const { me } = useStore();
-  const role = (me?.role || (user?.user_metadata?.role as string)) ?? '';
+  const role = (me?.role || (user?.role || user?.user_metadata?.role as string)) ?? '';
   return (
     <BranchProvider
       role={role}
