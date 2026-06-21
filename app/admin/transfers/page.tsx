@@ -103,7 +103,7 @@ export default function StockTransferPage() {
   }, []);
 
   const isAdmin = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
-  const canApprove = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER'].includes(me?.role || '');
+  const canApprove = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
 
   // ── Filters + Pagination ──────────────────────────────────────────────────
   const [search, setSearch] = useState('');
@@ -264,12 +264,27 @@ export default function StockTransferPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectInput, setShowRejectInput] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [confirmApproveId, setConfirmApproveId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Auto-dismiss banners
+  useEffect(() => {
+    if (!errorMsg) return;
+    const t = setTimeout(() => setErrorMsg(null), 5000);
+    return () => clearTimeout(t);
+  }, [errorMsg]);
+  useEffect(() => {
+    if (!successMsg) return;
+    const t = setTimeout(() => setSuccessMsg(null), 4000);
+    return () => clearTimeout(t);
+  }, [successMsg]);
 
   const handleApprove = async (id: string) => {
+    setConfirmApproveId(null);
     setActionId(id);
     try {
       const res = await gql<any>(M_APPROVE_TRANSFER, { transferId: id });
-      // Optimistic update
       const updated = res?.approveTransfer;
       if (detailItem?.id === id) setDetailItem(p => p ? { ...p, status: 'APPROVED', approvedBy: updated?.approvedBy } : p);
       await refetchTransfers();
@@ -279,8 +294,16 @@ export default function StockTransferPage() {
         refetchPurchases();
         refetchInvoices();
       }, 400);
+      setSuccessMsg('Transfer approved — stock, invoices and ledger updated.');
     } catch (err: any) {
-      console.error('Approve transfer failed:', err?.message);
+      const msg = err?.message || '';
+      if (msg.toLowerCase().includes('unauthorized') || msg.toLowerCase().includes('forbidden')) {
+        setErrorMsg('You do not have permission to approve transfers.');
+      } else if (msg.toLowerCase().includes('already')) {
+        setErrorMsg('This transfer has already been processed.');
+      } else {
+        setErrorMsg('Approval failed — please try again or refresh.');
+      }
     } finally {
       setActionId(null);
     }
@@ -294,7 +317,7 @@ export default function StockTransferPage() {
       await refetchTransfers();
       setTimeout(() => refetchProducts(), 400);
     } catch (err: any) {
-      console.error('Delete transfer failed:', err?.message);
+      setErrorMsg('Delete failed — please try again.');
     } finally {
       setActionId(null);
       setDeleteConfirmId(null);
@@ -309,8 +332,9 @@ export default function StockTransferPage() {
       if (detailItem?.id === id) setDetailItem(p => p ? { ...p, status: 'REJECTED', approvedBy: updated?.approvedBy } : p);
       await refetchTransfers();
       setTimeout(() => refetchProducts(), 400);
+      setSuccessMsg('Transfer rejected — stock restored to source branch.');
     } catch (err: any) {
-      console.error('Reject transfer failed:', err?.message);
+      setErrorMsg('Rejection failed — please try again.');
     } finally {
       setActionId(null);
       setShowRejectInput(null);
@@ -333,7 +357,37 @@ export default function StockTransferPage() {
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen p-6 space-y-6" style={{ background: c.bg }}>
+    <div className="min-h-screen p-3 sm:p-6 space-y-4 sm:space-y-6" style={{ background: c.bg }}>
+
+      {/* Error / Success banners */}
+      {errorMsg && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-bold"
+          style={{ background: `${c.danger}15`, borderColor: `${c.danger}40`, color: c.danger }}>
+          <AlertTriangle size={15} className="flex-shrink-0" />
+          <span className="flex-1">{errorMsg}</span>
+          <button onClick={() => setErrorMsg(null)} className="p-1 flex-shrink-0"><X size={13} /></button>
+        </div>
+      )}
+      {successMsg && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-bold"
+          style={{ background: `${c.success}15`, borderColor: `${c.success}40`, color: c.success }}>
+          <CheckCircle size={15} className="flex-shrink-0" />
+          <span className="flex-1">{successMsg}</span>
+          <button onClick={() => setSuccessMsg(null)} className="p-1 flex-shrink-0"><X size={13} /></button>
+        </div>
+      )}
+
+      {/* Loading overlay when actioning */}
+      {actionId && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-2xl px-8 py-6 flex flex-col items-center gap-4 shadow-2xl"
+            style={{ background: isDark ? '#0F172A' : '#fff', border: `1px solid ${c.border}` }}>
+            <Loader2 size={32} className="animate-spin" style={{ color: c.primary }} />
+            <p className="text-sm font-bold" style={{ color: c.text }}>Processing…</p>
+            <p className="text-xs" style={{ color: c.muted }}>Updating stock, invoices &amp; ledger</p>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -385,22 +439,22 @@ export default function StockTransferPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-2xl border p-4" style={{ background: c.card, borderColor: c.border }}>
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="relative flex-1 min-w-48">
+      <div className="rounded-2xl border p-3 sm:p-4" style={{ background: c.card, borderColor: c.border }}>
+        <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 items-stretch sm:items-center">
+          <div className="relative flex-1">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search transfer no, branch, status..."
-              className="w-full pl-8 pr-3 py-2 rounded-xl text-sm focus:outline-none"
+              className="w-full pl-8 pr-3 py-2.5 rounded-xl text-sm focus:outline-none min-h-[44px]"
               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <Calendar size={13} style={{ color: c.muted }} />
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="rounded-xl text-xs px-2 py-2 focus:outline-none"
+              className="rounded-xl text-sm px-2 py-2.5 focus:outline-none flex-1 min-w-[130px] min-h-[44px]"
               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
             <span style={{ color: c.muted }}>—</span>
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="rounded-xl text-xs px-2 py-2 focus:outline-none"
+              className="rounded-xl text-sm px-2 py-2.5 focus:outline-none flex-1 min-w-[130px] min-h-[44px]"
               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -505,14 +559,15 @@ export default function StockTransferPage() {
                         </button>
                         {canApprove && t.status === 'PENDING' && (
                           <>
-                            <button onClick={() => handleApprove(t.id)}
-                              disabled={actionId === t.id}
-                              className="p-1.5 rounded-lg transition-all"
+                            <button onClick={() => setConfirmApproveId(t.id)}
+                              className="p-1.5 rounded-lg transition-all min-h-[36px] min-w-[36px] flex items-center justify-center"
+                              title="Approve"
                               style={{ background: `${c.success}15`, color: c.success }}>
-                              {actionId === t.id ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle size={13} />}
+                              <CheckCircle size={13} />
                             </button>
                             <button onClick={() => setShowRejectInput(t.id)}
-                              className="p-1.5 rounded-lg transition-all"
+                              className="p-1.5 rounded-lg transition-all min-h-[36px] min-w-[36px] flex items-center justify-center"
+                              title="Reject"
                               style={{ background: `${c.danger}15`, color: c.danger }}>
                               <XCircle size={13} />
                             </button>
@@ -571,12 +626,47 @@ export default function StockTransferPage() {
         )}
       </div>
 
+      {/* ── Confirm Approve Dialog (bottom-sheet on mobile) ─────────────────── */}
+      {confirmApproveId && (
+        <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{ background: 'rgba(0,0,0,0.7)' }}
+          onClick={() => setConfirmApproveId(null)}>
+          <div className="relative w-full sm:max-w-sm rounded-t-[28px] sm:rounded-[28px] border-t sm:border shadow-2xl p-6 pt-8 sm:pt-6"
+            style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: `${c.success}40` }}
+            onClick={e => e.stopPropagation()}>
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-400/30 sm:hidden" />
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+              style={{ background: `${c.success}18` }}>
+              <CheckCircle size={28} style={{ color: c.success }} />
+            </div>
+            <h3 className="text-center font-bold text-lg mb-1" style={{ color: c.text }}>Confirm Approval</h3>
+            <p className="text-center text-sm mb-2" style={{ color: c.muted }}>Approve this stock transfer?</p>
+            <p className="text-center text-xs mb-6 px-2" style={{ color: c.muted }}>
+              This will credit stock to the destination branch, create a supplier invoice, and post ledger entries on both branches.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmApproveId(null)}
+                className="flex-1 py-3.5 rounded-xl font-bold text-sm border min-h-[52px]"
+                style={{ borderColor: c.border, color: c.muted }}>Cancel</button>
+              <button onClick={() => handleApprove(confirmApproveId!)}
+                className="flex-[2] py-3.5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 min-h-[52px] active:scale-95 transition-all shadow-lg"
+                style={{ background: c.success, boxShadow: `0 4px 14px ${c.success}40` }}>
+                <CheckCircle size={17} /> Yes, Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Delete Confirm Dialog ───────────────────────────────────────────── */}
       {deleteConfirmId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.7)' }}>
-          <div className="rounded-2xl p-6 w-full max-w-sm space-y-4 shadow-2xl"
-            style={{ background: c.card, border: `1px solid ${c.border}` }}>
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{ background: 'rgba(0,0,0,0.7)' }}
+          onClick={() => setDeleteConfirmId(null)}>
+          <div className="relative w-full sm:max-w-sm rounded-t-[28px] sm:rounded-[28px] p-6 pt-8 sm:pt-6 space-y-4 shadow-2xl"
+            style={{ background: isDark ? '#0A0F1E' : '#fff', border: `1px solid ${c.border}` }}
+            onClick={e => e.stopPropagation()}>
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-400/30 sm:hidden" />
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl" style={{ background: `${c.danger}15` }}>
                 <Trash2 size={18} style={{ color: c.danger }} />
@@ -589,43 +679,47 @@ export default function StockTransferPage() {
             <p className="text-sm" style={{ color: c.muted }}>
               If the transfer is <strong style={{ color: c.text }}>PENDING</strong>, stock will be restored to the source branch automatically.
             </p>
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <button onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold border"
+                className="flex-1 py-3.5 rounded-xl text-sm font-bold border min-h-[52px]"
                 style={{ borderColor: c.border, color: c.muted }}>Cancel</button>
               <button onClick={() => handleDelete(deleteConfirmId)}
-                disabled={!!actionId}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 min-h-[52px]"
                 style={{ background: c.danger }}>
-                {actionId ? <Loader2 size={14} className="animate-spin" /> : <><Trash2 size={14} /> Delete</>}
+                <Trash2 size={15} /> Delete
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Reject Reason Inline Prompt ─────────────────────────────────────── */}
+      {/* ── Reject Reason Dialog (bottom-sheet on mobile) ──────────────────── */}
       {showRejectInput && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.6)' }}>
-          <div className="rounded-2xl p-6 w-full max-w-sm space-y-4 shadow-2xl"
-            style={{ background: c.card, border: `1px solid ${c.border}` }}>
-            <h3 className="font-bold text-base" style={{ color: c.text }}>Reject Transfer</h3>
-            <p className="text-xs" style={{ color: c.muted }}>Provide a reason (optional). Stock will be restored to source.</p>
+        <div className="fixed inset-0 z-[65] flex items-end sm:items-center justify-center p-0 sm:p-4"
+          style={{ background: 'rgba(0,0,0,0.7)' }}
+          onClick={() => { setShowRejectInput(null); setRejectReason(''); }}>
+          <div className="relative w-full sm:max-w-sm rounded-t-[28px] sm:rounded-[28px] p-6 pt-8 sm:pt-6 space-y-4 shadow-2xl"
+            style={{ background: isDark ? '#0A0F1E' : '#fff', border: `1px solid ${c.border}` }}
+            onClick={e => e.stopPropagation()}>
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-400/30 sm:hidden" />
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto" style={{ background: `${c.danger}18` }}>
+              <XCircle size={24} style={{ color: c.danger }} />
+            </div>
+            <h3 className="font-bold text-base text-center" style={{ color: c.text }}>Reject Transfer</h3>
+            <p className="text-xs text-center" style={{ color: c.muted }}>Provide a reason (optional). Stock will be restored to source branch.</p>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
               placeholder="Reason for rejection..."
               rows={3}
-              className="w-full rounded-xl px-3 py-2 text-sm focus:outline-none resize-none"
+              className="w-full rounded-xl px-3 py-3 text-sm focus:outline-none resize-none"
               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <button onClick={() => { setShowRejectInput(null); setRejectReason(''); }}
-                className="flex-1 py-2 rounded-xl text-sm font-bold border"
+                className="flex-1 py-3.5 rounded-xl text-sm font-bold border min-h-[52px]"
                 style={{ borderColor: c.border, color: c.muted }}>Cancel</button>
               <button onClick={() => handleReject(showRejectInput)}
-                disabled={!!actionId}
-                className="flex-1 py-2 rounded-xl text-sm font-bold text-white"
+                className="flex-[2] py-3.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 min-h-[52px] active:scale-95 transition-all"
                 style={{ background: c.danger }}>
-                {actionId ? <Loader2 size={14} className="animate-spin mx-auto" /> : 'Confirm Reject'}
+                <XCircle size={15} /> Confirm Reject
               </button>
             </div>
           </div>
@@ -739,16 +833,15 @@ export default function StockTransferPage() {
               {/* Actions */}
               {canApprove && detailItem.status === 'PENDING' && (
                 <div className="flex gap-3">
-                  <button onClick={() => handleApprove(detailItem.id)}
-                    disabled={!!actionId}
-                    className="flex-1 py-3 rounded-xl font-bold text-white flex items-center justify-center gap-2"
-                    style={{ background: c.success }}>
-                    {actionId === detailItem.id ? <Loader2 size={15} className="animate-spin" /> : <><CheckCircle size={15} /> Approve Transfer</>}
+                  <button onClick={() => setConfirmApproveId(detailItem.id)}
+                    className="flex-1 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 min-h-[52px] active:scale-95 transition-all shadow-lg"
+                    style={{ background: c.success, boxShadow: `0 4px 14px ${c.success}40` }}>
+                    <CheckCircle size={17} /> Approve Transfer
                   </button>
                   <button onClick={() => setShowRejectInput(detailItem.id)}
-                    className="flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+                    className="flex-1 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 min-h-[52px] active:scale-95 transition-all"
                     style={{ background: `${c.danger}15`, color: c.danger }}>
-                    <XCircle size={15} /> Reject
+                    <XCircle size={17} /> Reject
                   </button>
                 </div>
               )}
