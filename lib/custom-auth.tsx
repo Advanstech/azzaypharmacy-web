@@ -37,19 +37,54 @@ function sanitizeAuthError(message?: string): string {
   return 'Login failed. Please try again or use token login.';
 }
 
+function decodeJwtPayload(token: string): any | null {
+  try {
+    const base64 = token.split('.')[1];
+    if (!base64) return null;
+    return JSON.parse(atob(base64.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+}
+
 export function CustomAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing token
     const token = localStorage.getItem('auth_token');
-    if (token) {
-      verifyToken(token);
-    } else {
+    if (!token) {
       setLoading(false);
+      return;
     }
+
+    // Decode JWT locally first — no network needed
+    const payload = decodeJwtPayload(token);
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    if (!payload || (payload.exp && payload.exp < nowSec)) {
+      // Token is clearly expired — clear immediately, no network call needed
+      localStorage.removeItem('auth_token');
+      setLoading(false);
+      return;
+    }
+
+    // Token looks valid locally — hydrate state immediately so UI is ready
+    setAuthToken(token);
+    const cachedUser = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      branchId: payload.branchId ?? null,
+      name: payload.name ?? payload.email,
+    };
+    setUser(cachedUser);
+    setSession({ access_token: token, user: cachedUser });
+    setLoading(false);
+
+    // Background verify against server to catch revoked/inactive users
+    verifyToken(token).catch(() => {});
   }, []);
 
   const verifyToken = async (token: string) => {
@@ -60,17 +95,30 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         }`,
         { token }
       );
-      
+
       if (result.verifyCustomJwt) {
         const userData = JSON.parse(result.verifyCustomJwt);
         setUser(userData);
         setSession({ access_token: token, user: userData });
         setAuthToken(token);
+      } else {
+        // Server explicitly rejected the token (not a network error)
+        localStorage.removeItem('auth_token');
+        setAuthToken(null);
+        setUser(null);
+        setSession(null);
       }
-    } catch (error) {
-      localStorage.removeItem('auth_token');
-    } finally {
-      setLoading(false);
+    } catch (error: any) {
+      const msg = (error?.message || '').toLowerCase();
+      const isNetworkError = msg.includes('fetch') || msg.includes('network') || msg.includes('unreachable') || msg.includes('econnrefused');
+      if (!isNetworkError) {
+        // Server confirmed token is invalid — log out
+        localStorage.removeItem('auth_token');
+        setAuthToken(null);
+        setUser(null);
+        setSession(null);
+      }
+      // Network errors: keep token alive, user stays logged in
     }
   };
 
@@ -119,16 +167,18 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         const accessToken = result.verifyCustomLoginToken;
         localStorage.setItem('auth_token', accessToken);
         setAuthToken(accessToken);
-        const verifyResult = await gql<{ verifyCustomJwt: string }>(
-          `mutation VerifyCustomJwt($token: String!) { verifyCustomJwt(token: $token) }`,
-          { token: accessToken }
-        );
-        if (verifyResult.verifyCustomJwt) {
-          const userData = JSON.parse(verifyResult.verifyCustomJwt);
-          setUser(userData);
-          setSession({ access_token: accessToken, user: userData });
-        }
-        return { data: { session: { access_token: accessToken } }, error: null };
+        // Decode user data locally — no extra network round-trip needed
+        const payload = decodeJwtPayload(accessToken);
+        const userData = payload ? {
+          id: payload.sub,
+          email: payload.email,
+          role: payload.role,
+          branchId: payload.branchId ?? null,
+          name: payload.name ?? payload.email,
+        } : { email: email.trim() };
+        setUser(userData);
+        setSession({ access_token: accessToken, user: userData });
+        return { data: { session: { access_token: accessToken }, user: userData }, error: null };
       }
       return { error: 'Invalid or expired token. Please request a new one.' };
     } catch (err: any) {

@@ -51,23 +51,11 @@ export async function getSessionSafe() {
   return { session: data.session ?? null, error };
 }
 
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+supabase.auth.onAuthStateChange((event) => {
+  // Only clear storage on explicit sign-out.
+  if (event === 'SIGNED_OUT') {
     clearSupabaseAuthStorage();
   }
 });
 
-// Global error handler for auth errors
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'INITIAL_SESSION') {
-    // Check if session retrieval failed
-    if (!session) {
-      getSessionSafe().then(({ error }) => {
-        if (error && isRefreshTokenError(error.message)) {
-          console.warn('[Supabase] Clearing stale auth tokens due to refresh error');
-          clearSupabaseAuthStorage();
-        }
-      });
-    }
-  }
-});
+// Note: INITIAL_SESSION handling is done in auth-context.tsx via getSessionSafe()

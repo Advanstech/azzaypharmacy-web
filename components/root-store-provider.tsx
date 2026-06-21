@@ -2,15 +2,12 @@
 
 import { useCustomAuth } from '@/lib/custom-auth';
 import { StoreProvider } from '@/lib/store';
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 
 export function RootStoreProvider({ children }: { children: ReactNode }) {
-  const { loading } = useCustomAuth();
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
-
-  useEffect(() => {
-    console.log(`[RootStore] token=${token ? 'YES' : 'MISSING'} loading=${loading}`);
-  }, [token, loading]);
+  const { session } = useCustomAuth();
+  // Derive token reactively from auth state — stays in sync after login/logout/background verify
+  const token = session?.access_token ?? null;
 
   return (
     <StoreProvider token={token}>

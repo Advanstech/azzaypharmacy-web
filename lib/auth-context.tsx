@@ -267,7 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
             access_token: customOtpAccessToken,
-            refresh_token: customOtpAccessToken,
+            refresh_token: customOtpAccessToken, // custom JWT — Supabase will reject refresh; session lifespan = JWT expiry (7d)
           });
 
           if (DEBUG_AUTH) {

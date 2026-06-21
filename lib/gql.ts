@@ -108,8 +108,32 @@ export async function gql<T = unknown>(
     }
 
     if (res.status === 401) {
-      console.error(`[gql] [${queryName}] Unauthorized! Status: 401 (${usedApi})`);
-      _token = null; // Clear stale token so next call forces a fresh session lookup
+      console.error(`[gql] [${queryName}] Unauthorized! Status: 401 (${usedApi}) — checking localStorage for fresh token`);
+      _token = null;
+      // Try reading a fresh token from localStorage (custom JWT stored by custom-auth.tsx)
+      try {
+        const storedToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+        if (storedToken && storedToken !== token) {
+          _token = storedToken;
+          const retryHeaders: Record<string, string> = {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${storedToken}`,
+          };
+          const retryRes = await fetch(usedApi, {
+            method: 'POST',
+            headers: retryHeaders,
+            body: JSON.stringify({ query, variables }),
+          });
+          if (retryRes.ok) {
+            const retryJson = await retryRes.json();
+            if (retryJson.errors?.length) throw new Error(retryJson.errors[0].message);
+            console.log(`[gql] [${queryName}] Retry with stored token succeeded`);
+            return retryJson.data as T;
+          }
+        }
+      } catch (retryErr) {
+        console.warn(`[gql] [${queryName}] Token retry failed:`, retryErr);
+      }
     }
 
     if (!res.ok) {
