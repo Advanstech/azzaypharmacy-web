@@ -865,12 +865,14 @@ export default function LoginPage() {
       const cleanPassword = password.trim();
       const { data, error: err } = await signIn(cleanEmail, cleanPassword);
       if (err) {
-        if (err.includes('Invalid login credentials')) {
-          setError('Invalid credentials. If you are a new staff member, please ask your manager to set up your account at /dashboard/setup-staff');
-        } else if (err.includes('refresh token')) {
+        if (err.includes('Invalid login credentials') || err.includes('Invalid email or password')) {
+          setError('Invalid credentials. If you are a new staff member, please ask your manager to set up your account.');
+        } else if (err.includes('refresh token') || err.includes('session')) {
           setError('Session expired. Please refresh the page and try again.');
+        } else if (err.includes('Service temporarily') || err.includes('unavailable')) {
+          setError('The system is temporarily unavailable. Please try again in a moment.');
         } else {
-          setError(err);
+          setError('Login failed. Please check your credentials or use token login.');
         }
         setLoading(false);
       } else {

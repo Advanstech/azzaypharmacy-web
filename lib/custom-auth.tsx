@@ -17,6 +17,26 @@ const CustomAuthContext = createContext<CustomAuthContextType | undefined>(undef
 
 const SESSION_VERSION = '1';
 
+function sanitizeAuthError(message?: string): string {
+  if (!message) return 'Something went wrong. Please try again.';
+  const m = message.toLowerCase();
+  if (m.includes('invalid credentials') || m.includes('invalid login') || m.includes('wrong password') || m.includes('invalid password'))
+    return 'Invalid email or password.';
+  if (m.includes('user not found') || m.includes('no user') || m.includes('not registered'))
+    return 'No account found with that email.';
+  if (m.includes('rate limit') || m.includes('too many'))
+    return 'Too many attempts. Please wait a moment and try again.';
+  if (m.includes('network') || m.includes('fetch') || m.includes('unreachable') || m.includes('econnrefused') || m.includes('failed to fetch'))
+    return 'Unable to reach the server. Please check your connection and try again.';
+  if (m.includes('graphql') || m.includes('http error') || m.includes('validation_failed') || m.includes('cannot query') || m.includes('syntax'))
+    return 'Service temporarily unavailable. Please try again shortly.';
+  if (m.includes('expired') || m.includes('invalid token'))
+    return 'Your session has expired. Please log in again.';
+  if (m.includes('unauthorized') || m.includes('forbidden'))
+    return 'Access denied. Please contact your administrator.';
+  return 'Login failed. Please try again or use token login.';
+}
+
 export function CustomAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
@@ -71,9 +91,9 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         setAuthToken(authData.access_token);
         return { data: authData, error: null };
       }
-      return { error: 'Login failed' };
+      return { error: 'Login failed. Please check your credentials.' };
     } catch (error: any) {
-      return { error: error.message || 'Authentication failed' };
+      return { error: sanitizeAuthError(error.message) };
     }
   };
 
@@ -85,7 +105,7 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
       );
       return { error: null };
     } catch (err: any) {
-      return { error: err?.message || 'Failed to send login token.' };
+      return { error: sanitizeAuthError(err?.message) || 'Failed to send login token.' };
     }
   };
 
@@ -110,9 +130,9 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         }
         return { data: { session: { access_token: accessToken } }, error: null };
       }
-      return { error: 'Token verification failed' };
+      return { error: 'Invalid or expired token. Please request a new one.' };
     } catch (err: any) {
-      return { error: err?.message || 'Failed to verify token.' };
+      return { error: sanitizeAuthError(err?.message) || 'Failed to verify token.' };
     }
   };
 
