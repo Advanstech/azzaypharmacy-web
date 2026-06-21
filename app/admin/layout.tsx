@@ -361,7 +361,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </aside>
 
       {/* ── MAIN CONTENT ─────────────────────────────────────────────── */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top Bar */}
         <header
           className="h-16 shrink-0 border-b backdrop-blur-xl flex items-center justify-between px-4 md:px-6 gap-3 md:gap-6"
@@ -380,7 +380,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
 
           {/* Left: Title */}
-          <div className="flex flex-col min-w-max">
+          <div className="flex flex-col min-w-0 flex-1 sm:flex-none">
             <h1
               className="font-display text-lg font-bold leading-tight"
               style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
@@ -404,7 +404,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           {/* Right: Date */}
-          <div className="flex items-center min-w-max">
+          <div className="hidden sm:flex items-center">
             <span
               className="font-data text-xs"
               style={{ color: isDark ? '#64748B' : '#94A3B8' }}
@@ -419,7 +419,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </header>
 
         {/* Page Content */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-28 min-w-0">
           <PageTransition>{children}</PageTransition>
         </div>
       </main>

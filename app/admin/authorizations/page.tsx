@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { ShieldCheck, CheckCircle, XCircle, Search, ChevronLeft, ChevronRight, FileText, DollarSign, Clock, X, Loader2, Edit3, Calendar, User, Building2, Hash, AlertTriangle, RefreshCw, Eye } from 'lucide-react';
+import { ShieldCheck, CheckCircle, XCircle, Search, ChevronLeft, ChevronRight, FileText, DollarSign, Clock, X, Loader2, Edit3, Calendar, User, Building2, Hash, AlertTriangle, RefreshCw, Eye, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { gql } from '@/lib/gql';
 import { Q_AUTHORIZATIONS_SHIFT, Q_AUTHORIZATIONS_EXPENSE, M_APPROVE_SHIFT, M_REJECT_SHIFT, M_UPDATE_EXPENSE_STATUS, Q_REFUND_REQUESTS, M_APPROVE_REFUND, M_REJECT_REFUND } from '@/lib/gql';
@@ -18,6 +18,9 @@ export default function AdminAuthorizationsPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [refunds, setRefunds] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actioningId, setActioningId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ id: string; type: 'SHIFT' | 'EXPENSE' | 'REFUND'; action: 'APPROVE' | 'REJECT'; label: string } | null>(null);
 
   // Search + date filters
   const [search, setSearch] = useState('');
@@ -84,26 +87,36 @@ export default function AdminAuthorizationsPage() {
     r => `${r.requestedBy?.name || ''} ${r.approvedBy?.name || ''} ${r.reason || ''} ${r.status || ''} ${r.saleId || ''}`
   ), [refunds, search, dateFrom, dateTo]);
 
+  // Auto-dismiss error after 4.5s
+  useEffect(() => {
+    if (!errorMsg) return;
+    const t = setTimeout(() => setErrorMsg(null), 4500);
+    return () => clearTimeout(t);
+  }, [errorMsg]);
+
   const handleApproveRefund = async (id: string) => {
+    setActioningId(id);
     try {
       const result = await gql<any>(M_APPROVE_REFUND, { requestId: id });
-      setRefunds(prev => prev.map(r => r.id === id ? { ...r, status: 'APPROVED', approvedBy: result?.approveRefund?.approvedBy } : r));
-      if (detailItem?.id === id) setDetailItem((p: any) => ({ ...p, status: 'APPROVED', approvedBy: result?.approveRefund?.approvedBy }));
-      // Sync store — stock restored + ledger reversed on backend
+      const ab = result?.approveRefund?.approvedBy;
+      setRefunds(prev => prev.map(r => r.id === id ? { ...r, status: 'APPROVED', approvedBy: ab } : r));
+      if (detailItem?.id === id) setDetailItem((p: any) => ({ ...p, status: 'APPROVED', approvedBy: ab }));
       setTimeout(() => { refetchSales(); refetchProducts(); refetchLedger(); }, 400);
-    } catch (err) {
-      console.error('Error approving refund', err);
-    }
+    } catch (err: any) {
+      setErrorMsg('Failed to approve refund — please try again.');
+    } finally { setActioningId(null); }
   };
 
   const handleRejectRefund = async (id: string) => {
+    setActioningId(id);
     try {
       const result = await gql<any>(M_REJECT_REFUND, { requestId: id });
-      setRefunds(prev => prev.map(r => r.id === id ? { ...r, status: 'REJECTED', approvedBy: result?.rejectRefund?.approvedBy } : r));
-      if (detailItem?.id === id) setDetailItem((p: any) => ({ ...p, status: 'REJECTED', approvedBy: result?.rejectRefund?.approvedBy }));
-    } catch (err) {
-      console.error('Error rejecting refund', err);
-    }
+      const ab = result?.rejectRefund?.approvedBy;
+      setRefunds(prev => prev.map(r => r.id === id ? { ...r, status: 'REJECTED', approvedBy: ab } : r));
+      if (detailItem?.id === id) setDetailItem((p: any) => ({ ...p, status: 'REJECTED', approvedBy: ab }));
+    } catch (err: any) {
+      setErrorMsg('Failed to reject refund — please try again.');
+    } finally { setActioningId(null); }
   };
 
   // Approval Modal State
@@ -137,36 +150,42 @@ export default function AdminAuthorizationsPage() {
       await gql(M_APPROVE_SHIFT, vars);
       setShifts(prev => prev.map(s => s.id === selectedShift.id ? { ...s, status: 'APPROVED' } : s));
       setSelectedShift(null);
-    } catch (err) {
-      alert('Error approving shift');
+    } catch { setErrorMsg('Failed to approve shift — please try again.');
     } finally {
       setApproving(false);
     }
   };
 
   const handleRejectShift = async (id: string) => {
+    setActioningId(id);
     try {
       await gql(M_REJECT_SHIFT, { id });
       setShifts(prev => prev.map(s => s.id === id ? { ...s, status: 'REJECTED' } : s));
-    } catch (err) {
-      alert('Error rejecting shift');
-    }
+      if (detailItem?.id === id) setDetailItem((p: any) => ({ ...p, status: 'REJECTED' }));
+    } catch { setErrorMsg('Failed to reject shift — please try again.'); }
+    finally { setActioningId(null); }
   };
 
   const handleApproveExpense = async (id: string) => {
+    setActioningId(id);
     try {
       await gql(M_UPDATE_EXPENSE_STATUS, { id, status: 'APPROVED' });
-      await fetchData();
+      setExpenses(prev => prev.map(e => e.id === id ? { ...e, status: 'APPROVED' } : e));
+      if (detailItem?.id === id) setDetailItem((p: any) => ({ ...p, status: 'APPROVED' }));
       setTimeout(() => { refetchExpenses(); refetchLedger(); }, 400);
-    } catch (err) { console.error('Error approving expense', err); }
+    } catch { setErrorMsg('Failed to approve expense — please try again.'); }
+    finally { setActioningId(null); }
   };
 
   const handleRejectExpense = async (id: string) => {
+    setActioningId(id);
     try {
       await gql(M_UPDATE_EXPENSE_STATUS, { id, status: 'REJECTED' });
-      await fetchData();
+      setExpenses(prev => prev.map(e => e.id === id ? { ...e, status: 'REJECTED' } : e));
+      if (detailItem?.id === id) setDetailItem((p: any) => ({ ...p, status: 'REJECTED' }));
       setTimeout(() => { refetchExpenses(); }, 300);
-    } catch (err) { console.error('Error rejecting expense', err); }
+    } catch { setErrorMsg('Failed to reject expense — please try again.'); }
+    finally { setActioningId(null); }
   };
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
@@ -215,18 +234,31 @@ export default function AdminAuthorizationsPage() {
     <div className="space-y-5 animate-in fade-in duration-500 pb-20">
       {/* Header */}
       <div>
-        <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>Authorization Management</h1>
-        <p className="text-sm" style={{ color: c.muted }}>Review and approve staff reconciliations, expenses and refunds</p>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold mb-1" style={{ color: c.text }}>Authorizations</h1>
+        <p className="text-sm" style={{ color: c.muted }}>Approve or reject shift reports, expenses and refunds</p>
       </div>
 
+      {/* Error banner */}
+      <AnimatePresence>
+        {errorMsg && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+            className="flex items-center gap-3 px-4 py-3 rounded-2xl border text-sm font-bold"
+            style={{ background: `${c.danger}15`, borderColor: `${c.danger}40`, color: c.danger }}>
+            <AlertTriangle size={15} className="flex-shrink-0" />
+            <span className="flex-1">{errorMsg}</span>
+            <button onClick={() => setErrorMsg(null)} className="p-1 flex-shrink-0"><X size={13} /></button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Search + Date Filter toolbar */}
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3 rounded-2xl border" style={{ background: c.bg, borderColor: c.border }}>
+      <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-3 px-3 py-3 rounded-2xl border" style={{ background: c.bg, borderColor: c.border }}>
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={13} style={{ color: c.muted }} />
           <input
             type="text" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search name, reason, status…"
-            className="w-full pl-8 pr-4 py-2 rounded-xl text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full pl-8 pr-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-h-[44px]"
             style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
           />
         </div>
@@ -327,12 +359,24 @@ export default function AdminAuthorizationsPage() {
                   </p>
                 </div>
                 {s.status === 'PENDING' && (
-                  <div className="flex gap-1.5 border-l pl-3" style={{ borderColor: c.border }}>
-                    <button onClick={() => handleApproveShift(s.id)} title="Approve" className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all"><CheckCircle size={16} /></button>
-                    <button onClick={() => handleRejectShift(s.id)} title="Reject" className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"><XCircle size={16} /></button>
+                  <div className="flex flex-col sm:flex-row gap-1.5">
+                    <button
+                      disabled={actioningId === s.id}
+                      onClick={() => { const label = 'this shift report'; setConfirmDialog({ id: s.id, type: 'SHIFT', action: 'APPROVE', label }); }}
+                      title="Approve"
+                      className="flex items-center justify-center gap-1 py-2 px-3 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50 min-h-[44px] text-xs font-bold">
+                      {actioningId === s.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} <span className="hidden sm:inline">Approve</span>
+                    </button>
+                    <button
+                      disabled={actioningId === s.id}
+                      onClick={() => { const label = 'this shift report'; setConfirmDialog({ id: s.id, type: 'SHIFT', action: 'REJECT', label }); }}
+                      title="Reject"
+                      className="flex items-center justify-center gap-1 py-2 px-3 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50 min-h-[44px] text-xs font-bold">
+                      {actioningId === s.id ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} <span className="hidden sm:inline">Reject</span>
+                    </button>
                   </div>
                 )}
-                <button onClick={() => { setDetailItem(s); setDetailType('SHIFT'); }} className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors" style={{ color: c.muted }}><Eye size={14} /></button>
+                <button onClick={() => { setDetailItem(s); setDetailType('SHIFT'); }} className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center" style={{ color: c.muted }}><Eye size={14} /></button>
               </div>
             </div>
           )) : activeTab === 'EXPENSES' ? paginatedData.map((e: any) => (
@@ -356,12 +400,24 @@ export default function AdminAuthorizationsPage() {
               <div className="flex items-center gap-3 flex-shrink-0" onClick={e => e.stopPropagation()}>
                 <p className="text-sm font-black" style={{ color: c.text }}>GH₵ {Number(e.amount).toFixed(2)}</p>
                 {e.status === 'PENDING' && (
-                  <div className="flex gap-1.5 border-l pl-3" style={{ borderColor: c.border }}>
-                    <button onClick={() => handleApproveExpense(e.id)} title="Approve" className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all"><CheckCircle size={16} /></button>
-                    <button onClick={() => handleRejectExpense(e.id)} title="Reject" className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"><XCircle size={16} /></button>
+                  <div className="flex flex-col sm:flex-row gap-1.5">
+                    <button
+                      disabled={actioningId === e.id}
+                      onClick={() => setConfirmDialog({ id: e.id, type: 'EXPENSE', action: 'APPROVE', label: `expense of GH₵${Number(e.amount).toFixed(2)}` })}
+                      title="Approve"
+                      className="flex items-center justify-center gap-1 py-2 px-3 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50 min-h-[44px] text-xs font-bold">
+                      {actioningId === e.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} <span className="hidden sm:inline">Approve</span>
+                    </button>
+                    <button
+                      disabled={actioningId === e.id}
+                      onClick={() => setConfirmDialog({ id: e.id, type: 'EXPENSE', action: 'REJECT', label: `expense of GH₵${Number(e.amount).toFixed(2)}` })}
+                      title="Reject"
+                      className="flex items-center justify-center gap-1 py-2 px-3 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50 min-h-[44px] text-xs font-bold">
+                      {actioningId === e.id ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} <span className="hidden sm:inline">Reject</span>
+                    </button>
                   </div>
                 )}
-                <button onClick={() => { setDetailItem(e); setDetailType('EXPENSE'); }} className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors" style={{ color: c.muted }}><Eye size={14} /></button>
+                <button onClick={() => { setDetailItem(e); setDetailType('EXPENSE'); }} className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center" style={{ color: c.muted }}><Eye size={14} /></button>
               </div>
             </div>
           )) : paginatedData.map((r: any) => (
@@ -388,12 +444,24 @@ export default function AdminAuthorizationsPage() {
                   {r.sale?.paymentMethod && <p className="text-[10px] font-bold uppercase" style={{ color: c.muted }}>{r.sale.paymentMethod}</p>}
                 </div>
                 {r.status === 'PENDING' && (
-                  <div className="flex gap-1.5 border-l pl-3" style={{ borderColor: c.border }}>
-                    <button onClick={() => handleApproveRefund(r.id)} title="Approve" className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all"><CheckCircle size={16} /></button>
-                    <button onClick={() => handleRejectRefund(r.id)} title="Reject" className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all"><XCircle size={16} /></button>
+                  <div className="flex flex-col sm:flex-row gap-1.5">
+                    <button
+                      disabled={actioningId === r.id}
+                      onClick={() => setConfirmDialog({ id: r.id, type: 'REFUND', action: 'APPROVE', label: `refund of GH₵${Number(r.sale?.totalAmount || 0).toFixed(2)}` })}
+                      title="Approve"
+                      className="flex items-center justify-center gap-1 py-2 px-3 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50 min-h-[44px] text-xs font-bold">
+                      {actioningId === r.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle size={14} />} <span className="hidden sm:inline">Approve</span>
+                    </button>
+                    <button
+                      disabled={actioningId === r.id}
+                      onClick={() => setConfirmDialog({ id: r.id, type: 'REFUND', action: 'REJECT', label: `refund of GH₵${Number(r.sale?.totalAmount || 0).toFixed(2)}` })}
+                      title="Reject"
+                      className="flex items-center justify-center gap-1 py-2 px-3 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50 min-h-[44px] text-xs font-bold">
+                      {actioningId === r.id ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} <span className="hidden sm:inline">Reject</span>
+                    </button>
                   </div>
                 )}
-                <button onClick={() => { setDetailItem(r); setDetailType('REFUND'); }} className="p-1.5 rounded-lg hover:bg-slate-500/10 transition-colors" style={{ color: c.muted }}><Eye size={14} /></button>
+                <button onClick={() => { setDetailItem(r); setDetailType('REFUND'); }} className="p-2 rounded-lg hover:bg-slate-500/10 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center" style={{ color: c.muted }}><Eye size={14} /></button>
               </div>
             </div>
           ))}
@@ -435,15 +503,16 @@ export default function AdminAuthorizationsPage() {
       {/* ── Detail Modal ─────────────────────────────────────────────────── */}
       <AnimatePresence>
         {detailItem && detailType && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setDetailItem(null)}
               className="absolute inset-0 bg-black/60 backdrop-blur-md" />
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg rounded-[28px] overflow-hidden border shadow-2xl"
+            <motion.div initial={{ opacity: 0, y: 60 }} animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 60 }}
+              className="relative w-full sm:max-w-lg rounded-t-[28px] sm:rounded-[28px] border-t sm:border shadow-2xl max-h-[92vh] overflow-y-auto"
               style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: c.border }}>
-              <div className="p-6">
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-400/30 sm:hidden" />
+              <div className="p-6 pt-9 sm:pt-6">
                 {/* Modal Header */}
                 <div className="flex items-start justify-between mb-5">
                   <div className="flex items-center gap-3">
@@ -528,27 +597,29 @@ export default function AdminAuthorizationsPage() {
                 {/* Action buttons if still pending */}
                 {detailItem.status === 'PENDING' && (
                   <div className="flex gap-3 pt-4 border-t" style={{ borderColor: c.border }}>
-                    <button onClick={() => setDetailItem(null)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ borderColor: c.border, color: c.text }}>
+                    <button onClick={() => setDetailItem(null)} className="flex-1 py-3 rounded-xl font-bold text-sm border transition-colors hover:bg-black/5 dark:hover:bg-white/5 min-h-[52px]" style={{ borderColor: c.border, color: c.text }}>
                       Close
                     </button>
                     <button
                       onClick={() => {
-                        if (detailType === 'SHIFT') handleApproveShift(detailItem.id);
-                        else if (detailType === 'EXPENSE') handleApproveExpense(detailItem.id);
-                        else handleApproveRefund(detailItem.id);
+                        const id = detailItem.id;
+                        const type = detailType!;
+                        const label = type === 'EXPENSE' ? `expense of GH₵${Number(detailItem.amount).toFixed(2)}` : type === 'REFUND' ? `refund of GH₵${Number(detailItem.sale?.totalAmount||0).toFixed(2)}` : 'this shift report';
                         setDetailItem(null);
+                        setConfirmDialog({ id, type, action: 'APPROVE', label });
                       }}
-                      className="flex-[2] py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-colors">
+                      className="flex-[2] py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-colors min-h-[52px]">
                       <CheckCircle size={15} /> Approve
                     </button>
                     <button
                       onClick={() => {
-                        if (detailType === 'SHIFT') handleRejectShift(detailItem.id);
-                        else if (detailType === 'EXPENSE') handleRejectExpense(detailItem.id);
-                        else handleRejectRefund(detailItem.id);
+                        const id = detailItem.id;
+                        const type = detailType!;
+                        const label = type === 'EXPENSE' ? `expense of GH₵${Number(detailItem.amount).toFixed(2)}` : type === 'REFUND' ? `refund of GH₵${Number(detailItem.sale?.totalAmount||0).toFixed(2)}` : 'this shift report';
                         setDetailItem(null);
+                        setConfirmDialog({ id, type, action: 'REJECT', label });
                       }}
-                      className="flex-1 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 font-bold text-sm flex items-center justify-center gap-2 transition-colors">
+                      className="flex-1 py-3 rounded-xl bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 font-bold text-sm flex items-center justify-center gap-2 transition-colors min-h-[52px]">
                       <XCircle size={15} /> Reject
                     </button>
                   </div>
@@ -564,17 +635,72 @@ export default function AdminAuthorizationsPage() {
         )}
       </AnimatePresence>
 
+      {/* ── Confirmation Dialog ───────────────────────────────────────── */}
+      <AnimatePresence>
+        {confirmDialog && (
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setConfirmDialog(null)} />
+            <motion.div initial={{ opacity: 0, y: 60 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 60 }}
+              className="relative w-full sm:max-w-sm rounded-t-[28px] sm:rounded-[28px] border-t sm:border shadow-2xl"
+              style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: confirmDialog.action === 'APPROVE' ? `${c.success}40` : `${c.danger}40` }}>
+              {/* Handle bar — mobile only */}
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-400/30 sm:hidden" />
+              <div className="p-6 pt-9 sm:pt-6">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 ${confirmDialog.action === 'APPROVE' ? 'bg-emerald-500/15' : 'bg-red-500/15'}`}>
+                  {confirmDialog.action === 'APPROVE'
+                    ? <CheckCircle size={28} className="text-emerald-500" />
+                    : <XCircle size={28} className="text-red-400" />}
+                </div>
+                <h3 className="text-center font-display font-bold text-lg mb-1" style={{ color: c.text }}>
+                  {confirmDialog.action === 'APPROVE' ? 'Confirm Approval' : 'Confirm Rejection'}
+                </h3>
+                <p className="text-center text-sm mb-6" style={{ color: c.muted }}>
+                  {confirmDialog.action === 'APPROVE' ? 'Approve' : 'Reject'} this{' '}
+                  <span className="font-bold" style={{ color: c.text }}>{confirmDialog.label}</span>?
+                  <br /><span className="text-xs">This action cannot be undone.</span>
+                </p>
+                <div className="flex gap-3">
+                  <button onClick={() => setConfirmDialog(null)}
+                    className="flex-1 py-3.5 rounded-xl font-bold text-sm border min-h-[52px]"
+                    style={{ borderColor: c.border, color: c.muted }}>Cancel</button>
+                  <button
+                    onClick={() => {
+                      const { id, type, action } = confirmDialog!;
+                      setConfirmDialog(null);
+                      if (type === 'SHIFT' && action === 'APPROVE') handleApproveShift(id);
+                      else if (type === 'SHIFT' && action === 'REJECT') handleRejectShift(id);
+                      else if (type === 'EXPENSE' && action === 'APPROVE') handleApproveExpense(id);
+                      else if (type === 'EXPENSE' && action === 'REJECT') handleRejectExpense(id);
+                      else if (type === 'REFUND' && action === 'APPROVE') handleApproveRefund(id);
+                      else if (type === 'REFUND' && action === 'REJECT') handleRejectRefund(id);
+                    }}
+                    className={`flex-[2] py-3.5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 min-h-[52px] shadow-lg transition-all active:scale-95 ${
+                      confirmDialog.action === 'APPROVE'
+                        ? 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/30'
+                        : 'bg-red-500 hover:bg-red-600 shadow-red-500/30'
+                    }`}>
+                    {confirmDialog.action === 'APPROVE' ? <CheckCircle size={18} /> : <XCircle size={18} />}
+                    {confirmDialog.action === 'APPROVE' ? 'Yes, Approve' : 'Yes, Reject'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* ── Shift Approval (verify) Modal ────────────────────────────────── */}
       <AnimatePresence>
         {selectedShift && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setSelectedShift(null)} className="absolute inset-0 bg-black/60 backdrop-blur-md" />
-            <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg rounded-[28px] overflow-hidden border shadow-2xl"
+            <motion.div initial={{ opacity: 0, y: 60 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 60 }}
+              className="relative w-full sm:max-w-lg rounded-t-[28px] sm:rounded-[28px] border-t sm:border shadow-2xl max-h-[90vh] overflow-y-auto"
               style={{ background: isDark ? '#0A0F1E' : '#FFFFFF', borderColor: c.border }}>
-              <div className="p-6 md:p-8">
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-400/30 sm:hidden" />
+              <div className="p-6 pt-9 sm:pt-6">
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-500/10 text-blue-500"><Edit3 size={20} /></div>
@@ -620,9 +746,9 @@ export default function AdminAuthorizationsPage() {
                   </div>
                 </div>
                 <div className="flex gap-3 pt-5 border-t mt-5" style={{ borderColor: c.border }}>
-                  <button onClick={() => setSelectedShift(null)} className="flex-1 py-3 rounded-xl font-bold text-sm hover:bg-black/5 dark:hover:bg-white/5 transition-colors" style={{ color: c.text }}>Cancel</button>
+                  <button onClick={() => setSelectedShift(null)} className="flex-1 py-3.5 rounded-xl font-bold text-sm border min-h-[52px]" style={{ borderColor: c.border, color: c.text }}>Cancel</button>
                   <button onClick={confirmApproveShift} disabled={approving}
-                    className="flex-[2] py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 disabled:opacity-70 transition-colors">
+                    className="flex-[2] py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/30 disabled:opacity-70 transition-all active:scale-95 min-h-[52px]">
                     {approving ? <Loader2 size={18} className="animate-spin" /> : <CheckCircle size={18} />}
                     Confirm & Approve
                   </button>
