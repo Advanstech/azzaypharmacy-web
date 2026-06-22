@@ -833,34 +833,45 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [token]);
 
-  // ── Auto-polling: refresh sales + products every 30s when tab is visible ─
+  // ── Idle-aware refresh: poll only after 15 min of user inactivity ─────────
+  // Resets on any mouse, keyboard, touch, or scroll activity.
+  // POS has its own manual Sync button — this covers dashboard / sales pages only.
   useEffect(() => {
     if (!token) return;
-    const poll = async () => {
+
+    const IDLE_MS = 15 * 60 * 1000; // 15 minutes
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const runPoll = async () => {
       if (document.visibilityState !== 'visible') return;
       try { await Promise.all([refetchSales(), refetchProducts()]); } catch { /* silent */ }
     };
-    const interval = setInterval(poll, 30_000);
-    const onVisible = () => { if (document.visibilityState === 'visible') poll(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
+
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(runPoll, IDLE_MS);
+    };
+
+    const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'visibilitychange'] as const;
+    ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, resetIdle, { passive: true }));
+
+    // Start the first idle countdown
+    resetIdle();
+
+    return () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, resetIdle));
+    };
   }, [token, refetchSales, refetchProducts]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
   const lowStockProducts = products.filter(p => p.stockQuantity <= 10);
 
-  // "Today" = actual calendar today. If no sales exist for today, fall back to
-  // the most recent day that has sales (handles migrated/historical data gracefully).
+  // "Today" = actual calendar today. Never fall back to the most recent sale date
+  // as that causes data integrity issues (yesterday's sales labelled as "Today").
   const todayStr = new Date().toDateString();
-  const trueTodaySales = sales.filter(s => new Date(s.createdAt).toDateString() === todayStr);
-  const todaySales = trueTodaySales.length > 0
-    ? trueTodaySales
-    : (() => {
-        if (sales.length === 0) return [];
-        const latestDate = new Date(Math.max(...sales.map(s => new Date(s.createdAt).getTime()))).toDateString();
-        return sales.filter(s => new Date(s.createdAt).toDateString() === latestDate);
-      })();
+  const todaySales = sales.filter(s => new Date(s.createdAt).toDateString() === todayStr);
   const todayRevenue = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
   const todayTransactions = todaySales.length;
 

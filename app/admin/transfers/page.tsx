@@ -8,12 +8,85 @@ import {
   DollarSign, Hash, Clock, ShieldCheck, Eye, ChevronLeft, ChevronRight,
   AlertTriangle, Loader2, Receipt, BarChart2, RefreshCw, Minus, Trash2,
   ArrowRight, Zap, ShoppingCart, Info, TrendingUp, ScanBarcode, PackagePlus, ChevronDown as ChevronDownIcon,
+  Printer, Share2,
 } from 'lucide-react';
 import { useStore, type StockTransfer, type Product, type Supplier } from '@/lib/store';
 import { gql } from '@/lib/gql';
 import {
   M_INITIATE_TRANSFER, M_APPROVE_TRANSFER, M_REJECT_TRANSFER, M_DELETE_TRANSFER, Q_BRANCHES,
 } from '@/lib/gql';
+
+// ─── Print/Share Invoice ──────────────────────────────────────────────────────
+function printTransferInvoice(transfer: StockTransfer) {
+  const win = window.open('', '_blank', 'width=800,height=900');
+  if (!win) return;
+  const date = new Date(transfer.transferDate || transfer.createdAt).toLocaleString('en-GB');
+  const rows = transfer.items.map(item => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;">${item.product?.name || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${item.product?.category || '—'}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:center;">${item.quantity}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;">GH₵ ${Number(item.transferPrice).toFixed(2)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;">GH₵ ${Number(item.total).toFixed(2)}</td>
+    </tr>`).join('');
+  win.document.write(`<!DOCTYPE html><html><head>
+  <title>Transfer Invoice — ${transfer.transferNo}</title>
+  <style>
+    body{font-family:'Helvetica Neue',Arial,sans-serif;color:#0f172a;margin:0;padding:32px;}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;border-bottom:3px solid #3b82f6;padding-bottom:20px;}
+    .logo{font-size:22px;font-weight:900;color:#3b82f6;letter-spacing:-0.5px;}  
+    .logo span{color:#0f172a;}
+    .badge{display:inline-block;padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700;letter-spacing:.5px;}
+    .approved{background:#dcfce7;color:#16a34a;}
+    table{width:100%;border-collapse:collapse;margin-top:16px;}
+    th{background:#f8fafc;padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b;border-bottom:2px solid #e2e8f0;}
+    .totals{margin-top:24px;display:flex;justify-content:flex-end;}
+    .totals-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 24px;min-width:260px;}
+    .total-row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;}
+    .total-row.grand{font-weight:900;font-size:16px;border-top:2px solid #e2e8f0;padding-top:10px;margin-top:8px;}
+    .footer{margin-top:40px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center;}
+    @media print{body{padding:16px;}}
+  </style>
+</head><body>
+  <div class="header">
+    <div>
+      <div class="logo">Azzay <span>Pharmacy</span> NEXUS</div>
+      <div style="font-size:12px;color:#64748b;margin-top:4px;">Inter-Branch Stock Transfer Invoice</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="font-size:20px;font-weight:900;color:#0f172a;">${transfer.transferNo}</div>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">${date}</div>
+      <div style="margin-top:6px;"><span class="badge approved">APPROVED</span></div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-bottom:24px;">
+    <div style="background:#f0f9ff;border-radius:12px;padding:16px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#0284c7;margin-bottom:6px;">FROM (Source)</div>
+      <div style="font-size:16px;font-weight:900;color:#0f172a;">${transfer.sourceBranch?.name || '—'}</div>
+    </div>
+    <div style="background:#f0fdf4;border-radius:12px;padding:16px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#16a34a;margin-bottom:6px;">TO (Destination)</div>
+      <div style="font-size:16px;font-weight:900;color:#0f172a;">${transfer.destBranch?.name || '—'}</div>
+    </div>
+  </div>
+  ${transfer.approvedBy ? `<div style="font-size:12px;color:#64748b;margin-bottom:16px;">Authorized by: <strong>${transfer.approvedBy.name}</strong>${transfer.approvedBy.role ? ` (${transfer.approvedBy.role})` : ''}</div>` : ''}
+  <table>
+    <thead><tr>
+      <th>Product</th><th>Category</th><th style="text-align:center;">Qty</th>
+      <th style="text-align:right;">Unit Price</th><th style="text-align:right;">Total</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="totals"><div class="totals-box">
+    <div class="total-row"><span>Cost of Goods</span><span>GH₵ ${Number(transfer.totalCost).toFixed(2)}</span></div>
+    <div class="total-row grand"><span>Invoice Total</span><span>GH₵ ${Number(transfer.transferPrice).toFixed(2)}</span></div>
+  </div></div>
+  ${transfer.invoiceId ? `<div style="margin-top:12px;text-align:right;font-size:11px;color:#64748b;">Invoice Ref: ${transfer.invoiceId}</div>` : ''}
+  <div class="footer">Azzay Pharmacy NEXUS · +233 54 335 8934 · Generated ${new Date().toLocaleString('en-GB')}</div>
+  <script>window.onload=()=>{window.print();}<\/script>
+</body></html>`);
+  win.document.close();
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -828,6 +901,16 @@ export default function StockTransferPage() {
                     <p>• Ledger entries posted on both branches</p>
                   </div>
                 </div>
+              )}
+
+              {/* Print / Share Invoice */}
+              {detailItem.status === 'APPROVED' && (
+                <button
+                  onClick={() => printTransferInvoice(detailItem)}
+                  className="w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 text-sm border transition-all active:scale-95"
+                  style={{ borderColor: c.primary, color: c.primary, background: `${c.primary}10` }}>
+                  <Printer size={15} /> Print / Share Invoice
+                </button>
               )}
 
               {/* Actions */}

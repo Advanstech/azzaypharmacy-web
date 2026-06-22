@@ -47,17 +47,12 @@ export default function EnhancedSalesPage() {
   const canDeleteSales = ['ROOT', 'SE_ADMIN', 'OWNER'].includes(role || '');
 
   const [search, setSearch] = useState('');
-  const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
+  const effectiveDay = useMemo(() => getEffectiveToday(), []);
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30);
     return d.toISOString().split('T')[0];
   });
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
-  // Sync dateTo to effective date once sales load
-  useEffect(() => {
-    if (sales.length > 0) setDateTo(effectiveDay);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sales.length, effectiveDay]);
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [metricPeriod, setMetricPeriod] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('WEEKLY');

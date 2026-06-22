@@ -167,6 +167,10 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
   const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role);
 
   useEffect(() => {
+    // Don't fetch until the auth session is ready (me is populated by the store)
+    // This ensures gql() always sends an Authorization header and avoids a 401 on mount.
+    if (!me?.id) return;
+
     async function loadStats() {
       setLoadingStats(true);
       try {
@@ -186,10 +190,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       }
     }
     loadStats();
-    // Auto-refresh every 60 seconds
-    const interval = setInterval(loadStats, 60_000);
-    return () => clearInterval(interval);
-  }, [selectedBranchId, me?.branchId]);
+  }, [selectedBranchId, me?.id, me?.branchId]);
 
   const weekRevenue = stats?.weekRevenue || 0;
   const weekTxns = stats?.weekTransactions || 0;

@@ -499,15 +499,17 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     return liveProducts.filter(p => p.category === activeCategory);
   }, [search, activeCategory, liveProducts, searchResults]);
 
-  // Auto-refetch if empty
+  // Auto-refetch if empty — only once, only after auth is ready (me populated)
+  const autoFetchedRef = useRef(false);
   useEffect(() => {
-    if (mounted && liveProducts.length === 0 && !loadingProducts) {
-      const t = setTimeout(() => {
-        refetchProducts();
-      }, 1000);
+    if (mounted && me?.id && liveProducts.length === 0 && !loadingProducts && !autoFetchedRef.current) {
+      autoFetchedRef.current = true;
+      const t = setTimeout(() => refetchProducts(), 800);
       return () => clearTimeout(t);
     }
-  }, [mounted, liveProducts.length, loadingProducts, refetchProducts]);
+    // Reset the guard when products actually arrive so a later logout→login works
+    if (liveProducts.length > 0) autoFetchedRef.current = false;
+  }, [mounted, me?.id, liveProducts.length, loadingProducts, refetchProducts]);
 
   const addToCart = (product: any) => {
     if (product.stockQuantity === 0) return;
@@ -706,22 +708,12 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
           <button 
             onClick={async () => {
               setSyncStatus('syncing');
-              // Show immediate feedback
-              console.log('[POS] Starting manual sync...');
               try {
-                const result = await manualSync();
-                console.log('[POS] Manual sync result:', result);
-                if (result.synced > 0) {
-                  await refetchAll();
-                  alert(`✅ Synced ${result.synced} sale(s) successfully`);
-                } else if (result.failed > 0) {
-                  alert(`⚠️ Synced ${result.synced} sale(s), ${result.failed} failed`);
-                } else {
-                  alert('ℹ️ No pending sales to sync');
-                }
+                await refetchAll();
+                // Also flush any offline pending sales in the background
+                manualSync().catch(() => {});
               } catch (err) {
-                console.error('[POS] Manual sync failed:', err);
-                alert('❌ Sync failed. Check console for details.');
+                console.error('[POS] Sync failed:', err);
               } finally {
                 setSyncStatus('synced');
               }
