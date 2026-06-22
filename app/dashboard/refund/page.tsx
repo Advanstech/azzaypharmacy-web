@@ -91,6 +91,11 @@ export default function RefundPage() {
   const pendingRefunds = refundRequests.filter(r => r.status === 'PENDING');
   const processedRefunds = refundRequests.filter(r => r.status === 'APPROVED' || r.status === 'REJECTED').slice(0, 20);
 
+  // Check if an active (PENDING or APPROVED) refund request already exists for the found sale
+  const existingRefundRequest = foundSale
+    ? refundRequests.find(r => r.saleId === foundSale.id && (r.status === 'PENDING' || r.status === 'APPROVED'))
+    : null;
+
   if (!mounted) return null;
 
   return (
@@ -149,6 +154,17 @@ export default function RefundPage() {
                 {foundSale.status === 'REFUNDED' ? (
                   <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-bold flex items-center gap-2">
                     <AlertCircle size={14} /> This sale has already been refunded.
+                  </div>
+                ) : existingRefundRequest ? (
+                  <div className={`p-4 rounded-xl text-xs font-bold flex items-center gap-2 ${
+                    existingRefundRequest.status === 'APPROVED'
+                      ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
+                      : 'bg-amber-500/10 border border-amber-500/20 text-amber-500'
+                  }`}>
+                    <AlertCircle size={14} />
+                    {existingRefundRequest.status === 'APPROVED'
+                      ? 'A refund for this sale has already been approved.'
+                      : 'A refund request for this sale is already pending approval. Duplicate requests are not allowed.'}
                   </div>
                 ) : (
                   <div className="space-y-3">
