@@ -153,33 +153,28 @@ function useCardStyles(isDark: boolean) {
 //  MANAGEMENT VIEW — God's Eye Executive Overview
 // ═══════════════════════════════════════════════════════════════
 function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
-  const { me, branchId: selectedBranchId } = useStore() as any; // Using useStore for minimal state if needed
+  const { me, branchId: selectedBranchId } = useStore() as any;
+  const { session } = useCustomAuth();
   const branchFilter = useBranchFilter();
   const [stats, setStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
-  // We still fetch some raw sales if needed for the transactions list at the bottom, 
-  // but let's avoid calculating stats from it.
   const { sales, loadingSales } = useStore();
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
 
-  // Check if user has management role to see all branches
   const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role);
 
   useEffect(() => {
-    // Don't fetch until the auth session is ready (me is populated by the store)
-    // This ensures gql() always sends an Authorization header and avoids a 401 on mount.
-    if (!me?.id) return;
+    // Fire as soon as the auth token is available — don't wait for the store's
+    // me object which arrives only after refetchStaff() completes.
+    if (!session?.access_token) return;
 
     async function loadStats() {
       setLoadingStats(true);
       try {
-        let branchIdToUse;
-        if (isManagement) {
-          branchIdToUse = selectedBranchId || undefined;
-        } else {
-          branchIdToUse = me?.branchId || selectedBranchId;
-        }
+        // Use branchId from me if available; for ROOT/SE_ADMIN with no selection,
+        // send no branchId so the backend aggregates all branches.
+        const branchIdToUse = selectedBranchId || (isManagement ? undefined : me?.branchId) || undefined;
         const variables = branchIdToUse ? { branchId: branchIdToUse } : {};
         const res = await gql<{ dashboardStats: any }>(Q_DASHBOARD_STATS, variables);
         setStats(res.dashboardStats);
@@ -190,7 +185,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       }
     }
     loadStats();
-  }, [selectedBranchId, me?.id, me?.branchId]);
+  }, [session?.access_token, selectedBranchId, me?.branchId]);
 
   const weekRevenue = stats?.weekRevenue || 0;
   const weekTxns = stats?.weekTransactions || 0;

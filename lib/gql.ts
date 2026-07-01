@@ -644,6 +644,12 @@ export const M_GENERATE_PRODUCT_IMAGE = `
   }
 `;
 
+export const M_REPAIR_STOCK_BRANCHES = `
+  mutation RepairStockBranches {
+    repairStockBranches
+  }
+`;
+
 export const Q_SEARCH_PRODUCTS = `
   query SearchProducts($query: String!, $limit: Int) {
     searchProducts(query: $query, limit: $limit) {

@@ -14,7 +14,7 @@ import {
 import { useStore } from '@/lib/store';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { usePagination } from '@/hooks/use-pagination';
-import { gql, M_RECEIVE_INVOICE } from '@/lib/gql';
+import { gql, M_RECEIVE_INVOICE, M_REPAIR_STOCK_BRANCHES } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
 import { useBranchFilter, useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -1228,6 +1228,26 @@ export default function InventoryPage() {
             <RefreshCw size={16} className={loadingProducts ? 'animate-spin' : ''} />
             {loadingProducts ? 'Syncing...' : 'Sync'}
           </button>
+          {['ROOT', 'SE_ADMIN'].includes(me?.role || '') && (
+            <button
+              onClick={async () => {
+                addToast?.({ type: 'info', title: 'Repairing...', message: 'Fixing stock branch assignments across all products' });
+                try {
+                  const result = await gql<{ repairStockBranches: string }>(M_REPAIR_STOCK_BRANCHES, {});
+                  await refetchProducts();
+                  addToast?.({ type: 'success', title: 'Repair Complete', message: result.repairStockBranches, duration: 7000 });
+                } catch (err: any) {
+                  addToast?.({ type: 'error', title: 'Repair Failed', message: err.message });
+                }
+              }}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-sm"
+              style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.3)' }}
+              title="Fix stock items assigned to wrong branch"
+            >
+              <RefreshCw size={16} />
+              Repair Stock
+            </button>
+          )}
           {isManager && (
             <>
               <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>

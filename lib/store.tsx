@@ -778,12 +778,10 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     setSyncStatus('syncing');
     setError(null);
     try {
-      // ── Phase 1: Dashboard-critical — all in parallel ──────────────
-      // Staff must complete first so me?.branchId is available for invoices/ledger
-      await refetchStaff();
-
-      // Core data needed to paint the dashboard — launch all at once
-      await Promise.all([refetchProducts(), refetchSales()]);
+      // ── Phase 1: Dashboard-critical — all fired simultaneously ─────
+      // Staff, products and sales launch together. me?.branchId-dependent
+      // calls (invoices, ledger) are deferred to phase 2.
+      await Promise.all([refetchStaff(), refetchProducts(), refetchSales()]);
 
       setSyncStatus('idle');
 
