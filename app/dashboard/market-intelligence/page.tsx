@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import {
-  TrendingUp, TrendingDown, Zap, Target, Activity,
-  AlertTriangle, Crosshair, Map, ShieldAlert, Cpu, Package, CheckCircle2,
-  RefreshCw, Clock, ArrowRight, ArrowUpRight, DollarSign, LocateFixed, Eye, Newspaper, HeartPulse, GraduationCap,
-  Sparkles, ChevronRight, Search, BrainCircuit
+  TrendingUp, TrendingDown, Activity, AlertTriangle, ShieldAlert,
+  RefreshCw, Clock, ArrowUpRight, Newspaper,
+  GraduationCap, ChevronRight, Search, BrainCircuit,
+  Pill, BookOpen, CheckCircle, XCircle, Info,
+  MapPin, CalendarDays, BarChart2, ShoppingCart, Flame,
+  AlertCircle, CircleCheck, BadgeAlert, ChevronDown,
 } from 'lucide-react';
 import { mockIntelligenceData } from '@/lib/intelligence-data';
 import { useStore } from '@/lib/store';
@@ -17,518 +19,693 @@ export default function MarketIntelligencePage() {
   const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
-  const [activeTab, setActiveTab] = useState('Market Prices');
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [data] = useState<any>(mockIntelligenceData);
   const [searchQuery, setSearchQuery] = useState('');
-  const { products } = useStore();
+  const [priceCategory, setPriceCategory] = useState('All');
   const [isSearchingAi, setIsSearchingAi] = useState(false);
   const [aiMonographs, setAiMonographs] = useState<any[]>([]);
+  const [expandedLesson, setExpandedLesson] = useState<number | null>(null);
+  const [completedLessons, setCompletedLessons] = useState<Set<number>>(new Set());
+  const { products } = useStore();
 
+  useEffect(() => { setMounted(true); }, []);
+  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
+
+  const c = {
+    bg: isDark ? 'rgba(15,23,42,0.7)' : 'rgba(255,255,255,0.95)',
+    border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)',
+    text: isDark ? '#F8FAFC' : '#0F172A',
+    muted: isDark ? '#94A3B8' : '#64748B',
+    dim: isDark ? '#475569' : '#94A3B8',
+    primary: '#0EA5E9',
+    accent: '#10B981',
+    warning: '#F59E0B',
+    danger: '#EF4444',
+    purple: '#8B5CF6',
+    cardBg: isDark ? 'rgba(30,41,59,0.6)' : 'rgba(248,250,252,0.9)',
+    headerBg: isDark ? 'rgba(15,23,42,0.9)' : '#F1F5F9',
+  };
+
+  // ── Inventory-aware computations ──────────────────────────────────────────
+  const lowStockProducts = useMemo(() =>
+    products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10)
+      .sort((a, b) => a.stockQuantity - b.stockQuantity).slice(0, 8),
+    [products]
+  );
+  const outOfStockProducts = useMemo(() =>
+    products.filter(p => p.stockQuantity === 0).slice(0, 8),
+    [products]
+  );
+
+  // Match market price items to products in inventory
+  const pricedProducts = useMemo(() => {
+    return (data?.marketPrices || []).map((mp: any) => {
+      const match = products.find(p =>
+        p.name.toLowerCase().includes(mp.name.toLowerCase().split(' ')[0]) ||
+        mp.name.toLowerCase().includes(p.name.toLowerCase().split(' ')[0])
+      );
+      return { ...mp, inventoryProduct: match || null };
+    });
+  }, [data, products]);
+
+  const filteredPrices = useMemo(() => {
+    if (priceCategory === 'All') return pricedProducts;
+    return pricedProducts.filter((p: any) => p.category === priceCategory);
+  }, [pricedProducts, priceCategory]);
+
+  // ── AI Monograph handler ──────────────────────────────────────────────────
   const handleSearchAi = async (query: string) => {
     if (!query || query.trim().length < 2) return;
     setIsSearchingAi(true);
     try {
-      const prompt = `Generate a highly professional, clinical-grade drug monograph for the drug query: "${query.trim()}". 
-The output MUST be a valid JSON object matching this structure EXACTLY. Return ONLY the raw JSON string without markdown wrap, backticks, or other text:
-{
-  "product": "${query.trim().toUpperCase()}",
-  "indications": "Clinical indications and uses",
-  "dosage": "Standard adult and pediatric dosing instructions",
-  "counseling": "Patient counseling points and warnings",
-  "contraindications": "Major contraindications and clinical restrictions"
-}`;
-      
+      const prompt = `You are a clinical pharmacist. Generate a professional drug monograph for: "${query.trim()}".
+Return ONLY a valid JSON object with EXACTLY these keys (no extra text, no markdown):
+{"product":"${query.trim().toUpperCase()}","indications":"...","dosage":"...","interactions":"...","counseling":"...","contraindications":"...","sideEffects":"...","storage":"..."}`;
       const result = await gql<{ askNexusAi: string }>(M_ASK_NEXUS_AI, { prompt });
-      const rawText = result.askNexusAi;
-      
-      const jsonStart = rawText.indexOf('{');
-      const jsonEnd = rawText.lastIndexOf('}');
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        const cleanedJson = rawText.slice(jsonStart, jsonEnd + 1);
-        const parsed = JSON.parse(cleanedJson);
-        setAiMonographs(prev => [parsed, ...prev]);
+      const raw = result.askNexusAi;
+      const s = raw.indexOf('{'), e = raw.lastIndexOf('}');
+      if (s !== -1 && e !== -1) {
+        const parsed = JSON.parse(raw.slice(s, e + 1));
+        setAiMonographs(prev => [parsed, ...prev.slice(0, 4)]);
       }
     } catch (err) {
-      console.error('Failed to generate monograph via AI:', err);
+      console.error('Monograph generation failed:', err);
     } finally {
       setIsSearchingAi(false);
     }
   };
 
-  useEffect(() => {
-    setMounted(true);
-    // Use imported mock data for static export compatibility
-    setData(mockIntelligenceData);
-    setLoading(false);
-  }, []);
-
-  const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
-
-  const c = {
-    bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
-    border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)',
-    text: isDark ? '#F8FAFC' : '#0F172A',
-    muted: isDark ? '#94A3B8' : '#64748B',
-    primary: isDark ? '#00D9FF' : '#0EA5E9',
-    accent: '#10B981',
-    warning: '#F59E0B',
-    danger: '#EF4444',
-    purple: '#8B5CF6',
-    cardBg: isDark ? 'rgba(30,41,59,0.5)' : 'rgba(248,250,252,0.8)',
-  };
+  // ── Overview KPIs ─────────────────────────────────────────────────────────
+  const overviewKpis = [
+    { label: 'Active Outbreaks', value: '3', sub: 'Malaria · Cholera · Typhoid', color: c.danger, icon: AlertTriangle },
+    { label: 'Supply Risk', value: 'HIGH', sub: 'Paracetamol API shortage', color: c.warning, icon: BadgeAlert },
+    { label: 'NHIS Turnaround', value: '45d', sub: 'Improved by 12 days', color: c.accent, icon: Clock },
+    { label: 'FDA Alerts', value: '2', sub: 'Counterfeit antimalarials', color: c.purple, icon: ShieldAlert },
+  ];
 
   const tabs = [
-    { id: 'Health Pulse', icon: HeartPulse, subtitle: 'WHO · BBC Health · Industry signals' },
-    { id: 'Drug Intelligence', icon: Cpu, subtitle: 'AI-powered drug monographs' },
-    { id: 'Market Prices', icon: TrendingUp, subtitle: 'Price trends & supplier intel' },
-    { id: 'Disease Alerts', icon: AlertTriangle, subtitle: 'WHO & Ghana Health Service' },
-    { id: 'Staff Learning', icon: GraduationCap, subtitle: 'Drug education modules' },
-    { id: 'Market News', icon: Newspaper, subtitle: 'Global pharma breaking news' },
+    { id: 'overview', label: 'Overview', icon: BarChart2, color: c.primary },
+    { id: 'market', label: 'Market Prices', icon: TrendingUp, color: '#F97316' },
+    { id: 'disease', label: 'Disease Alerts', icon: AlertTriangle, color: c.danger },
+    { id: 'drug', label: 'Drug Intelligence', icon: BrainCircuit, color: '#00D9FF' },
+    { id: 'learning', label: 'Staff Learning', icon: GraduationCap, color: c.purple },
+    { id: 'news', label: 'Market News', icon: Newspaper, color: c.primary },
   ];
 
   if (!mounted) return null;
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      {/* Header Area is now simplified because global layout has the title, branch, and marquee */}
-      <div className="flex items-center gap-3 px-5 py-2.5 rounded-2xl border backdrop-blur-xl relative overflow-hidden group w-max" style={{ borderColor: c.border, background: c.bg }}>
-        <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-        <Sparkles size={16} className="text-emerald-500 animate-pulse" />
-        <span className="text-xs font-black tracking-widest text-emerald-500">Live Intelligence</span>
-      </div>
+    <div className="space-y-5 pb-20">
 
-      {/* Navigation Tabs */}
-      <div className="flex flex-wrap gap-4 border-b pb-4" style={{ borderColor: c.border }}>
+      {/* ── Tab Bar ───────────────────────────────────────────────────────── */}
+      <div className="flex gap-1 p-1 rounded-2xl border overflow-x-auto" style={{ background: c.headerBg, borderColor: c.border }}>
         {tabs.map(tab => {
-          const isActive = activeTab === tab.id;
+          const active = activeTab === tab.id;
           return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left min-w-[200px]"
-              style={{ 
-                borderColor: isActive ? c.accent : c.border,
-                background: isActive ? (isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.05)') : c.cardBg,
-                boxShadow: isActive ? `0 0 20px ${isDark ? 'rgba(16, 185, 129, 0.1)' : 'rgba(16, 185, 129, 0.2)'}` : 'none'
-              }}
-            >
-              <div style={{ color: isActive ? c.accent : c.muted }}>
-                <tab.icon size={20} />
-              </div>
-              <div>
-                <p className="font-bold text-sm" style={{ color: isActive ? c.text : c.muted }}>{tab.id}</p>
-                <p className="text-[10px]" style={{ color: c.muted }}>{tab.subtitle}</p>
-              </div>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex-shrink-0"
+              style={{
+                background: active ? c.bg : 'transparent',
+                color: active ? tab.color : c.muted,
+                boxShadow: active ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                borderColor: active ? `${tab.color}30` : 'transparent',
+                border: active ? `1px solid ${tab.color}25` : '1px solid transparent',
+              }}>
+              <tab.icon size={14} />
+              {tab.label}
+              {tab.id === 'disease' && <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />}
             </button>
-          )
+          );
         })}
       </div>
 
-      {/* Main Content Area */}
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-4 opacity-50">
-          <RefreshCw className="animate-spin text-primary" size={32} />
-          <p className="text-sm font-bold animate-pulse">Syncing Intelligence Core...</p>
-        </div>
-      ) : (
-        <div className="animate-in slide-in-from-bottom-4 duration-500">
-          
-          {/* MARKET PRICES TAB */}
-          {activeTab === 'Market Prices' && (
-            <div className="space-y-6">
-              <div className="p-6 rounded-[32px] border flex items-center justify-between" style={{ background: c.bg, borderColor: c.border }}>
-                <div>
-                  <h3 className="font-display font-bold text-xl flex items-center gap-2 text-orange-500">
-                    <TrendingUp size={20} /> Ghana Pharma Market Intelligence
-                  </h3>
-                  <p className="text-sm mt-1" style={{ color: c.text }}>Demand trends, pricing signals, and supplier intelligence for Ghana pharmacy market.</p>
-                </div>
-                <div className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-orange-500/10 text-orange-500">
-                  Updated Daily
-                </div>
-              </div>
-              
-              {/* Category Pills */}
-              <div className="flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
-                {['All', 'Antimalarials', 'Antibiotics', 'Antidiabetics', 'Analgesics', 'Antihypertensives', 'GI Medicines', 'Rehydration'].map(cat => (
-                  <button key={cat} className="px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors"
-                    style={{ background: cat === 'All' ? c.accent : c.cardBg, color: cat === 'All' ? '#fff' : c.muted, border: `1px solid ${cat === 'All' ? c.accent : c.border}` }}>
-                    {cat}
-                  </button>
-                ))}
-              </div>
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* OVERVIEW TAB                                                        */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'overview' && (
+        <div className="space-y-5 animate-in fade-in duration-300">
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {data?.marketPrices?.map((p: any) => (
-                  <div key={p.id} className="p-5 rounded-3xl border transition-all hover:scale-[1.02]" style={{ background: c.cardBg, borderColor: c.border }}>
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h4 className="font-bold text-sm" style={{ color: c.text }}>{p.name}</h4>
-                        <span className="text-[10px] text-slate-500">{p.category}</span>
-                      </div>
-                      <span className="px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1"
-                        style={{ 
-                          background: p.trend === 'Rising' ? 'rgba(239,68,68,0.1)' : p.trend === 'Falling' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
-                          color: p.trend === 'Rising' ? c.danger : p.trend === 'Falling' ? c.accent : c.warning
-                        }}>
-                        {p.trend === 'Rising' ? <TrendingUp size={10} /> : p.trend === 'Falling' ? <TrendingDown size={10} /> : <Activity size={10} />}
-                        {p.trend}
-                      </span>
+          {/* KPI Row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {overviewKpis.map((k, i) => {
+              const Icon = k.icon;
+              return (
+                <div key={i} className="p-4 rounded-2xl border" style={{ background: c.cardBg, borderColor: c.border }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-1.5 rounded-lg" style={{ background: `${k.color}18`, color: k.color }}>
+                      <Icon size={14} />
                     </div>
-                    <p className="text-xs mb-4 min-h-[40px] leading-relaxed" style={{ color: c.muted }}>{p.description}</p>
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
-                      <ArrowUpRight size={12} /> {p.source}
-                    </div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>{k.label}</p>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* DISEASE ALERTS TAB */}
-          {activeTab === 'Disease Alerts' && (
-            <div className="space-y-6">
-              <div className="p-6 rounded-[32px] border flex items-center justify-between" style={{ background: c.bg, borderColor: 'rgba(239, 68, 68, 0.3)' }}>
-                <div>
-                  <h3 className="font-display font-bold text-xl flex items-center gap-2 text-red-500">
-                    <AlertTriangle size={20} /> Disease Outbreak Alerts — Ghana
-                  </h3>
-                  <p className="text-sm mt-1" style={{ color: c.text }}>Real-time disease surveillance from WHO and Ghana Health Service. Stay prepared for seasonal outbreaks.</p>
+                  <p className="text-2xl font-black font-display mb-1" style={{ color: k.color }}>{k.value}</p>
+                  <p className="text-[11px]" style={{ color: c.dim }}>{k.sub}</p>
                 </div>
-                <div className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-500 animate-pulse">
-                  Live Alerts
+              );
+            })}
+          </div>
+
+          {/* Stock Warnings + Disease Alerts side by side */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+            {/* Low Stock Alert */}
+            <div className="rounded-2xl border overflow-hidden" style={{ background: c.cardBg, borderColor: c.border }}>
+              <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: c.border, background: `${c.warning}0A` }}>
+                <div className="flex items-center gap-2">
+                  <Flame size={15} style={{ color: c.warning }} />
+                  <p className="font-bold text-sm" style={{ color: c.text }}>Low Stock — Action Required</p>
                 </div>
-              </div>
-
-              <div className="space-y-4">
-                {data?.diseaseAlerts?.map((alert: any) => (
-                  <div key={alert.id} className="p-5 rounded-3xl border border-l-4" style={{ background: c.cardBg, borderColor: c.border, borderLeftColor: alert.level === 'WARNING' ? c.warning : c.primary }}>
-                    <div className="flex items-center gap-3 mb-2">
-                      <h4 className="font-bold text-base" style={{ color: c.text }}>{alert.disease}</h4>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold" style={{ background: alert.level === 'WARNING' ? 'rgba(245,158,11,0.1)' : 'rgba(14,165,233,0.1)', color: alert.level === 'WARNING' ? c.warning : c.primary }}>
-                        <AlertTriangle size={10} className="inline mr-1" />{alert.level}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-wider mb-4" style={{ color: c.muted }}>
-                      <span className="flex items-center gap-1"><Map size={12} /> {alert.locations}</span>
-                      <span className="flex items-center gap-1"><Clock size={12} /> {alert.date}</span>
-                    </div>
-                    <p className="text-sm mb-4" style={{ color: c.text }}>{alert.description}</p>
-                    <div className="p-3 rounded-xl mb-4" style={{ background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)' }}>
-                      <p className="text-xs font-bold mb-1 flex items-center gap-2 text-orange-500">💊 Pharmacy Action</p>
-                      <p className="text-sm" style={{ color: c.muted }}>{alert.action}</p>
-                    </div>
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-500">
-                      <ArrowUpRight size={12} /> {alert.source}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* STAFF LEARNING TAB */}
-          {activeTab === 'Staff Learning' && (
-            <div className="space-y-6">
-              <div className="p-6 rounded-[32px] border flex items-center justify-between" style={{ background: c.bg, borderColor: c.border }}>
-                <div>
-                  <h3 className="font-display font-bold text-xl flex items-center gap-2 text-purple-500">
-                    <GraduationCap size={20} /> Staff Learning Centre
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-500 ml-2">NEW</span>
-                  </h3>
-                  <p className="text-sm mt-1" style={{ color: c.text }}>Drug education modules for pharmacy staff. Learn at your own pace.</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-display text-2xl font-bold text-emerald-500">0/4</p>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">completed</p>
-                </div>
-              </div>
-              <div className="w-full h-1.5 rounded-full overflow-hidden bg-slate-200 dark:bg-slate-800">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: '0%' }} />
-              </div>
-
-              <div className="flex gap-2 mt-4">
-                {['All', 'Clinical', 'Regulatory', 'Skills'].map(cat => (
-                  <button key={cat} className="px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors"
-                    style={{ background: cat === 'All' ? c.accent : c.cardBg, color: cat === 'All' ? '#fff' : c.muted, border: `1px solid ${cat === 'All' ? c.accent : c.border}` }}>
-                    {cat}
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-3 mt-6">
-                {data?.staffLearning?.map((module: any) => (
-                  <div key={module.id} className="p-4 rounded-2xl border flex items-center gap-4 transition-all hover:bg-slate-50/5 dark:hover:bg-slate-800/50 cursor-pointer" style={{ borderColor: c.border, background: c.cardBg }}>
-                    <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
-                      <GraduationCap size={20} className="text-slate-500" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-bold text-sm text-slate-800 dark:text-slate-200">{module.title}</h4>
-                      <div className="flex items-center gap-3 text-[10px] mt-1 font-bold text-slate-500">
-                        <span className="text-emerald-500">{module.level}</span>
-                        <span className="flex items-center gap-1"><Clock size={10} /> {module.duration}</span>
-                        <span>{module.category}</span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-2">{module.description}</p>
-                    </div>
-                    <ChevronRight size={20} className="text-slate-400" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* MARKET NEWS TAB */}
-          {activeTab === 'Market News' && (
-            <div className="space-y-6">
-               <div className="p-6 rounded-[32px] border flex items-center justify-between" style={{ background: c.bg, borderColor: c.border }}>
-                <div>
-                  <h3 className="font-display font-bold text-xl flex items-center gap-2 text-blue-500">
-                    <Newspaper size={20} /> Global Pharma News
-                  </h3>
-                  <p className="text-sm mt-1" style={{ color: c.text }}>Latest industry updates, WHO directives, and supply chain shifts.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {data?.news?.map((n: any) => (
-                  <div key={n.id} className="p-5 rounded-3xl border flex flex-col justify-between hover:border-blue-500/30 transition-all cursor-pointer" style={{ background: c.cardBg, borderColor: c.border }}>
-                    <div>
-                      <div className="flex justify-between items-start mb-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase bg-blue-500/10 text-blue-500">
-                          {n.source}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-500">{n.time}</span>
-                      </div>
-                      <h4 className="font-bold text-sm mb-3 leading-snug" style={{ color: c.text }}>{n.title}</h4>
-                    </div>
-                    <div className="flex justify-end">
-                       <span className="px-2 py-1 rounded text-[10px] font-bold uppercase flex items-center gap-1"
-                        style={{ background: n.urgency === 'critical' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', color: n.urgency === 'critical' ? c.danger : c.warning }}>
-                        {n.urgency} Priority
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* HEALTH PULSE TAB */}
-          {activeTab === 'Health Pulse' && data?.healthPulse && (
-            <div className="space-y-6">
-               <div className="p-6 rounded-[32px] border flex items-center justify-between" style={{ background: c.bg, borderColor: c.border }}>
-                <div>
-                  <h3 className="font-display font-bold text-xl flex items-center gap-2" style={{ color: c.primary }}>
-                    <HeartPulse size={20} /> Regional Health Pulse
-                  </h3>
-                  <p className="text-sm mt-1" style={{ color: c.text }}>Global and regional health KPIs affecting pharmaceutical operations.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {data.healthPulse.metrics.map((metric: any, idx: number) => (
-                  <div key={idx} className="p-5 rounded-3xl border flex flex-col justify-between hover:-translate-y-1 transition-transform" style={{ background: c.cardBg, borderColor: c.border }}>
-                    <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>{metric.title}</p>
-                    <h4 className="text-3xl font-display font-bold mb-2" style={{ color: c.text }}>{metric.value}</h4>
-                    <p className="text-[10px] text-slate-500 flex items-center gap-1">
-                      {metric.trend === 'up' ? <TrendingUp size={12} className="text-emerald-500" /> : metric.trend === 'down' ? <TrendingDown size={12} className="text-blue-500" /> : <Activity size={12} className="text-orange-500" />}
-                      {metric.description}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="p-6 rounded-3xl border space-y-4" style={{ background: c.cardBg, borderColor: c.border }}>
-                <h4 className="font-bold text-sm" style={{ color: c.text }}>Priority Industry Signals</h4>
-                <div className="space-y-3">
-                  {data.healthPulse.signals.map((signal: any) => (
-                    <div key={signal.id} className="p-4 rounded-2xl border bg-white/5 flex gap-4 items-start" style={{ borderColor: c.border }}>
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.1)', color: c.primary }}>
-                         {signal.type === 'Regulatory' ? <ShieldAlert size={16} /> : signal.type === 'Epidemiological' ? <Activity size={16} /> : <GraduationCap size={16} />}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{signal.source}</span>
-                          <span className="text-[10px] text-slate-500">{signal.date}</span>
-                        </div>
-                        <p className="text-sm font-bold" style={{ color: c.text }}>{signal.message}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* DRUG INTELLIGENCE TAB */}
-          {activeTab === 'Drug Intelligence' && (
-            <div className="space-y-6">
-              <div className="p-6 rounded-[32px] border" style={{ background: c.bg, borderColor: c.border }}>
-                <div className="flex items-center gap-3 text-[#00D9FF] mb-4">
-                  <BrainCircuit size={24} />
-                  <h3 className="font-display font-bold text-xl">AI Drug Intelligence</h3>
-                </div>
-                
-                <div className="relative">
-                  <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input 
-                    type="text" 
-                    placeholder="Search any drug name, active ingredient, or indication..." 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        handleSearchAi(searchQuery);
-                      }
-                    }}
-                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-100 dark:bg-slate-900 border-none outline-none text-sm font-bold shadow-inner"
-                    style={{ color: c.text }}
-                  />
-                  <button 
-                    onClick={() => handleSearchAi(searchQuery)}
-                    disabled={isSearchingAi}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 bg-[#00D9FF] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#00D9FF]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-                  >
-                    {isSearchingAi ? (
-                      <>
-                        <RefreshCw size={12} className="animate-spin" />
-                        Analyzing...
-                      </>
-                    ) : (
-                      'Search AI'
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {isSearchingAi && (
-                <div className="p-12 rounded-[32px] border border-[#00D9FF]/30 text-center flex flex-col items-center justify-center relative overflow-hidden" style={{ background: 'rgba(0,217,255,0.05)' }}>
-                  <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-transparent to-blue-500/10 animate-pulse" />
-                  <BrainCircuit size={48} className="text-[#00D9FF] animate-bounce mb-4" />
-                  <h4 className="font-bold text-lg mb-2 text-[#00D9FF] animate-pulse">Compiling AI Monograph...</h4>
-                  <p className="text-xs text-slate-400 max-w-sm">NEXUS AI is parsing chemical properties, clinical studies, and prescribing monographs to generate your custom drug monograph.</p>
-                </div>
-              )}
-
-              {searchQuery.length > 2 || aiMonographs.length > 0 ? (
-                <div className="space-y-4">
-                  {/* Dynamic Custom AI Monographs */}
-                  {aiMonographs.map((drug: any, i: number) => (
-                    <div key={`custom-${i}`} className="p-6 rounded-[32px] border flex flex-col gap-4 relative overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500" style={{ background: 'rgba(16,185,129,0.04)', borderColor: 'rgba(16,185,129,0.2)' }}>
-                      <div className="absolute -right-10 -top-10 opacity-5 text-emerald-500"><BrainCircuit size={200} /></div>
-                      
-                      <div className="flex items-center justify-between relative z-10">
-                        <button onClick={() => {
-                          const matchingProduct = products.find(p =>
-                            p.name.toLowerCase().includes(drug.product.toLowerCase()) ||
-                            p.genericName?.toLowerCase().includes(drug.product.toLowerCase()) ||
-                            drug.product.toLowerCase().includes(p.name.toLowerCase())
-                          );
-
-                          if (matchingProduct) {
-                            router.push(`/dashboard/inventory/${matchingProduct.id}`);
-                          } else {
-                            router.push(`/dashboard/inventory?search=${encodeURIComponent(drug.product)}`);
-                          }
-                        }} className="text-xl font-display font-bold text-emerald-400 hover:underline transition-colors text-left">
-                          {drug.product}
-                        </button>
-                        <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 animate-pulse">Live Custom Monograph</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
-                         <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/5">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Indications</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.indications}</p>
-                         </div>
-                         <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/5">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Standard Dosage</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.dosage}</p>
-                         </div>
-                         <div className="space-y-1 bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Patient Counseling</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.counseling}</p>
-                         </div>
-                         <div className="space-y-1 bg-red-500/5 p-4 rounded-2xl border border-red-500/10">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-red-400">Contraindications</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.contraindications}</p>
-                         </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Filtered Static Monographs */}
-                  {data?.drugIntelligence?.filter((d: any) => d.product.toLowerCase().includes(searchQuery.toLowerCase()) || d.indications.toLowerCase().includes(searchQuery.toLowerCase())).map((drug: any, i: number) => (
-                    <div key={`static-${i}`} className="p-6 rounded-[32px] border flex flex-col gap-4 relative overflow-hidden" style={{ background: 'rgba(0,217,255,0.03)', borderColor: 'rgba(0,217,255,0.1)' }}>
-                      <div className="absolute -right-10 -top-10 opacity-5"><BrainCircuit size={200} /></div>
-                      
-                      <div className="flex items-center justify-between relative z-10">
-                        <button onClick={() => {
-                          const matchingProduct = products.find(p =>
-                            p.name.toLowerCase().includes(drug.product.toLowerCase()) ||
-                            p.genericName?.toLowerCase().includes(drug.product.toLowerCase()) ||
-                            drug.product.toLowerCase().includes(p.name.toLowerCase())
-                          );
-
-                          if (matchingProduct) {
-                            router.push(`/dashboard/inventory/${matchingProduct.id}`);
-                          } else {
-                            router.push(`/dashboard/inventory?search=${encodeURIComponent(drug.product)}`);
-                          }
-                        }} className="text-xl font-display font-bold text-[#00D9FF] hover:underline transition-colors text-left">
-                          {drug.product}
-                        </button>
-                        <span className="px-3 py-1 rounded-full bg-[#00D9FF]/10 text-[#00D9FF] text-[10px] font-bold border border-[#00D9FF]/20">AI Monograph</span>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
-                         <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/5">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Indications</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.indications}</p>
-                         </div>
-                         <div className="space-y-1 bg-white/5 p-4 rounded-2xl border border-white/5">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Standard Dosage</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.dosage}</p>
-                         </div>
-                         <div className="space-y-1 bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/10">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-500">Patient Counseling</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.counseling}</p>
-                         </div>
-                         <div className="space-y-1 bg-red-500/5 p-4 rounded-2xl border border-red-500/10">
-                           <p className="text-[10px] font-bold uppercase tracking-wider text-red-400">Contraindications</p>
-                           <p className="text-sm font-medium leading-relaxed" style={{ color: c.text }}>{drug.contraindications}</p>
-                         </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Empty state fallback */}
-                  {!isSearchingAi && aiMonographs.length === 0 && data?.drugIntelligence?.filter((d: any) => d.product.toLowerCase().includes(searchQuery.toLowerCase()) || d.indications.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 && (
-                     <div className="p-12 rounded-[32px] border text-center" style={{ background: c.cardBg, borderColor: c.border }}>
-                       <p className="text-sm font-bold text-slate-400 mb-2">No pre-loaded monographs found matching "{searchQuery}"</p>
-                       <p className="text-xs text-slate-500 mb-4">Click "Search AI" to let NEXUS AI build one for you instantly!</p>
-                       <button onClick={() => handleSearchAi(searchQuery)} className="px-4 py-2 bg-[#00D9FF] text-slate-900 rounded-xl text-xs font-bold hover:bg-[#00D9FF]/90 transition-colors">
-                          Generate AI Monograph
-                       </button>
-                     </div>
+                <div className="flex items-center gap-2">
+                  {outOfStockProducts.length > 0 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${c.danger}20`, color: c.danger }}>{outOfStockProducts.length} out</span>
                   )}
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${c.warning}20`, color: c.warning }}>{lowStockProducts.length} low</span>
+                </div>
+              </div>
+              {lowStockProducts.length === 0 ? (
+                <div className="px-5 py-8 text-center">
+                  <CircleCheck size={28} className="mx-auto mb-2 text-emerald-500" />
+                  <p className="text-sm font-bold text-emerald-500">All critical items stocked</p>
                 </div>
               ) : (
-                !isSearchingAi && (
-                  <div className="p-12 rounded-[32px] border text-center flex flex-col items-center justify-center opacity-60" style={{ background: c.cardBg, borderColor: c.border }}>
-                     <BrainCircuit size={48} className="text-[#00D9FF] mb-4 animate-pulse" />
-                     <h4 className="font-bold text-lg mb-2" style={{ color: c.text }}>AI Copilot Ready</h4>
-                     <p className="text-sm text-slate-500 max-w-sm">Search any drug name (e.g. "Ibuprofen") or tap "Search AI" to dynamically compile a clinical monograph using Gemini.</p>
-                  </div>
-                )
+                <div className="divide-y" style={{ borderColor: c.border }}>
+                  {lowStockProducts.map(p => (
+                    <div key={p.id}
+                      className="flex items-center justify-between px-5 py-3 cursor-pointer hover:opacity-80 transition-opacity"
+                      onClick={() => router.push('/dashboard/inventory')}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ background: p.stockQuantity <= 3 ? `${c.danger}18` : `${c.warning}18` }}>
+                          <Pill size={14} style={{ color: p.stockQuantity <= 3 ? c.danger : c.warning }} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate" style={{ color: c.text }}>{p.name}</p>
+                          <p className="text-[10px]" style={{ color: c.dim }}>{p.category}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <span className="text-xs font-black" style={{ color: p.stockQuantity <= 3 ? c.danger : c.warning }}>{p.stockQuantity} left</span>
+                        <ChevronRight size={12} style={{ color: c.dim }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
+              {lowStockProducts.length > 0 && (
+                <div className="px-5 py-3 border-t" style={{ borderColor: c.border }}>
+                  <button onClick={() => router.push('/dashboard/inventory')}
+                    className="text-xs font-bold flex items-center gap-1" style={{ color: c.warning }}>
+                    View all in Inventory <ArrowUpRight size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Disease Alerts Summary */}
+            <div className="rounded-2xl border overflow-hidden" style={{ background: c.cardBg, borderColor: c.border }}>
+              <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: c.border, background: `${c.danger}0A` }}>
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={15} style={{ color: c.danger }} />
+                  <p className="font-bold text-sm" style={{ color: c.text }}>Active Disease Alerts</p>
+                </div>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse" style={{ background: `${c.danger}20`, color: c.danger }}>Live</span>
+              </div>
+              <div className="divide-y" style={{ borderColor: c.border }}>
+                {(data?.diseaseAlerts || []).map((alert: any) => (
+                  <div key={alert.id} className="px-5 py-4">
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <p className="font-bold text-sm" style={{ color: c.text }}>{alert.disease}</p>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded flex-shrink-0"
+                        style={{ background: alert.level === 'WARNING' ? `${c.warning}20` : `${c.primary}20`, color: alert.level === 'WARNING' ? c.warning : c.primary }}>
+                        {alert.level}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] mb-2" style={{ color: c.dim }}>
+                      <span className="flex items-center gap-1"><MapPin size={10} />{alert.locations}</span>
+                      <span className="flex items-center gap-1"><CalendarDays size={10} />{alert.date}</span>
+                    </div>
+                    <div className="p-2.5 rounded-lg text-[11px]" style={{ background: isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)', color: c.warning }}>
+                      <span className="font-bold">Action: </span>{alert.action}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="px-5 py-3 border-t" style={{ borderColor: c.border }}>
+                <button onClick={() => setActiveTab('disease')} className="text-xs font-bold flex items-center gap-1" style={{ color: c.danger }}>
+                  View full alerts <ArrowUpRight size={12} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Regulatory Signals */}
+          <div className="rounded-2xl border overflow-hidden" style={{ background: c.cardBg, borderColor: c.border }}>
+            <div className="px-5 py-4 border-b" style={{ borderColor: c.border }}>
+              <p className="font-bold text-sm flex items-center gap-2" style={{ color: c.text }}>
+                <ShieldAlert size={15} style={{ color: c.purple }} /> Priority Regulatory & Industry Signals
+              </p>
+            </div>
+            <div className="divide-y" style={{ borderColor: c.border }}>
+              {(data?.healthPulse?.signals || []).map((sig: any) => (
+                <div key={sig.id} className="px-5 py-3.5 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                    style={{ background: sig.type === 'Regulatory' ? `${c.purple}18` : sig.type === 'Epidemiological' ? `${c.danger}18` : `${c.primary}18`,
+                      color: sig.type === 'Regulatory' ? c.purple : sig.type === 'Epidemiological' ? c.danger : c.primary }}>
+                    {sig.type === 'Regulatory' ? <ShieldAlert size={14} /> : sig.type === 'Epidemiological' ? <Activity size={14} /> : <BookOpen size={14} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c.dim }}>{sig.source} · {sig.date}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-bold" style={{ background: `${c.purple}18`, color: c.purple }}>{sig.type}</span>
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: c.text }}>{sig.message}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* MARKET PRICES TAB                                                  */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'market' && (
+        <div className="space-y-5 animate-in fade-in duration-300">
+          <div className="p-5 rounded-2xl border flex items-center justify-between" style={{ background: `rgba(249,115,22,0.06)`, borderColor: `rgba(249,115,22,0.2)` }}>
+            <div>
+              <h3 className="font-bold text-base flex items-center gap-2 text-orange-500">
+                <TrendingUp size={17} /> Ghana Pharma Market Intelligence
+              </h3>
+              <p className="text-xs mt-1" style={{ color: c.muted }}>Demand trends, pricing signals, and stock action for Ghana's pharmacy market.</p>
+            </div>
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-orange-500/10 text-orange-500">Updated Daily</span>
+          </div>
+
+          {/* Category filter */}
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {['All', 'Antimalarials', 'Antibiotics', 'Antidiabetics', 'Analgesics', 'Antihypertensives'].map(cat => (
+              <button key={cat} onClick={() => setPriceCategory(cat)}
+                className="px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all"
+                style={{
+                  background: priceCategory === cat ? '#F97316' : c.cardBg,
+                  color: priceCategory === cat ? '#fff' : c.muted,
+                  border: `1px solid ${priceCategory === cat ? '#F97316' : c.border}`,
+                }}>
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredPrices.map((p: any) => {
+              const hasStock = !!p.inventoryProduct;
+              const stockQty = p.inventoryProduct?.stockQuantity ?? 0;
+              const stockStatus = !hasStock ? 'not-in-inventory' : stockQty === 0 ? 'out' : stockQty <= 10 ? 'low' : 'ok';
+              return (
+                <div key={p.id} className="p-5 rounded-2xl border transition-all hover:shadow-md" style={{ background: c.cardBg, borderColor: c.border }}>
+                  {/* Header */}
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <p className="font-bold text-sm truncate" style={{ color: c.text }}>{p.name}</p>
+                      <p className="text-[10px] font-medium mt-0.5" style={{ color: c.dim }}>{p.category}</p>
+                    </div>
+                    <span className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold flex-shrink-0"
+                      style={{
+                        background: p.trend === 'Rising' ? `${c.danger}18` : p.trend === 'Falling' ? `${c.accent}18` : `${c.warning}18`,
+                        color: p.trend === 'Rising' ? c.danger : p.trend === 'Falling' ? c.accent : c.warning,
+                      }}>
+                      {p.trend === 'Rising' ? <TrendingUp size={10} /> : p.trend === 'Falling' ? <TrendingDown size={10} /> : <Activity size={10} />}
+                      {p.trend}
+                    </span>
+                  </div>
+
+                  {/* Price Range */}
+                  {p.prices && (
+                    <div className="flex items-center gap-2 mb-3 p-2.5 rounded-xl" style={{ background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)' }}>
+                      <BarChart2 size={12} style={{ color: c.muted }} />
+                      <div className="flex gap-3 text-[10px] font-bold">
+                        <span style={{ color: c.accent }}>Min: GH₵{p.prices.min}</span>
+                        <span style={{ color: c.warning }}>Avg: GH₵{p.prices.avg}</span>
+                        <span style={{ color: c.danger }}>Max: GH₵{p.prices.max}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <p className="text-xs mb-3 leading-relaxed" style={{ color: c.muted }}>{p.description}</p>
+
+                  {/* Inventory Link */}
+                  <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: c.border }}>
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                      {stockStatus === 'ok' && <><CircleCheck size={11} className="text-emerald-500" /><span className="text-emerald-500">In stock ({stockQty})</span></>}
+                      {stockStatus === 'low' && <><AlertCircle size={11} style={{ color: c.warning }} /><span style={{ color: c.warning }}>Low stock ({stockQty})</span></>}
+                      {stockStatus === 'out' && <><XCircle size={11} style={{ color: c.danger }} /><span style={{ color: c.danger }}>Out of stock</span></>}
+                      {stockStatus === 'not-in-inventory' && <><Info size={11} style={{ color: c.dim }} /><span style={{ color: c.dim }}>Not in inventory</span></>}
+                    </div>
+                    {hasStock && (
+                      <button onClick={() => router.push('/dashboard/inventory')}
+                        className="text-[10px] font-bold flex items-center gap-1" style={{ color: c.primary }}>
+                        View <ChevronRight size={11} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 flex items-center gap-1 text-[10px]" style={{ color: c.dim }}>
+                    <ArrowUpRight size={10} className="text-emerald-500" />
+                    <span className="text-emerald-500">{p.source}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* DISEASE ALERTS TAB                                                  */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'disease' && (
+        <div className="space-y-5 animate-in fade-in duration-300">
+          <div className="p-5 rounded-2xl border flex items-center justify-between" style={{ background: `${c.danger}08`, borderColor: `${c.danger}30` }}>
+            <div>
+              <h3 className="font-bold text-base flex items-center gap-2 text-red-500">
+                <AlertTriangle size={17} /> Disease Outbreak Alerts — Ghana & West Africa
+              </h3>
+              <p className="text-xs mt-1" style={{ color: c.muted }}>Real-time surveillance from WHO, Ghana Health Service, and Ministry of Health.</p>
+            </div>
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full animate-pulse bg-red-500/10 text-red-500">Live</span>
+          </div>
+
+          {/* Health Pulse KPIs */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {(data?.healthPulse?.metrics || []).map((m: any, i: number) => (
+              <div key={i} className="p-4 rounded-2xl border" style={{ background: c.cardBg, borderColor: c.border }}>
+                <p className="text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>{m.title}</p>
+                <p className="text-xl font-black font-display mb-1" style={{ color: c.text }}>{m.value}</p>
+                <p className="text-[10px] flex items-center gap-1" style={{ color: c.dim }}>
+                  {m.trend === 'up' ? <TrendingUp size={10} className="text-red-500" /> : m.trend === 'down' ? <TrendingDown size={10} className="text-emerald-500" /> : <Activity size={10} style={{ color: c.warning }} />}
+                  {m.description}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {/* Alert Cards */}
+          <div className="space-y-4">
+            {(data?.diseaseAlerts || []).map((alert: any) => (
+              <div key={alert.id} className="rounded-2xl border overflow-hidden" style={{ background: c.cardBg, borderColor: c.border }}>
+                {/* Alert Header */}
+                <div className="px-5 py-4 flex items-center justify-between border-b"
+                  style={{ borderColor: alert.level === 'WARNING' ? `${c.warning}30` : `${c.primary}30`, background: alert.level === 'WARNING' ? `${c.warning}08` : `${c.primary}08` }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                      style={{ background: alert.level === 'WARNING' ? `${c.warning}20` : `${c.primary}20`, color: alert.level === 'WARNING' ? c.warning : c.primary }}>
+                      <AlertTriangle size={16} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-sm" style={{ color: c.text }}>{alert.disease}</p>
+                      <div className="flex items-center gap-3 text-[10px] mt-0.5" style={{ color: c.dim }}>
+                        <span className="flex items-center gap-1"><MapPin size={9} />{alert.locations}</span>
+                        <span className="flex items-center gap-1"><CalendarDays size={9} />{alert.date}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+                    style={{ background: alert.level === 'WARNING' ? `${c.warning}20` : `${c.primary}20`, color: alert.level === 'WARNING' ? c.warning : c.primary }}>
+                    {alert.level}
+                  </span>
+                </div>
+                {/* Alert Body */}
+                <div className="px-5 py-4 space-y-3">
+                  <p className="text-sm leading-relaxed" style={{ color: c.text }}>{alert.description}</p>
+                  <div className="p-3.5 rounded-xl flex items-start gap-3" style={{ background: isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)', border: `1px solid ${c.warning}25` }}>
+                    <ShoppingCart size={15} style={{ color: c.warning, flexShrink: 0, marginTop: 1 }} />
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.warning }}>Pharmacy Action Required</p>
+                      <p className="text-xs leading-relaxed" style={{ color: c.text }}>{alert.action}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px]" style={{ color: c.dim }}>
+                    <ArrowUpRight size={10} className="text-emerald-500" />
+                    <span className="text-emerald-500 font-bold">{alert.source}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* DRUG INTELLIGENCE TAB                                              */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'drug' && (
+        <div className="space-y-5 animate-in fade-in duration-300">
+          {/* Search */}
+          <div className="p-5 rounded-2xl border" style={{ background: c.cardBg, borderColor: `rgba(0,217,255,0.2)` }}>
+            <div className="flex items-center gap-2 mb-4">
+              <BrainCircuit size={20} style={{ color: '#00D9FF' }} />
+              <div>
+                <h3 className="font-bold text-sm" style={{ color: c.text }}>AI Drug Intelligence</h3>
+                <p className="text-[10px]" style={{ color: c.muted }}>Look up any drug — clinical monographs powered by Gemini AI</p>
+              </div>
+            </div>
+            <div className="relative flex gap-2">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
+                <input type="text" placeholder="e.g. Metformin, Amoxicillin, Artemether..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSearchAi(searchQuery); }}
+                  className="w-full pl-10 pr-4 py-3 rounded-xl text-sm font-medium focus:outline-none"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.04)', color: c.text, border: `1px solid ${c.border}` }} />
+              </div>
+              <button onClick={() => handleSearchAi(searchQuery)} disabled={isSearchingAi || searchQuery.length < 2}
+                className="px-5 py-3 rounded-xl text-sm font-bold flex items-center gap-2 transition-all disabled:opacity-50"
+                style={{ background: '#00D9FF', color: '#0F172A' }}>
+                {isSearchingAi ? <><RefreshCw size={14} className="animate-spin" /> Analyzing...</> : <><BrainCircuit size={14} /> Search AI</>}
+              </button>
+            </div>
+          </div>
+
+          {/* AI Loading */}
+          {isSearchingAi && (
+            <div className="p-10 rounded-2xl border border-[#00D9FF]/20 text-center" style={{ background: 'rgba(0,217,255,0.04)' }}>
+              <BrainCircuit size={36} className="text-[#00D9FF] mx-auto mb-3 animate-pulse" />
+              <p className="font-bold text-sm text-[#00D9FF] mb-1">Compiling Clinical Monograph...</p>
+              <p className="text-xs" style={{ color: c.muted }}>Parsing clinical studies, dosing guidelines, and contraindications</p>
             </div>
           )}
 
+          {/* AI Results */}
+          {aiMonographs.map((drug: any, i: number) => {
+            const matchProd = products.find(p =>
+              p.name.toLowerCase().includes(drug.product.toLowerCase().split(' ')[0]) ||
+              (p.genericName || '').toLowerCase().includes(drug.product.toLowerCase().split(' ')[0])
+            );
+            return (
+              <div key={i} className="rounded-2xl border overflow-hidden animate-in fade-in slide-in-from-top-4 duration-500"
+                style={{ background: 'rgba(16,185,129,0.04)', borderColor: 'rgba(16,185,129,0.2)' }}>
+                <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(16,185,129,0.15)' }}>
+                  <div>
+                    <span className="font-bold text-base text-emerald-400">{drug.product}</span>
+                    {matchProd && (
+                      <button onClick={() => router.push('/dashboard/inventory')}
+                        className="ml-3 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${c.primary}18`, color: c.primary }}>
+                        In your inventory ({matchProd.stockQuantity} units)
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">AI Monograph</span>
+                </div>
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { label: 'Indications', value: drug.indications, color: c.primary },
+                    { label: 'Standard Dosage', value: drug.dosage, color: c.accent },
+                    { label: 'Drug Interactions', value: drug.interactions, color: c.warning },
+                    { label: 'Patient Counseling', value: drug.counseling, color: '#8B5CF6' },
+                    { label: 'Contraindications', value: drug.contraindications, color: c.danger },
+                    { label: 'Side Effects', value: drug.sideEffects, color: '#F97316' },
+                    { label: 'Storage', value: drug.storage, color: c.primary },
+                  ].filter(f => f.value).map((field, fi) => (
+                    <div key={fi} className="p-3.5 rounded-xl" style={{ background: `${field.color}09`, border: `1px solid ${field.color}20` }}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider mb-1.5" style={{ color: field.color }}>{field.label}</p>
+                      <p className="text-xs leading-relaxed" style={{ color: c.text }}>{field.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Static monographs */}
+          {!isSearchingAi && aiMonographs.length === 0 && (
+            <div className="space-y-4">
+              <p className="text-xs font-bold uppercase tracking-wider px-1" style={{ color: c.muted }}>Pre-loaded Monographs</p>
+              {(data?.drugIntelligence || []).map((drug: any, i: number) => {
+                const matchProd = products.find(p =>
+                  p.name.toLowerCase().includes(drug.product.toLowerCase().split(' ')[0])
+                );
+                return (
+                  <div key={i} className="rounded-2xl border overflow-hidden" style={{ background: c.cardBg, borderColor: c.border }}>
+                    <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: c.border }}>
+                      <div>
+                        <span className="font-bold text-sm" style={{ color: '#00D9FF' }}>{drug.product}</span>
+                        {matchProd && (
+                          <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${c.accent}18`, color: c.accent }}>
+                            {matchProd.stockQuantity} in stock
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] px-2 py-0.5 rounded bg-[#00D9FF]/10 text-[#00D9FF] font-bold">Static Monograph</span>
+                    </div>
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[
+                        { label: 'Indications', value: drug.indications, color: c.primary },
+                        { label: 'Dosage', value: drug.dosage, color: c.accent },
+                        { label: 'Patient Counseling', value: drug.counseling, color: c.purple },
+                        { label: 'Contraindications', value: drug.contraindications, color: c.danger },
+                      ].map((f, fi) => (
+                        <div key={fi} className="p-3 rounded-xl" style={{ background: `${f.color}09`, border: `1px solid ${f.color}20` }}>
+                          <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: f.color }}>{f.label}</p>
+                          <p className="text-xs leading-relaxed" style={{ color: c.text }}>{f.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!isSearchingAi && aiMonographs.length === 0 && searchQuery.length > 1 && (
+            <div className="p-8 rounded-2xl border text-center" style={{ background: c.cardBg, borderColor: c.border }}>
+              <p className="font-bold text-sm mb-1" style={{ color: c.text }}>No pre-loaded monograph for "{searchQuery}"</p>
+              <p className="text-xs mb-4" style={{ color: c.muted }}>Click Search AI to generate one instantly with Gemini</p>
+              <button onClick={() => handleSearchAi(searchQuery)} className="px-4 py-2 rounded-xl text-sm font-bold" style={{ background: '#00D9FF', color: '#0F172A' }}>
+                Generate AI Monograph
+              </button>
+            </div>
+          )}
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* STAFF LEARNING TAB                                                 */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'learning' && (
+        <div className="space-y-5 animate-in fade-in duration-300">
+          <div className="p-5 rounded-2xl border flex items-center justify-between" style={{ background: `${c.purple}08`, borderColor: `${c.purple}25` }}>
+            <div>
+              <h3 className="font-bold text-base flex items-center gap-2" style={{ color: c.purple }}>
+                <GraduationCap size={17} /> Staff Learning Centre
+              </h3>
+              <p className="text-xs mt-1" style={{ color: c.muted }}>Clinical drug education modules for pharmacy staff. Track your progress.</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xl font-black" style={{ color: c.purple }}>{completedLessons.size}/{data?.staffLearning?.length ?? 4}</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: c.muted }}>completed</p>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(148,163,184,0.1)' : 'rgba(203,213,225,0.4)' }}>
+            <div className="h-full rounded-full transition-all duration-700"
+              style={{ width: `${data?.staffLearning?.length ? (completedLessons.size / data.staffLearning.length) * 100 : 0}%`, background: `linear-gradient(90deg, ${c.purple}, #EC4899)` }} />
+          </div>
+
+          <div className="space-y-3">
+            {(data?.staffLearning || []).map((module: any) => {
+              const isExpanded = expandedLesson === module.id;
+              const isDone = completedLessons.has(module.id);
+              return (
+                <div key={module.id} className="rounded-2xl border overflow-hidden transition-all"
+                  style={{ background: c.cardBg, borderColor: isDone ? `${c.accent}30` : c.border }}>
+                  <button className="w-full px-5 py-4 flex items-center gap-4 text-left"
+                    onClick={() => setExpandedLesson(isExpanded ? null : module.id)}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: isDone ? `${c.accent}20` : `${c.purple}18`, color: isDone ? c.accent : c.purple }}>
+                      {isDone ? <CheckCircle size={18} /> : <GraduationCap size={18} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="font-bold text-sm" style={{ color: c.text }}>{module.title}</p>
+                        {isDone && <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-emerald-500/10 text-emerald-500">✓ Done</span>}
+                      </div>
+                      <div className="flex items-center gap-3 text-[10px]" style={{ color: c.dim }}>
+                        <span className="font-bold" style={{ color: c.purple }}>{module.level}</span>
+                        <span className="flex items-center gap-1"><Clock size={9} />{module.duration}</span>
+                        <span>{module.category}</span>
+                      </div>
+                    </div>
+                    <ChevronDown size={16} style={{ color: c.muted, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                  </button>
+
+                  {isExpanded && (
+                    <div className="px-5 pb-5 border-t" style={{ borderColor: c.border }}>
+                      <p className="text-sm leading-relaxed mt-4 mb-4" style={{ color: c.text }}>{module.description}</p>
+                      <div className="flex gap-3">
+                        <button onClick={() => setCompletedLessons(prev => { const n = new Set(prev); n.has(module.id) ? n.delete(module.id) : n.add(module.id); return n; })}
+                          className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all"
+                          style={{ background: isDone ? `${c.muted}20` : `${c.purple}15`, color: isDone ? c.muted : c.purple, border: `1px solid ${isDone ? c.border : `${c.purple}30`}` }}>
+                          {isDone ? 'Mark as Not Done' : 'Mark as Complete'}
+                        </button>
+                        <button onClick={() => { setActiveTab('drug'); setSearchQuery(module.title.split(' ')[0]); }}
+                          className="px-4 py-2.5 rounded-xl text-sm font-bold"
+                          style={{ background: '#00D9FF', color: '#0F172A' }}>
+                          <BrainCircuit size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* MARKET NEWS TAB                                                    */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'news' && (
+        <div className="space-y-5 animate-in fade-in duration-300">
+          <div className="p-5 rounded-2xl border flex items-center justify-between" style={{ background: `${c.primary}08`, borderColor: `${c.primary}25` }}>
+            <div>
+              <h3 className="font-bold text-base flex items-center gap-2" style={{ color: c.primary }}>
+                <Newspaper size={17} /> Ghana & Global Pharma News
+              </h3>
+              <p className="text-xs mt-1" style={{ color: c.muted }}>WHO directives, FDA announcements, supply chain shifts and NHIS updates.</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {(data?.news || []).map((n: any) => (
+              <div key={n.id} className="p-5 rounded-2xl border transition-all hover:shadow-md cursor-pointer group"
+                style={{ background: c.cardBg, borderColor: n.urgency === 'critical' ? `${c.danger}25` : c.border }}>
+                {n.urgency === 'critical' && (
+                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-red-500 mb-3 px-2.5 py-1.5 rounded-lg w-fit" style={{ background: `${c.danger}10` }}>
+                    <Flame size={10} /> CRITICAL ALERT
+                  </div>
+                )}
+                <div className="flex items-start justify-between gap-3 mb-2">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background: `${c.primary}15`, color: c.primary }}>{n.source}</span>
+                  <span className="text-[10px]" style={{ color: c.dim }}>{n.time}</span>
+                </div>
+                <p className="font-bold text-sm leading-snug mb-3" style={{ color: c.text }}>{n.title}</p>
+                <div className="flex items-center justify-between pt-3 border-t" style={{ borderColor: c.border }}>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded"
+                    style={{ background: n.urgency === 'critical' ? `${c.danger}15` : n.urgency === 'high' ? `${c.warning}15` : `${c.accent}15`,
+                      color: n.urgency === 'critical' ? c.danger : n.urgency === 'high' ? c.warning : c.accent }}>
+                    {n.urgency === 'critical' ? '⚠ Critical' : n.urgency === 'high' ? '↑ High Priority' : '· Normal'}
+                  </span>
+                  <ArrowUpRight size={14} style={{ color: c.dim }} className="group-hover:text-blue-500 transition-colors" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

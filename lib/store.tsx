@@ -384,7 +384,7 @@ interface StoreState {
 
   // Refetch helpers
   refetchProducts: () => Promise<void>;
-  refetchSales: () => Promise<void>;
+  refetchSales: (branchId?: string) => Promise<void>;
   refetchStaff: () => Promise<void>;
   refetchCustomers: () => Promise<void>;
   refetchPrescriptions: () => Promise<void>;
@@ -623,17 +623,22 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
-  const refetchSales = useCallback(async () => {
+  const refetchSales = useCallback(async (branchId?: string) => {
     setLoadingSales(true);
     try {
       // Serve stale cache instantly so dashboard paints immediately
-      const cached = await getFromCache('sales_cache');
+      const cacheKey = branchId ? `sales_cache_${branchId}` : 'sales_cache';
+      const cached = await getFromCache(cacheKey);
       if (cached?.length) setSales(cached);
 
-      const data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED, { limit: 200, offset: 0 });
+      const data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED, {
+        limit: 500,
+        offset: 0,
+        branchId: branchId ?? undefined,
+      });
       if (data.sales) {
         setSales(data.sales);
-        await saveToCache('sales_cache', data.sales);
+        await saveToCache(cacheKey, data.sales);
       }
     } catch (e: any) {
       console.warn('[store] sales fetch failed:', e.message);

@@ -203,8 +203,8 @@ export const Q_SALES = `
 
 // Paginated query for scalability (optional - falls back to full fetch if not supported by API)
 export const Q_SALES_PAGINATED = `
-  query GetSalesPaginated($offset: Int, $limit: Int) {
-    sales(offset: $offset, limit: $limit) {
+  query GetSalesPaginated($offset: Int, $limit: Int, $branchId: String) {
+    sales(offset: $offset, limit: $limit, branchId: $branchId) {
       id totalAmount amountPaid change paymentMethod
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue

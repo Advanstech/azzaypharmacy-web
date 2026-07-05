@@ -40,11 +40,15 @@ export default function EnhancedSalesPage() {
   const [mounted, setMounted] = useState(false);
   const { sales, loadingSales, refetchSales, me, products, customers, requestRefund, deleteSale } = useStore();
   const { user } = useCustomAuth();
-  const { branches } = useBranch();
+  const { branches, activeBranchId } = useBranch();
 
   const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
   const canDeleteSales = ['ROOT', 'SE_ADMIN', 'OWNER'].includes(role || '');
+
+  useEffect(() => {
+    refetchSales(activeBranchId ?? undefined);
+  }, [activeBranchId, refetchSales]);
 
   const [search, setSearch] = useState('');
   const effectiveDay = useMemo(() => getEffectiveToday(), []);
@@ -897,7 +901,7 @@ export default function EnhancedSalesPage() {
             <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
             <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
           </div>
-          <button onClick={() => refetchSales()} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+          <button onClick={() => refetchSales(activeBranchId ?? undefined)} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
             <RefreshCw size={14} />
             Refresh
           </button>
