@@ -6,7 +6,7 @@ import { useTheme } from 'next-themes';
 import { useStore } from '@/lib/store';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
-import { useBranchFilter } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 import {
   TrendingUp, TrendingDown, BarChart3, Calendar, Download, DollarSign,
@@ -40,14 +40,31 @@ export default function AnalyticsPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const [period, setPeriod] = useState('7 Days');
 
-  const { sales, products, staff, customers, loadingSales } = useStore();
+  const { sales, products, staff, customers, loadingSales, refetchSales } = useStore();
   const { user } = useCustomAuth();
   const role = (user?.role || user?.user_metadata?.role as string) || '';
   const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role);
 
+  const { activeBranchId } = useBranch();
   const branchFilter = useBranchFilter();
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
   const branchProducts = useMemo(() => branchFilter(products), [branchFilter, products]);
+
+  // Fetch sales for the selected period from the backend. This avoids the
+  // previous bug where 90-day / Year views were capped to the latest 500 sales
+  // loaded into the store regardless of the selected date range.
+  useEffect(() => {
+    const now = new Date();
+    const isoToday = now.toISOString().split('T')[0];
+    let from = isoToday;
+    const periodDays = period === 'Today' ? 1 : period === '7 Days' ? 7 : period === '30 Days' ? 30 : period === '90 Days' ? 90 : 365;
+
+    const d = new Date();
+    d.setDate(d.getDate() - periodDays + 1);
+    from = d.toISOString().split('T')[0];
+
+    refetchSales(activeBranchId ?? undefined, from, isoToday);
+  }, [period, activeBranchId, refetchSales]);
 
   const s = useCardStyles(isDark);
   const now = new Date();

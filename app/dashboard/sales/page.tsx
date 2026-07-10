@@ -46,20 +46,55 @@ export default function EnhancedSalesPage() {
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
   const canDeleteSales = ['ROOT', 'SE_ADMIN', 'OWNER'].includes(role || '');
 
-  useEffect(() => {
-    refetchSales(activeBranchId ?? undefined);
-  }, [activeBranchId, refetchSales]);
-
   const [search, setSearch] = useState('');
   const effectiveDay = useMemo(() => getEffectiveToday(), []);
   const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30);
+    const d = new Date(); d.setDate(d.getDate() - 7);
     return d.toISOString().split('T')[0];
   });
   const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
   const [paymentFilter, setPaymentFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [metricPeriod, setMetricPeriod] = useState<'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'>('WEEKLY');
+
+  // Fetch sales for the active branch + date range from the backend.
+  // Without this, the page filters a capped in-memory list (limit 500) and
+  // misses older sales, making "This Year" / 90-day totals incorrect.
+  useEffect(() => {
+    refetchSales(activeBranchId ?? undefined, dateFrom, dateTo);
+  }, [activeBranchId, dateFrom, dateTo, refetchSales]);
+
+  // Metric-period buttons control the date range used for both KPIs and table.
+  useEffect(() => {
+    const now = new Date();
+    const isoToday = now.toISOString().split('T')[0];
+    let from = isoToday;
+
+    switch (metricPeriod) {
+      case 'DAILY':
+        from = isoToday;
+        break;
+      case 'WEEKLY': {
+        const d = new Date();
+        d.setDate(d.getDate() - 7);
+        from = d.toISOString().split('T')[0];
+        break;
+      }
+      case 'MONTHLY': {
+        const d = new Date(now.getFullYear(), now.getMonth(), 1);
+        from = d.toISOString().split('T')[0];
+        break;
+      }
+      case 'YEARLY': {
+        const d = new Date(now.getFullYear(), 0, 1);
+        from = d.toISOString().split('T')[0];
+        break;
+      }
+    }
+
+    setDateFrom(from);
+    setDateTo(isoToday);
+  }, [metricPeriod]);
 
   const [selectedSale, setSelectedSale] = useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -643,14 +678,53 @@ export default function EnhancedSalesPage() {
       };
     });
 
-    // 3D Chart Data preparation (Day by Day)
-    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const dayMap: Record<string, number> = {};
-    periodSales.forEach(s => {
-      const d = new Date(s.createdAt).toLocaleDateString('en-GB', { weekday: 'short' });
-      dayMap[d] = (dayMap[d] || 0) + s.totalAmount;
-    });
-    const trendData = days.map(d => ({ day: d, amount: dayMap[d] || 0 }));
+    // Revenue trajectory: bucket granularity must match the selected metric
+    // period, otherwise switching Today/Week/Month/Year filters just re-sums
+    // the same 7 weekday buckets and the chart appears unresponsive.
+    const trendNow = new Date();
+    let trendData: { day: string; amount: number }[];
+    if (metricPeriod === 'DAILY') {
+      // Hourly buckets across typical trading hours
+      trendData = hourlySales
+        .filter(h => h.hour >= 6 && h.hour <= 22)
+        .map(h => ({ day: `${h.hour}:00`, amount: h.revenue }));
+    } else if (metricPeriod === 'WEEKLY') {
+      // Chronological daily buckets for the last 7 days
+      trendData = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(trendNow);
+        d.setDate(d.getDate() - (6 - i));
+        const dayStr = d.toISOString().split('T')[0];
+        const amount = periodSales
+          .filter(sale => new Date(sale.createdAt).toISOString().split('T')[0] === dayStr)
+          .reduce((sum, sale) => sum + sale.totalAmount, 0);
+        return { day: d.toLocaleDateString('en-GB', { weekday: 'short' }), amount };
+      });
+    } else if (metricPeriod === 'MONTHLY') {
+      // Daily buckets across the current calendar month
+      const daysInMonth = new Date(trendNow.getFullYear(), trendNow.getMonth() + 1, 0).getDate();
+      trendData = Array.from({ length: daysInMonth }, (_, i) => {
+        const day = i + 1;
+        const amount = periodSales
+          .filter(sale => {
+            const d = new Date(sale.createdAt);
+            return d.getDate() === day && d.getMonth() === trendNow.getMonth() && d.getFullYear() === trendNow.getFullYear();
+          })
+          .reduce((sum, sale) => sum + sale.totalAmount, 0);
+        return { day: String(day), amount };
+      });
+    } else {
+      // YEARLY: monthly buckets across the current calendar year
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      trendData = months.map((label, idx) => {
+        const amount = periodSales
+          .filter(sale => {
+            const d = new Date(sale.createdAt);
+            return d.getMonth() === idx && d.getFullYear() === trendNow.getFullYear();
+          })
+          .reduce((sum, sale) => sum + sale.totalAmount, 0);
+        return { day: label, amount };
+      });
+    }
 
     return {
       totalRevenue,

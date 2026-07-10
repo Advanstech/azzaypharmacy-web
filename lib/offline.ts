@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'azzay-offline';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export async function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -26,8 +26,43 @@ export async function openDB(): Promise<IDBDatabase> {
         const store = db.createObjectStore('pending_sales', { keyPath: 'id' });
         store.createIndex('timestamp', 'timestamp', { unique: false });
       }
+      // Generic key-value store for arbitrary/dynamic cache keys (e.g. sales
+      // filtered by branch + date range) that don't map to a fixed object store.
+      if (!db.objectStoreNames.contains('kv_cache')) {
+        db.createObjectStore('kv_cache', { keyPath: 'key' });
+      }
     };
   });
+}
+
+/** Generic key-value cache for dynamic/composite cache keys (e.g. range-scoped queries). */
+export async function saveKV(key: string, value: any): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('kv_cache', 'readwrite');
+    tx.objectStore('kv_cache').put({ key, value });
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn(`[offline] Failed to save KV cache for ${key}:`, e);
+  }
+}
+
+export async function getKV(key: string): Promise<any | undefined> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('kv_cache', 'readonly');
+    const request = tx.objectStore('kv_cache').get(key);
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result?.value);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.warn(`[offline] Failed to read KV cache for ${key}:`, e);
+    return undefined;
+  }
 }
 
 export async function saveToCache(storeName: string, items: any[]) {

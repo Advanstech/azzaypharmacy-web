@@ -162,6 +162,8 @@ export const Q_PRODUCTS = `
     products {
       id name genericName brand category sellingPrice costPrice branchId
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
+      updatedAt
+      supplier { id name }
       stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
@@ -203,8 +205,8 @@ export const Q_SALES = `
 
 // Paginated query for scalability (optional - falls back to full fetch if not supported by API)
 export const Q_SALES_PAGINATED = `
-  query GetSalesPaginated($offset: Int, $limit: Int, $branchId: String) {
-    sales(offset: $offset, limit: $limit, branchId: $branchId) {
+  query GetSalesPaginated($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String) {
+    sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
       id totalAmount amountPaid change paymentMethod
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
@@ -698,6 +700,93 @@ export const Q_LEDGER = `
     ledgerEntries(branchId: $branchId) {
       id type account amount date description
     }
+  }
+`;
+
+export const Q_FINANCIAL_SUMMARY = `
+  query GetFinancialSummary($branchId: String, $startDate: String!, $endDate: String!) {
+    financialSummary(branchId: $branchId, startDate: $startDate, endDate: $endDate) {
+      totalRevenue
+      totalExpenses
+      netProfit
+      cogs
+      supplierPayments
+      outstandingPayables
+      inventoryValue
+      timeSeries { label revenue expenses profit }
+      expenseCategories { label value }
+      payablesAging { label value }
+    }
+  }
+`;
+
+export const Q_BUDGETS = `
+  query GetBudgets($branchId: String) {
+    budgets(branchId: $branchId) {
+      id branchId category amount period startDate endDate notes isActive createdAt updatedAt
+    }
+  }
+`;
+
+export const Q_BUDGET_VS_ACTUAL = `
+  query GetBudgetVsActual($branchId: String, $startDate: String!, $endDate: String!) {
+    budgetVsActual(branchId: $branchId, startDate: $startDate, endDate: $endDate) {
+      items { category budget actual variance }
+      totalBudget
+      totalActual
+    }
+  }
+`;
+
+export const M_CREATE_BUDGET = `
+  mutation CreateBudget(
+    $branchId: String!
+    $category: String!
+    $amount: Float!
+    $period: String!
+    $startDate: String!
+    $endDate: String!
+    $notes: String
+  ) {
+    createBudget(
+      branchId: $branchId
+      category: $category
+      amount: $amount
+      period: $period
+      startDate: $startDate
+      endDate: $endDate
+      notes: $notes
+    ) {
+      id branchId category amount period startDate endDate notes isActive createdAt updatedAt
+    }
+  }
+`;
+
+export const M_UPDATE_BUDGET = `
+  mutation UpdateBudget(
+    $id: ID!
+    $amount: Float
+    $startDate: String
+    $endDate: String
+    $notes: String
+    $isActive: Boolean
+  ) {
+    updateBudget(
+      id: $id
+      amount: $amount
+      startDate: $startDate
+      endDate: $endDate
+      notes: $notes
+      isActive: $isActive
+    ) {
+      id branchId category amount period startDate endDate notes isActive createdAt updatedAt
+    }
+  }
+`;
+
+export const M_DELETE_BUDGET = `
+  mutation DeleteBudget($id: ID!) {
+    deleteBudget(id: $id)
   }
 `;
 

@@ -12,8 +12,9 @@ import {
 import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_STAFF, Q_ME, Q_CUSTOMERS,
-  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_INVOICES, Q_REFUND_REQUESTS,
+  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_FINANCIAL_SUMMARY, Q_BUDGETS, Q_BUDGET_VS_ACTUAL, Q_INVOICES, Q_REFUND_REQUESTS,
   M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
+  M_CREATE_BUDGET, M_UPDATE_BUDGET, M_DELETE_BUDGET,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD, M_DELETE_STAFF,
   M_UPDATE_PRODUCT_PRICES, M_BULK_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
@@ -22,7 +23,7 @@ import {
   M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND,
   Q_STOCK_TRANSFERS
 } from './gql';
-import { saveToCache, getFromCache, savePendingSale, isOnline } from './offline';
+import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, isOnline } from './offline';
 import { initTauriSync } from './tauri-sync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -47,6 +48,8 @@ export interface Product {
   costPrice: number;
   stockQuantity: number;
   supplierId?: string;
+  supplier?: { id: string; name: string };
+  updatedAt?: string;
   imageUrl?: string;
   strength?: string;
   dosageForm?: string;
@@ -287,6 +290,63 @@ export interface LedgerEntry {
   paymentMethod?: string;
 }
 
+export interface FinancialTimeSeries {
+  label: string;
+  revenue: number;
+  expenses: number;
+  profit: number;
+}
+
+export interface ExpenseCategoryBreakdown {
+  label: string;
+  value: number;
+}
+
+export interface PayableAgingBucket {
+  label: string;
+  value: number;
+}
+
+export interface FinancialSummary {
+  totalRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+  cogs: number;
+  supplierPayments: number;
+  outstandingPayables: number;
+  inventoryValue: number;
+  timeSeries: FinancialTimeSeries[];
+  expenseCategories: ExpenseCategoryBreakdown[];
+  payablesAging: PayableAgingBucket[];
+}
+
+export interface Budget {
+  id: string;
+  branchId: string;
+  category: string;
+  amount: number;
+  period: 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+  startDate: string;
+  endDate: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetVsActualItem {
+  category: string;
+  budget: number;
+  actual: number;
+  variance: number;
+}
+
+export interface BudgetVsActualSummary {
+  items: BudgetVsActualItem[];
+  totalBudget: number;
+  totalActual: number;
+}
+
 export interface StockTransferItem {
   id: string;
   quantity: number;
@@ -371,6 +431,12 @@ interface StoreState {
   loadingTransfers: boolean;
   expenseCategories: ExpenseCategory[];
   loadingExpenseCategories: boolean;
+  financialSummary: FinancialSummary | null;
+  loadingFinancialSummary: boolean;
+  budgets: Budget[];
+  loadingBudgets: boolean;
+  budgetVsActual: BudgetVsActualSummary | null;
+  loadingBudgetVsActual: boolean;
 
   // Errors
   error: string | null;
@@ -384,7 +450,7 @@ interface StoreState {
 
   // Refetch helpers
   refetchProducts: () => Promise<void>;
-  refetchSales: (branchId?: string) => Promise<void>;
+  refetchSales: (branchId?: string, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchStaff: () => Promise<void>;
   refetchCustomers: () => Promise<void>;
   refetchPrescriptions: () => Promise<void>;
@@ -394,6 +460,9 @@ interface StoreState {
   refetchLedger: () => Promise<void>;
   refetchExpenseCategories: () => Promise<void>;
   refetchTransfers: () => Promise<void>;
+  refetchFinancialSummary: (branchId?: string, startDate?: string, endDate?: string) => Promise<void>;
+  refetchBudgets: (branchId?: string) => Promise<void>;
+  refetchBudgetVsActual: (branchId?: string, startDate?: string, endDate?: string) => Promise<void>;
   refetchAll: () => Promise<void>;
 
   // Mutations
@@ -537,6 +606,26 @@ interface StoreState {
     date: string;
     receiptUrl?: string;
   }) => Promise<Expense>;
+
+  createBudget: (args: {
+    branchId?: string;
+    category: string;
+    amount: number;
+    period: 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+    startDate: string;
+    endDate: string;
+    notes?: string;
+  }) => Promise<Budget>;
+
+  updateBudget: (id: string, args: {
+    amount?: number;
+    startDate?: string;
+    endDate?: string;
+    notes?: string;
+    isActive?: boolean;
+  }) => Promise<Budget>;
+
+  deleteBudget: (id: string) => Promise<void>;
 }
 
 const StoreContext = createContext<StoreState | null>(null);
@@ -547,6 +636,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
+  // Monotonic counter guarding refetchSales against out-of-order resolution
+  // (see refetchSales below for details).
+  const salesRequestIdRef = useRef(0);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [me, setMe] = useState<StaffMember | null>(null);
@@ -568,6 +660,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [loadingExpenseCategories, setLoadingExpenseCategories] = useState(false);
+  const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
+  const [loadingFinancialSummary, setLoadingFinancialSummary] = useState(false);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [loadingBudgets, setLoadingBudgets] = useState(false);
+  const [budgetVsActual, setBudgetVsActual] = useState<BudgetVsActualSummary | null>(null);
+  const [loadingBudgetVsActual, setLoadingBudgetVsActual] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'error'>('idle');
   const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
@@ -623,27 +721,36 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
-  const refetchSales = useCallback(async (branchId?: string) => {
+  const refetchSales = useCallback(async (branchId?: string, dateFrom?: string, dateTo?: string) => {
+    // Guard against out-of-order resolution: multiple pages/components can call
+    // refetchSales with different ranges in quick succession (e.g. navigating
+    // from Sales → Analytics while an older, narrower-range fetch is still
+    // in flight). Without this, whichever request resolves LAST wins and can
+    // silently overwrite fresher/wider data with stale/narrow results.
+    const requestId = ++salesRequestIdRef.current;
     setLoadingSales(true);
     try {
       // Serve stale cache instantly so dashboard paints immediately
-      const cacheKey = branchId ? `sales_cache_${branchId}` : 'sales_cache';
-      const cached = await getFromCache(cacheKey);
-      if (cached?.length) setSales(cached);
+      const rangeKey = dateFrom || dateTo ? `${dateFrom}_${dateTo}` : '';
+      const cacheKey = ['sales_cache', branchId || '', rangeKey].filter(Boolean).join('_');
+      const cached = await getKV(cacheKey);
+      if (cached?.length && requestId === salesRequestIdRef.current) setSales(cached);
 
       const data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED, {
-        limit: 500,
+        limit: dateFrom || dateTo ? 10000 : 500,
         offset: 0,
         branchId: branchId ?? undefined,
+        dateFrom: dateFrom ?? undefined,
+        dateTo: dateTo ?? undefined,
       });
       if (data.sales) {
-        setSales(data.sales);
-        await saveToCache(cacheKey, data.sales);
+        if (requestId === salesRequestIdRef.current) setSales(data.sales);
+        await saveKV(cacheKey, data.sales);
       }
     } catch (e: any) {
       console.warn('[store] sales fetch failed:', e.message);
     } finally {
-      setLoadingSales(false);
+      if (requestId === salesRequestIdRef.current) setLoadingSales(false);
     }
   }, []);
 
@@ -768,6 +875,47 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       console.warn('[store] ledger fetch failed:', e.message);
     } finally {
       setLoadingLedger(false);
+    }
+  }, [me?.branchId]);
+
+  const refetchFinancialSummary = useCallback(async (branchId?: string, startDate?: string, endDate?: string) => {
+    const effectiveBranchId = branchId || me?.branchId;
+    if (!effectiveBranchId || !startDate || !endDate) return;
+    setLoadingFinancialSummary(true);
+    try {
+      const data = await gql<{ financialSummary: FinancialSummary }>(Q_FINANCIAL_SUMMARY, { branchId: effectiveBranchId, startDate, endDate });
+      setFinancialSummary(data.financialSummary ?? null);
+    } catch (e: any) {
+      console.warn('[store] financial summary fetch failed:', e.message);
+    } finally {
+      setLoadingFinancialSummary(false);
+    }
+  }, [me?.branchId]);
+
+  const refetchBudgets = useCallback(async (branchId?: string) => {
+    const effectiveBranchId = branchId || me?.branchId;
+    setLoadingBudgets(true);
+    try {
+      const data = await gql<{ budgets: Budget[] }>(Q_BUDGETS, { branchId: effectiveBranchId });
+      setBudgets(data.budgets ?? []);
+    } catch (e: any) {
+      console.warn('[store] budgets fetch failed:', e.message);
+    } finally {
+      setLoadingBudgets(false);
+    }
+  }, [me?.branchId]);
+
+  const refetchBudgetVsActual = useCallback(async (branchId?: string, startDate?: string, endDate?: string) => {
+    const effectiveBranchId = branchId || me?.branchId;
+    if (!effectiveBranchId || !startDate || !endDate) return;
+    setLoadingBudgetVsActual(true);
+    try {
+      const data = await gql<{ budgetVsActual: BudgetVsActualSummary }>(Q_BUDGET_VS_ACTUAL, { branchId: effectiveBranchId, startDate, endDate });
+      setBudgetVsActual(data.budgetVsActual ?? null);
+    } catch (e: any) {
+      console.warn('[store] budget vs actual fetch failed:', e.message);
+    } finally {
+      setLoadingBudgetVsActual(false);
     }
   }, [me?.branchId]);
   const refetchRefundRequests = useCallback(async () => {
@@ -1319,6 +1467,41 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     return newExpense;
   }, [me?.branchId, refetchLedger]);
 
+  const createBudget = useCallback(async (args: {
+    branchId?: string;
+    category: string;
+    amount: number;
+    period: 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
+    startDate: string;
+    endDate: string;
+    notes?: string;
+  }): Promise<Budget> => {
+    const branchId = args.branchId || me?.branchId;
+    if (!branchId) throw new Error('No branch assigned');
+    const data = await gql<{ createBudget: Budget }>(M_CREATE_BUDGET, { ...args, branchId });
+    const newBudget = data.createBudget;
+    setBudgets(prev => [newBudget, ...prev]);
+    return newBudget;
+  }, [me?.branchId]);
+
+  const updateBudget = useCallback(async (id: string, args: {
+    amount?: number;
+    startDate?: string;
+    endDate?: string;
+    notes?: string;
+    isActive?: boolean;
+  }): Promise<Budget> => {
+    const data = await gql<{ updateBudget: Budget }>(M_UPDATE_BUDGET, { id, ...args });
+    const updated = data.updateBudget;
+    setBudgets(prev => prev.map(b => b.id === id ? updated : b));
+    return updated;
+  }, []);
+
+  const deleteBudget = useCallback(async (id: string): Promise<void> => {
+    await gql(M_DELETE_BUDGET, { id });
+    setBudgets(prev => prev.filter(b => b.id !== id));
+  }, []);
+
   const deleteInvoice = useCallback(async (invoiceId: string): Promise<void> => {
     await gql(M_DELETE_INVOICE, { invoiceId });
     setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
@@ -1359,11 +1542,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       stockTransfers, loadingTransfers,
       loadingProducts, loadingSuppliers, loadingSales, loadingStaff, loadingCustomers,
       loadingPrescriptions, loadingPurchases, loadingInvoices, loadingExpenses, loadingExpenseCategories, loadingLedger,
+      financialSummary, loadingFinancialSummary,
+      budgets, loadingBudgets, budgetVsActual, loadingBudgetVsActual,
       error, syncStatus,
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
       refetchProducts, refetchSales, refetchStaff, refetchCustomers,
-      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchAll,
+      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
       createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, bulkUpdateProductPrices, updateProductFull,
       updateProductSupplier,
@@ -1377,7 +1562,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       createProduct, deleteProduct, adjustProductStock,
       createSupplier, updateSupplier, deleteSupplier,
       recordSupplierPayment, deleteInvoice, deleteSale,
-      createExpense,
+      createExpense, createBudget, updateBudget, deleteBudget,
     }}>
       {children}
     </StoreContext.Provider>

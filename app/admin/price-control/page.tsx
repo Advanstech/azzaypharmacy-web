@@ -1,14 +1,13 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTheme } from 'next-themes';
-import { useEffect } from 'react';
 import {
-  Tags, Search, X, Check, AlertTriangle, Loader2, RefreshCw,
-  TrendingUp, TrendingDown, DollarSign, Package, Filter,
-  ChevronUp, ChevronDown, Save, RotateCcw, Percent,
+  Tags, Search, X, AlertTriangle, Loader2, RefreshCw,
+  TrendingUp, TrendingDown, Package, Save, RotateCcw, Percent,
   ArrowUpRight, ArrowDownRight, Info, CheckCheck, Edit3,
-  SortAsc, SortDesc, ChevronLeft, ChevronRight,
+  SortAsc, SortDesc, ChevronLeft, ChevronRight, ChevronUp, ChevronDown,
+  Truck, Eye, Calculator, Clock,
 } from 'lucide-react';
 import { useStore, type Product } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
@@ -21,6 +20,25 @@ interface PriceEdit {
   sellingPrice: number;
   originalCost: number;
   originalSell: number;
+}
+
+type SortField = 'name' | 'sellingPrice' | 'costPrice' | 'markup' | 'stock' | 'updatedAt';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function markupOf(cost: number, sell: number) {
+  return cost > 0 ? ((sell - cost) / cost) * 100 : 0;
+}
+
+function relativeDate(iso?: string) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return d.toLocaleDateString();
 }
 
 // ─── Theme helper ─────────────────────────────────────────────────────────────
@@ -45,14 +63,16 @@ function useColors(isDark: boolean) {
 
 function MarkupBadge({ cost, sell, c }: { cost: number; sell: number; c: any }) {
   if (cost <= 0) return <span style={{ color: c.muted }} className="text-[10px]">—</span>;
-  const markup = ((sell - cost) / cost) * 100;
+  const markup = markupOf(cost, sell);
   const isGood = markup >= 20;
   const isOk = markup >= 10;
-  const color = isGood ? c.success : isOk ? c.warning : c.danger;
+  const isLoss = sell < cost;
+  const color = isLoss ? c.danger : isGood ? c.success : isOk ? c.warning : c.danger;
+  const label = isLoss ? 'LOSS' : `${markup.toFixed(1)}%`;
   return (
     <span className="text-[11px] font-black px-2 py-0.5 rounded-full"
       style={{ background: `${color}18`, color }}>
-      {markup.toFixed(1)}%
+      {label}
     </span>
   );
 }
@@ -62,7 +82,7 @@ function MarkupBadge({ cost, sell, c }: { cost: number; sell: number; c: any }) 
 function Delta({ original, current, c }: { original: number; current: number; c: any }) {
   if (original === current) return null;
   const diff = current - original;
-  const pct = Math.abs((diff / original) * 100).toFixed(1);
+  const pct = original ? Math.abs((diff / original) * 100).toFixed(1) : '0.0';
   const up = diff > 0;
   return (
     <span className="flex items-center gap-0.5 text-[10px] font-bold"
@@ -70,6 +90,65 @@ function Delta({ original, current, c }: { original: number; current: number; c:
       {up ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
       {up ? '+' : ''}{diff.toFixed(2)} ({pct}%)
     </span>
+  );
+}
+
+// ─── Inline price cell ───────────────────────────────────────────────────────
+
+function PriceCell({
+  value,
+  original,
+  prefix,
+  accent,
+  isEditing,
+  readOnly,
+  onStart,
+  onChange,
+  onCommit,
+  onKeyDown,
+}: {
+  value: number;
+  original: number;
+  prefix: string;
+  accent: string;
+  isEditing: boolean;
+  readOnly: boolean;
+  onStart: () => void;
+  onChange: (v: number) => void;
+  onCommit: () => void;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+}) {
+  const changed = value !== original;
+  if (readOnly || !isEditing) {
+    return (
+      <button
+        onClick={readOnly ? undefined : onStart}
+        className={`flex flex-col items-end gap-0.5 ${readOnly ? 'cursor-default' : 'cursor-text'}`}
+      >
+        <span className="text-sm font-black" style={{ color: changed ? accent : 'inherit' }}>
+          {prefix} {value.toFixed(2)}
+        </span>
+        <Delta original={original} current={value} c={{ success: '#10B981', danger: '#EF4444' }} />
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1 rounded-lg overflow-hidden"
+        style={{ border: `1px solid ${changed ? accent : '#E2E8F0'}`, background: '#FFF7F0' }}>
+        <span className="pl-2 text-xs flex-shrink-0 text-slate-400">GH₵</span>
+        <input
+          type="number" min={0} step={0.01}
+          value={value}
+          onChange={e => onChange(parseFloat(e.target.value) || 0)}
+          onBlur={onCommit}
+          onKeyDown={onKeyDown}
+          className="flex-1 py-1.5 pr-2 text-sm font-bold text-right focus:outline-none bg-transparent"
+          style={{ color: changed ? accent : 'inherit', width: '80px' }}
+          autoFocus
+        />
+      </div>
+    </div>
   );
 }
 
@@ -84,13 +163,14 @@ export default function PriceControlPage() {
   const isDark = mounted && resolvedTheme === 'dark';
   const c = useColors(isDark);
 
-  const { products, loadingProducts, refetchProducts, bulkUpdateProductPrices, me } = useStore();
+  const { products, suppliers, loadingProducts, refetchProducts, bulkUpdateProductPrices, me } = useStore();
 
   // ── Filters ───────────────────────────────────────────────────────────────
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('ALL');
+  const [supplierFilter, setSupplierFilter] = useState<string>('ALL');
   const [showLowMargin, setShowLowMargin] = useState(false);
-  const [sortField, setSortField] = useState<'name' | 'sellingPrice' | 'markup' | 'stock'>('name');
+  const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // ── Price edits ───────────────────────────────────────────────────────────
@@ -99,14 +179,17 @@ export default function PriceControlPage() {
   const [saveError, setSaveError] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // ── Inline edit mode ──────────────────────────────────────────────────────
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // ── Inline edit focus ─────────────────────────────────────────────────────
+  const [editingCell, setEditingCell] = useState<{ productId: string; field: 'costPrice' | 'sellingPrice' } | null>(null);
+  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // ── Bulk % apply ──────────────────────────────────────────────────────────
+  // ── Bulk & preview ────────────────────────────────────────────────────────
   const [bulkMode, setBulkMode] = useState<'none' | 'markup' | 'cost' | 'sell'>('none');
   const [bulkPct, setBulkPct] = useState('');
+  const [targetMarkup, setTargetMarkup] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [showPreview, setShowPreview] = useState(false);
 
   const canEdit = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER'].includes(me?.role || '');
 
@@ -114,12 +197,13 @@ export default function PriceControlPage() {
   const filtered = useMemo(() => {
     let list = products.filter(p => {
       if (catFilter !== 'ALL' && !p.category?.toUpperCase().includes(catFilter)) return false;
+      if (supplierFilter !== 'ALL' && p.supplierId !== supplierFilter) return false;
       if (search) {
-        const hay = `${p.name} ${p.genericName || ''} ${p.brand || ''} ${p.category}`.toLowerCase();
+        const hay = `${p.name} ${p.genericName || ''} ${p.brand || ''} ${p.category} ${p.supplier?.name || ''}`.toLowerCase();
         if (!hay.includes(search.toLowerCase())) return false;
       }
       if (showLowMargin && p.costPrice > 0) {
-        const m = ((p.sellingPrice - p.costPrice) / p.costPrice) * 100;
+        const m = markupOf(p.costPrice, p.sellingPrice);
         if (m >= 20) return false;
       }
       return true;
@@ -129,10 +213,12 @@ export default function PriceControlPage() {
       let va: any, vb: any;
       if (sortField === 'name') { va = a.name; vb = b.name; }
       else if (sortField === 'sellingPrice') { va = a.sellingPrice; vb = b.sellingPrice; }
+      else if (sortField === 'costPrice') { va = a.costPrice; vb = b.costPrice; }
       else if (sortField === 'stock') { va = a.stockQuantity; vb = b.stockQuantity; }
+      else if (sortField === 'updatedAt') { va = a.updatedAt || ''; vb = b.updatedAt || ''; }
       else {
-        va = a.costPrice > 0 ? ((a.sellingPrice - a.costPrice) / a.costPrice) * 100 : 0;
-        vb = b.costPrice > 0 ? ((b.sellingPrice - b.costPrice) / b.costPrice) * 100 : 0;
+        va = markupOf(a.costPrice, a.sellingPrice);
+        vb = markupOf(b.costPrice, b.sellingPrice);
       }
       if (va < vb) return sortDir === 'asc' ? -1 : 1;
       if (va > vb) return sortDir === 'asc' ? 1 : -1;
@@ -140,7 +226,7 @@ export default function PriceControlPage() {
     });
 
     return list;
-  }, [products, search, catFilter, showLowMargin, sortField, sortDir]);
+  }, [products, search, catFilter, supplierFilter, showLowMargin, sortField, sortDir]);
 
   const pendingEdits = useMemo(() => Object.values(edits).filter(e =>
     e.costPrice !== e.originalCost || e.sellingPrice !== e.originalSell
@@ -152,11 +238,12 @@ export default function PriceControlPage() {
   // ── KPIs ──────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     const avgMarkup = products.length
-      ? products.reduce((s, p) => s + (p.costPrice > 0 ? ((p.sellingPrice - p.costPrice) / p.costPrice) * 100 : 0), 0) / products.length
+      ? products.reduce((s, p) => s + markupOf(p.costPrice, p.sellingPrice), 0) / products.length
       : 0;
-    const lowMarginCount = products.filter(p => p.costPrice > 0 && ((p.sellingPrice - p.costPrice) / p.costPrice) * 100 < 20).length;
+    const lowMarginCount = products.filter(p => p.costPrice > 0 && markupOf(p.costPrice, p.sellingPrice) < 20).length;
+    const lossCount = products.filter(p => p.costPrice > 0 && p.sellingPrice < p.costPrice).length;
     const edited = Object.keys(edits).length;
-    return { avgMarkup, lowMarginCount, edited, total: products.length };
+    return { avgMarkup, lowMarginCount, lossCount, edited, total: products.length };
   }, [products, edits]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -171,15 +258,27 @@ export default function PriceControlPage() {
     };
   }, [edits]);
 
-  const setPrice = useCallback((productId: string, field: 'costPrice' | 'sellingPrice', val: number, originalCost: number, originalSell: number) => {
-    setEdits(prev => ({
-      ...prev,
-      [productId]: {
-        ...(prev[productId] ?? { productId, originalCost, originalSell, costPrice: originalCost, sellingPrice: originalSell }),
-        [field]: val,
-      }
-    }));
-  }, []);
+  const setPrice = useCallback((productId: string, field: 'costPrice' | 'sellingPrice', val: number) => {
+    setEdits(prev => {
+      const existing = prev[productId];
+      const product = products.find(p => p.id === productId);
+      if (!existing && !product) return prev;
+      const originalCost = existing?.originalCost ?? product!.costPrice;
+      const originalSell = existing?.originalSell ?? product!.sellingPrice;
+      const cost = field === 'costPrice' ? val : (existing?.costPrice ?? product!.costPrice);
+      const sell = field === 'sellingPrice' ? val : (existing?.sellingPrice ?? product!.sellingPrice);
+      return {
+        ...prev,
+        [productId]: {
+          productId,
+          originalCost,
+          originalSell,
+          costPrice: cost,
+          sellingPrice: sell,
+        },
+      };
+    });
+  }, [products]);
 
   const revertProduct = useCallback((productId: string) => {
     setEdits(prev => {
@@ -192,6 +291,7 @@ export default function PriceControlPage() {
   const revertAll = useCallback(() => {
     setEdits({});
     setSelectedIds(new Set());
+    setEditingCell(null);
   }, []);
 
   const applyBulkPercent = useCallback(() => {
@@ -216,6 +316,35 @@ export default function PriceControlPage() {
     setBulkMode('none');
   }, [bulkPct, bulkMode, filtered, pageProducts, selectedIds]);
 
+  const applyTargetMarkup = useCallback(() => {
+    const pct = parseFloat(targetMarkup);
+    if (isNaN(pct)) return;
+    const targets = selectedIds.size > 0 ? filtered.filter(p => selectedIds.has(p.id)) : pageProducts;
+    setEdits(prev => {
+      const n = { ...prev };
+      targets.forEach(p => {
+        const cur = n[p.id] ?? {
+          productId: p.id,
+          originalCost: p.costPrice,
+          originalSell: p.sellingPrice,
+          costPrice: p.costPrice,
+          sellingPrice: p.sellingPrice,
+        };
+        n[p.id] = { ...cur, sellingPrice: parseFloat((cur.costPrice * (1 + pct / 100)).toFixed(2)) };
+      });
+      return n;
+    });
+    setTargetMarkup('');
+  }, [targetMarkup, filtered, pageProducts, selectedIds]);
+
+  const totalImpact = useMemo(() => {
+    return pendingEdits.reduce((acc, e) => {
+      const costDiff = e.costPrice - e.originalCost;
+      const sellDiff = e.sellingPrice - e.originalSell;
+      return { cost: acc.cost + costDiff, sell: acc.sell + sellDiff };
+    }, { cost: 0, sell: 0 });
+  }, [pendingEdits]);
+
   const handleSave = async () => {
     if (!canEdit || pendingEdits.length === 0) return;
     setIsSaving(true);
@@ -226,7 +355,10 @@ export default function PriceControlPage() {
         pendingEdits.map(e => ({ productId: e.productId, costPrice: e.costPrice, sellingPrice: e.sellingPrice }))
       );
       setEdits({});
+      setSelectedIds(new Set());
+      setEditingCell(null);
       setSaveSuccess(true);
+      setShowPreview(false);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
       setSaveError(err?.message || 'Failed to save prices');
@@ -235,10 +367,34 @@ export default function PriceControlPage() {
     }
   };
 
-  const toggleSort = (field: typeof sortField) => {
+  const toggleSort = (field: SortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('asc'); }
   };
+
+  const handleCellKey = (e: React.KeyboardEvent, productId: string, field: 'costPrice' | 'sellingPrice') => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const nextField = field === 'sellingPrice' ? 'costPrice' : 'sellingPrice';
+      setEditingCell({ productId, field: nextField });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      setEditingCell(null);
+    } else if (e.key === 'Escape') {
+      setEditingCell(null);
+    }
+  };
+
+  const supplierOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    products.forEach(p => {
+      if (p.supplierId && p.supplier?.name) map.set(p.supplierId, p.supplier.name);
+    });
+    suppliers.forEach(s => {
+      if (!map.has(s.id)) map.set(s.id, s.name);
+    });
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [products, suppliers]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -265,7 +421,7 @@ export default function PriceControlPage() {
 
   if (!mounted) return null;
 
-  const SortIcon = ({ field }: { field: typeof sortField }) => {
+  const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return <SortAsc size={11} style={{ color: c.muted, opacity: 0.4 }} />;
     return sortDir === 'asc'
       ? <SortAsc size={11} style={{ color: c.primary }} />
@@ -273,7 +429,7 @@ export default function PriceControlPage() {
   };
 
   return (
-    <div className="min-h-screen p-6 space-y-5" style={{ background: c.bg }}>
+    <div className="min-h-screen p-4 md:p-6 space-y-4 md:space-y-5" style={{ background: c.bg }}>
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -282,7 +438,7 @@ export default function PriceControlPage() {
             <Tags size={22} style={{ color: c.primary }} /> Price Control
           </h1>
           <p className="text-sm mt-0.5" style={{ color: c.muted }}>
-            Manage cost & selling prices across all products — changes sync to POS, invoices, and ledger instantly
+            Manage cost & selling prices — changes sync to POS, invoices, supplier invoices, and inventory valuation instantly.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -293,10 +449,15 @@ export default function PriceControlPage() {
           </button>
           {pendingEdits.length > 0 && (
             <>
+              <button onClick={() => setShowPreview(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all"
+                style={{ background: `${c.accent}12`, color: c.accent, border: `1px solid ${c.accent}30` }}>
+                <Eye size={13} /> {showPreview ? 'Hide' : 'Preview'}
+              </button>
               <button onClick={revertAll}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all"
                 style={{ background: `${c.danger}12`, color: c.danger, border: `1px solid ${c.danger}30` }}>
-                <RotateCcw size={13} /> Revert All ({pendingEdits.length})
+                <RotateCcw size={13} /> Revert ({pendingEdits.length})
               </button>
               <button onClick={handleSave}
                 disabled={isSaving}
@@ -314,16 +475,17 @@ export default function PriceControlPage() {
       </div>
 
       {/* ── KPI Row ──────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
         {[
           { label: 'Total Products', value: kpis.total, icon: Package, color: c.accent },
           { label: 'Avg Markup', value: `${kpis.avgMarkup.toFixed(1)}%`, icon: Percent, color: c.primary },
-          { label: 'Low Margin (<20%)', value: kpis.lowMarginCount, icon: AlertTriangle, color: c.danger },
+          { label: 'Low Margin (<20%)', value: kpis.lowMarginCount, icon: AlertTriangle, color: c.warning },
+          { label: 'Selling Below Cost', value: kpis.lossCount, icon: TrendingDown, color: c.danger },
           { label: 'Unsaved Edits', value: pendingEdits.length, icon: Edit3, color: pendingEdits.length > 0 ? c.warning : c.muted },
         ].map(k => {
           const Icon = k.icon;
           return (
-            <div key={k.label} className="rounded-2xl border p-4" style={{ background: c.card, borderColor: c.border }}>
+            <div key={k.label} className="rounded-2xl border p-3 md:p-4" style={{ background: c.card, borderColor: c.border }}>
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-1.5 rounded-lg" style={{ background: `${k.color}18`, color: k.color }}>
                   <Icon size={14} />
@@ -343,7 +505,7 @@ export default function PriceControlPage() {
           <div className="relative flex-1 min-w-56">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
             <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Search by name, generic, brand..."
+              placeholder="Search by name, generic, brand, supplier..."
               className="w-full pl-8 pr-3 py-2 rounded-xl text-sm focus:outline-none"
               style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
             {search && (
@@ -365,6 +527,21 @@ export default function PriceControlPage() {
                 {cat}
               </button>
             ))}
+          </div>
+          {/* Supplier filter */}
+          <div className="relative min-w-48">
+            <Truck size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: c.muted }} />
+            <select
+              value={supplierFilter}
+              onChange={e => setSupplierFilter(e.target.value)}
+              className="w-full pl-8 pr-3 py-2 rounded-xl text-xs font-bold focus:outline-none appearance-none"
+              style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}
+            >
+              <option value="ALL">All suppliers</option>
+              {supplierOptions.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
           </div>
           <button onClick={() => setShowLowMargin(v => !v)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all"
@@ -394,6 +571,24 @@ export default function PriceControlPage() {
                 {mode === 'sell' ? '↑ Selling Price %' : mode === 'cost' ? '↑ Cost Price %' : '= Set Markup %'}
               </button>
             ))}
+            <div className="flex items-center gap-1.5 ml-2 pl-2 border-l" style={{ borderColor: c.border }}>
+              <Calculator size={12} style={{ color: c.muted }} />
+              <div className="flex items-center rounded-lg overflow-hidden"
+                style={{ border: `1px solid ${c.border}`, background: c.inputBg }}>
+                <input type="number" step="0.1" value={targetMarkup}
+                  onChange={e => setTargetMarkup(e.target.value)}
+                  placeholder="Target %"
+                  className="w-20 px-2 py-1.5 text-xs font-bold focus:outline-none bg-transparent"
+                  style={{ color: c.text }}
+                  onKeyDown={e => e.key === 'Enter' && applyTargetMarkup()} />
+                <span className="pr-2 text-xs" style={{ color: c.muted }}>%</span>
+              </div>
+              <button onClick={applyTargetMarkup}
+                className="px-2 py-1.5 rounded-lg text-[10px] font-black transition-all"
+                style={{ background: c.accent, color: '#fff' }}>
+                Set Sell
+              </button>
+            </div>
             {bulkMode !== 'none' && (
               <div className="flex items-center gap-2">
                 <div className="flex items-center rounded-xl overflow-hidden"
@@ -487,21 +682,23 @@ export default function PriceControlPage() {
         <div className="grid px-5 py-2 text-[10px] font-black uppercase tracking-widest"
           style={{
             background: c.headerBg, color: c.muted, borderBottom: `1px solid ${c.border}`,
-            gridTemplateColumns: canEdit ? '40px 1fr 100px 140px 140px 120px 80px 80px' : '1fr 100px 140px 140px 120px 80px 80px',
+            gridTemplateColumns: canEdit ? '40px 1.6fr 80px 120px 120px 90px 90px 70px' : '1.6fr 80px 120px 120px 90px 90px 70px',
           }}>
           {canEdit && <span />}
           <button className="flex items-center gap-1 text-left" onClick={() => toggleSort('name')}>
             Product <SortIcon field="name" />
           </button>
           <span>Stock</span>
-          <button className="flex items-center gap-1 justify-center" onClick={() => toggleSort('sellingPrice')}>
-            Selling Price <SortIcon field="sellingPrice" />
+          <button className="flex items-center gap-1 justify-end" onClick={() => toggleSort('sellingPrice')}>
+            Selling <SortIcon field="sellingPrice" />
           </button>
-          <span className="text-center">Cost Price</span>
+          <button className="flex items-center gap-1 justify-end" onClick={() => toggleSort('costPrice')}>
+            Cost <SortIcon field="costPrice" />
+          </button>
           <button className="flex items-center gap-1 justify-center" onClick={() => toggleSort('markup')}>
             Markup <SortIcon field="markup" />
           </button>
-          <span className="text-center">New Markup</span>
+          <span className="text-center">New</span>
           <span className="text-center">Actions</span>
         </div>
 
@@ -522,8 +719,11 @@ export default function PriceControlPage() {
               const costChanged = edit.costPrice !== edit.originalCost;
               const sellChanged = edit.sellingPrice !== edit.originalSell;
               const isEdited = costChanged || sellChanged;
-              const isEditing = editingId === p.id;
-              const newMarkup = edit.costPrice > 0 ? ((edit.sellingPrice - edit.costPrice) / edit.costPrice) * 100 : 0;
+              const isEditingSell = editingCell?.productId === p.id && editingCell?.field === 'sellingPrice';
+              const isEditingCost = editingCell?.productId === p.id && editingCell?.field === 'costPrice';
+              const newMarkup = markupOf(edit.costPrice, edit.sellingPrice);
+              const currentHealth = markupOf(p.costPrice, p.sellingPrice);
+              const isLoss = currentHealth < 0;
               const rowBg = isEdited
                 ? isDark ? 'rgba(249,115,22,0.05)' : 'rgba(249,115,22,0.03)'
                 : i % 2 === 0 ? 'transparent' : isDark ? 'rgba(255,255,255,0.01)' : 'rgba(0,0,0,0.01)';
@@ -533,8 +733,8 @@ export default function PriceControlPage() {
                   className="grid items-center px-5 py-3 gap-3 transition-colors group"
                   style={{
                     background: rowBg,
-                    gridTemplateColumns: canEdit ? '40px 1fr 100px 140px 140px 120px 80px 80px' : '1fr 100px 140px 140px 120px 80px 80px',
-                    borderLeft: isEdited ? `3px solid ${c.primary}` : '3px solid transparent',
+                    gridTemplateColumns: canEdit ? '40px 1.6fr 80px 120px 120px 90px 90px 70px' : '1.6fr 80px 120px 120px 90px 90px 70px',
+                    borderLeft: isEdited ? `3px solid ${c.primary}` : isLoss ? `3px solid ${c.danger}` : '3px solid transparent',
                   }}>
 
                   {/* Checkbox */}
@@ -550,6 +750,16 @@ export default function PriceControlPage() {
                     <p className="text-[10px] truncate" style={{ color: c.muted }}>
                       {p.genericName ? `${p.genericName} · ` : ''}{p.category}{p.strength ? ` · ${p.strength}` : ''}
                     </p>
+                    <div className="flex items-center gap-2 mt-1 text-[10px]" style={{ color: c.muted }}>
+                      {p.supplier?.name && (
+                        <span className="flex items-center gap-0.5 px-1.5 py-0.5 rounded" style={{ background: `${c.accent}12`, color: c.accent }}>
+                          <Truck size={9} /> {p.supplier.name}
+                        </span>
+                      )}
+                      <span className="flex items-center gap-0.5">
+                        <Clock size={9} /> {relativeDate(p.updatedAt)}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Stock */}
@@ -559,61 +769,48 @@ export default function PriceControlPage() {
                         background: p.stockQuantity === 0 ? `${c.danger}15` : p.stockQuantity <= 10 ? `${c.warning}15` : `${c.success}15`,
                         color: p.stockQuantity === 0 ? c.danger : p.stockQuantity <= 10 ? c.warning : c.success,
                       }}>
-                      {p.stockQuantity} units
+                      {p.stockQuantity}
                     </span>
                   </div>
 
-                  {/* Selling price edit */}
-                  <div className="flex flex-col gap-0.5">
-                    {canEdit && isEditing ? (
-                      <div className="flex items-center gap-1 rounded-lg overflow-hidden"
-                        style={{ border: `1px solid ${sellChanged ? c.primary : c.border}`, background: c.inputBg }}>
-                        <span className="pl-2 text-xs flex-shrink-0" style={{ color: c.muted }}>GH₵</span>
-                        <input
-                          type="number" min={0} step={0.01}
-                          value={edit.sellingPrice}
-                          onChange={e => setPrice(p.id, 'sellingPrice', parseFloat(e.target.value) || 0, p.costPrice, p.sellingPrice)}
-                          className="flex-1 py-1.5 pr-2 text-sm font-bold text-right focus:outline-none bg-transparent"
-                          style={{ color: sellChanged ? c.primary : c.text, width: '80px' }}
-                          autoFocus={false}
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-sm font-black" style={{ color: sellChanged ? c.primary : c.text }}>
-                        GH₵ {edit.sellingPrice.toFixed(2)}
-                      </span>
-                    )}
-                    {sellChanged && <Delta original={edit.originalSell} current={edit.sellingPrice} c={c} />}
+                  {/* Selling price click-to-edit */}
+                  <div className="flex justify-end">
+                    <PriceCell
+                      value={edit.sellingPrice}
+                      original={edit.originalSell}
+                      prefix="GH₵"
+                      accent={c.primary}
+                      isEditing={isEditingSell}
+                      readOnly={!canEdit}
+                      onStart={() => setEditingCell({ productId: p.id, field: 'sellingPrice' })}
+                      onChange={v => setPrice(p.id, 'sellingPrice', v)}
+                      onCommit={() => setEditingCell(null)}
+                      onKeyDown={e => handleCellKey(e, p.id, 'sellingPrice')}
+                    />
                   </div>
 
-                  {/* Cost price edit */}
-                  <div className="flex flex-col gap-0.5">
-                    {canEdit && isEditing ? (
-                      <div className="flex items-center gap-1 rounded-lg overflow-hidden"
-                        style={{ border: `1px solid ${costChanged ? c.accent : c.border}`, background: c.inputBg }}>
-                        <span className="pl-2 text-xs flex-shrink-0" style={{ color: c.muted }}>GH₵</span>
-                        <input
-                          type="number" min={0} step={0.01}
-                          value={edit.costPrice}
-                          onChange={e => setPrice(p.id, 'costPrice', parseFloat(e.target.value) || 0, p.costPrice, p.sellingPrice)}
-                          className="flex-1 py-1.5 pr-2 text-sm font-bold text-right focus:outline-none bg-transparent"
-                          style={{ color: costChanged ? c.accent : c.text, width: '80px' }}
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-sm font-bold" style={{ color: costChanged ? c.accent : c.muted }}>
-                        GH₵ {edit.costPrice.toFixed(2)}
-                      </span>
-                    )}
-                    {costChanged && <Delta original={edit.originalCost} current={edit.costPrice} c={c} />}
+                  {/* Cost price click-to-edit */}
+                  <div className="flex justify-end">
+                    <PriceCell
+                      value={edit.costPrice}
+                      original={edit.originalCost}
+                      prefix="GH₵"
+                      accent={c.accent}
+                      isEditing={isEditingCost}
+                      readOnly={!canEdit}
+                      onStart={() => setEditingCell({ productId: p.id, field: 'costPrice' })}
+                      onChange={v => setPrice(p.id, 'costPrice', v)}
+                      onCommit={() => setEditingCell(null)}
+                      onKeyDown={e => handleCellKey(e, p.id, 'costPrice')}
+                    />
                   </div>
 
-                  {/* Original markup */}
+                  {/* Current markup */}
                   <div className="flex justify-center">
                     <MarkupBadge cost={p.costPrice} sell={p.sellingPrice} c={c} />
                   </div>
 
-                  {/* New markup (if edited) */}
+                  {/* New markup */}
                   <div className="flex justify-center">
                     {isEdited
                       ? <MarkupBadge cost={edit.costPrice} sell={edit.sellingPrice} c={c} />
@@ -624,13 +821,6 @@ export default function PriceControlPage() {
                   <div className="flex items-center justify-center gap-1">
                     {canEdit && (
                       <>
-                        <button
-                          onClick={() => setEditingId(isEditing ? null : p.id)}
-                          className="p-1.5 rounded-lg transition-colors"
-                          style={{ background: isEditing ? `${c.primary}20` : 'transparent', color: isEditing ? c.primary : c.muted }}
-                          title={isEditing ? 'Done editing' : 'Edit prices'}>
-                          {isEditing ? <Check size={13} /> : <Edit3 size={13} />}
-                        </button>
                         {isEdited && (
                           <button onClick={() => revertProduct(p.id)}
                             className="p-1.5 rounded-lg transition-colors"
@@ -638,6 +828,9 @@ export default function PriceControlPage() {
                             title="Revert this product">
                             <RotateCcw size={13} />
                           </button>
+                        )}
+                        {!isEdited && (
+                          <Edit3 size={13} style={{ color: c.muted, opacity: 0.5 }} />
                         )}
                       </>
                     )}
@@ -691,19 +884,89 @@ export default function PriceControlPage() {
           </div>
         )}
 
-        {/* Footer summary */}
+        {/* Footer summary + preview */}
         {pendingEdits.length > 0 && (
-          <div className="px-5 py-3 border-t flex items-center justify-between"
-            style={{ borderColor: c.border, background: `${c.primary}08` }}>
-            <p className="text-xs font-bold" style={{ color: c.primary }}>
-              {pendingEdits.length} product{pendingEdits.length !== 1 ? 's' : ''} with unsaved price changes
-            </p>
-            <button onClick={handleSave}
-              disabled={isSaving}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black text-white transition-all disabled:opacity-50"
-              style={{ background: c.primary }}>
-              {isSaving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><Save size={13} /> Save All Changes</>}
-            </button>
+          <div className="border-t" style={{ borderColor: c.border, background: `${c.primary}08` }}>
+            <div className="px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <p className="text-xs font-bold" style={{ color: c.primary }}>
+                  {pendingEdits.length} product{pendingEdits.length !== 1 ? 's' : ''} with unsaved price changes
+                </p>
+                <button onClick={() => setShowPreview(v => !v)}
+                  className="flex items-center gap-1 text-[10px] font-bold"
+                  style={{ color: c.accent }}>
+                  <Eye size={10} /> {showPreview ? 'Hide' : 'Show'} Preview
+                  {showPreview ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                </button>
+              </div>
+              <button onClick={handleSave}
+                disabled={isSaving}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black text-white transition-all disabled:opacity-50"
+                style={{ background: c.primary }}>
+                {isSaving ? <><Loader2 size={13} className="animate-spin" /> Saving…</> : <><Save size={13} /> Save All Changes</>}
+              </button>
+            </div>
+
+            {showPreview && (
+              <div className="px-5 py-4 border-t space-y-4" style={{ borderColor: c.border, background: c.card }}>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-xl border p-3" style={{ borderColor: c.border }}>
+                    <p className="text-[10px] font-bold" style={{ color: c.muted }}>Total Cost Impact</p>
+                    <p className="text-lg font-black" style={{ color: totalImpact.cost >= 0 ? c.success : c.danger }}>
+                      {totalImpact.cost >= 0 ? '+' : ''}{totalImpact.cost.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border p-3" style={{ borderColor: c.border }}>
+                    <p className="text-[10px] font-bold" style={{ color: c.muted }}>Total Selling Impact</p>
+                    <p className="text-lg font-black" style={{ color: totalImpact.sell >= 0 ? c.success : c.danger }}>
+                      {totalImpact.sell >= 0 ? '+' : ''}{totalImpact.sell.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border p-3" style={{ borderColor: c.border }}>
+                    <p className="text-[10px] font-bold" style={{ color: c.muted }}>Avg New Markup</p>
+                    <p className="text-lg font-black" style={{ color: c.text }}>
+                      {(pendingEdits.reduce((s, e) => s + markupOf(e.costPrice, e.sellingPrice), 0) / pendingEdits.length).toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="rounded-xl border p-3" style={{ borderColor: c.border }}>
+                    <p className="text-[10px] font-bold" style={{ color: c.muted }}>Below Cost After Save</p>
+                    <p className="text-lg font-black" style={{ color: pendingEdits.some(e => e.sellingPrice < e.costPrice) ? c.danger : c.text }}>
+                      {pendingEdits.filter(e => e.sellingPrice < e.costPrice).length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border overflow-hidden" style={{ borderColor: c.border }}>
+                  <div className="grid px-4 py-2 text-[10px] font-black uppercase tracking-widest"
+                    style={{ background: c.headerBg, color: c.muted, gridTemplateColumns: '1.5fr 120px 120px 100px 80px' }}>
+                    <span>Product</span>
+                    <span className="text-right">Old Sell</span>
+                    <span className="text-right">New Sell</span>
+                    <span className="text-right">Old Cost</span>
+                    <span className="text-center">New Markup</span>
+                  </div>
+                  <div className="divide-y" style={{ borderColor: c.border }}>
+                    {pendingEdits.map(e => {
+                      const product = products.find(p => p.id === e.productId);
+                      return (
+                        <div key={e.productId} className="grid px-4 py-2 text-xs items-center"
+                          style={{ gridTemplateColumns: '1.5fr 120px 120px 100px 80px', color: c.text }}>
+                          <span className="font-bold truncate">{product?.name || e.productId.slice(0, 8)}</span>
+                          <span className="text-right" style={{ color: c.muted }}>GH₵ {e.originalSell.toFixed(2)}</span>
+                          <span className="text-right font-black" style={{ color: e.sellingPrice !== e.originalSell ? c.primary : c.text }}>
+                            GH₵ {e.sellingPrice.toFixed(2)}
+                          </span>
+                          <span className="text-right" style={{ color: c.muted }}>GH₵ {e.originalCost.toFixed(2)}</span>
+                          <span className="flex justify-center">
+                            <MarkupBadge cost={e.costPrice} sell={e.sellingPrice} c={c} />
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
