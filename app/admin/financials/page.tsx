@@ -331,42 +331,62 @@ export default function FinancialsPage() {
   const handleExport = () => {
     const rangeLabel = dateRange === 'custom' ? `${customFrom}_to_${customTo}` : dateRange;
     const timestamp = new Date().toISOString().split('T')[0];
+    
+    const formatDate = (dateStr: string) => {
+      if (!dateStr) return 'N/A';
+      try {
+        const d = new Date(dateStr);
+        return d.toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+      } catch (e) {
+        return dateStr;
+      }
+    };
+
     let csvContent = '\uFEFF'; // BOM for Excel
-    csvContent += `Azzay Pharmacy - Financial Report\n`;
-    csvContent += `Generated,${timestamp}\n`;
-    csvContent += `Period,${rangeLabel}\n`;
-    csvContent += `Branch,${activeBranchId ? activeBranchId : 'All Branches'}\n\n`;
+    csvContent += `AZZAY PHARMACY - EXECUTIVE FINANCIAL REPORT\n`;
+    csvContent += `Generated:,${formatDate(new Date().toISOString())}\n`;
+    csvContent += `Period:,${rangeLabel.toUpperCase()}\n`;
+    csvContent += `Branch:,${activeBranchId ? activeBranchId : 'All Branches'}\n\n`;
 
-    // Transactions
-    csvContent += `General Ledger Transactions\n`;
-    csvContent += 'Date,Reference,Description,Category,Type,Amount\n';
-    liveLedger.forEach(l => {
-      csvContent += `${escapeCsv(l.date)},${escapeCsv(l.ref || l.id)},${escapeCsv(l.description)},${escapeCsv(l.category)},${escapeCsv(l.type)},${escapeCsv(Number(l.amount).toFixed(2))}\n`;
-    });
-    csvContent += '\n';
-
-    // Payables
-    csvContent += `Supplier Payables\n`;
-    csvContent += 'Supplier,Invoice,Total,Paid,Balance,Status,Due Date\n';
-    livePayables.forEach(p => {
-      csvContent += `${escapeCsv(p.supplier)},${escapeCsv(p.invoice)},${escapeCsv(Number(p.total).toFixed(2))},${escapeCsv(Number(p.paidAmount).toFixed(2))},${escapeCsv(Number(p.amount).toFixed(2))},${escapeCsv(p.status)},${escapeCsv(p.dueDate)}\n`;
-    });
-    csvContent += '\n';
-
-    // Summary
-    csvContent += `Summary\n`;
-    csvContent += `Metric,Amount\n`;
+    // 1. FINANCIAL SUMMARY (At the top for executives)
+    csvContent += `--- FINANCIAL SUMMARY ---\n`;
+    csvContent += `Metric,Amount (GH₵)\n`;
     csvContent += `Total Revenue,${totalRevenue.toFixed(2)}\n`;
     csvContent += `Total Expenses,${totalExpenses.toFixed(2)}\n`;
     csvContent += `Net Profit,${netProfit.toFixed(2)}\n`;
     csvContent += `Outstanding Payables,${outstandingPayables.toFixed(2)}\n`;
-    csvContent += `Inventory Value,${inventoryValue.toFixed(2)}\n`;
+    csvContent += `Inventory Value,${inventoryValue.toFixed(2)}\n\n`;
+
+    // 2. SUPPLIER PAYABLES (Important liabilities)
+    csvContent += `--- OUTSTANDING SUPPLIER PAYABLES ---\n`;
+    csvContent += `Supplier,Invoice No.,Total Amount,Amount Paid,Balance Due,Status,Due Date\n`;
+    if (livePayables.length === 0) {
+      csvContent += `No outstanding payables for this period.\n`;
+    } else {
+      livePayables.forEach(p => {
+        csvContent += `${escapeCsv(p.supplier)},${escapeCsv(p.invoice)},${Number(p.total).toFixed(2)},${Number(p.paidAmount).toFixed(2)},${Number(p.amount).toFixed(2)},${escapeCsv(p.status)},${escapeCsv(p.dueDate ? formatDate(p.dueDate).split(' ')[0] : 'N/A')}\n`;
+      });
+    }
+    csvContent += `\n`;
+
+    // 3. LEDGER TRANSACTIONS (Detailed trail)
+    csvContent += `--- DETAILED GENERAL LEDGER ---\n`;
+    csvContent += `Date,Reference,Category,Type,Amount (GH₵),Description\n`;
+    if (liveLedger.length === 0) {
+      csvContent += `No transactions found for this period.\n`;
+    } else {
+      liveLedger.forEach(l => {
+        const cat = l.category || (l.account === 'REVENUE' || l.account === 'SALES_REVENUE' ? 'Sales Revenue' : l.account);
+        csvContent += `${escapeCsv(formatDate(l.date))},${escapeCsv(l.ref || l.id)},${escapeCsv(cat)},${escapeCsv(l.type)},${Number(l.amount).toFixed(2)},${escapeCsv(l.description)}\n`;
+      });
+    }
+    csvContent += `\n*** END OF REPORT ***\n`;
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `azzay_financial_report_${rangeLabel}_${timestamp}.csv`);
+    link.setAttribute('download', `Azzay_Financial_Report_${rangeLabel}_${timestamp}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -710,7 +730,7 @@ export default function FinancialsPage() {
           {/* Revenue vs Expenses Trend */}
           <div className="rounded-2xl border p-5 backdrop-blur-xl"
             style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-            <GroupedBarChart series={revenueSeries} height={300} title="Revenue vs Expenses" subtitle="Actual sales and approved operating expenses by period" />
+            <AreaChart series={revenueSeries} height={300} title="Revenue vs Expenses" subtitle="Actual sales and approved operating expenses by period" />
           </div>
 
           {/* Profit Trend & Payables Aging */}
@@ -766,8 +786,12 @@ export default function FinancialsPage() {
                         onMouseEnter={e => (e.currentTarget.style.background = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.015)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                         <td className="px-4 py-3">
-                          <p className="font-mono text-xs" style={{ color: card.text }}>{l.date}</p>
-                          <p className="text-[10px]" style={{ color: card.muted }}>{new Date(l.date).toLocaleDateString(undefined, { weekday: 'short' })}</p>
+                          <p className="font-mono text-xs" style={{ color: card.text }}>
+                            {new Date(l.date).toLocaleDateString()}
+                          </p>
+                          <p className="text-[10px]" style={{ color: card.muted }}>
+                            {new Date(l.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
                         </td>
                         <td className="px-4 py-3">
                           <span className="font-mono text-xs font-medium px-2 py-1 rounded-md" style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#F1F5F9', color: card.primary }}>{l.ref || l.id.slice(-8).toUpperCase()}</span>
@@ -1103,7 +1127,7 @@ export default function FinancialsPage() {
             ))}
           </div>
           <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-            <GroupedBarChart series={revenueSeries} height={300} title="Revenue vs Expenses Over Time" subtitle="Comparative trend across the selected period" />
+            <AreaChart series={revenueSeries} height={300} title="Revenue vs Expenses Over Time" subtitle="Comparative trend across the selected period" />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>

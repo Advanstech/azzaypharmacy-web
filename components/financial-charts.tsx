@@ -92,11 +92,15 @@ export function AreaChart({
           </g>
         ))}
         {/* X labels */}
-        {series[0]?.data.map((p, i) => (
-          <text key={i} x={xFor(i)} y={height - 10} textAnchor="middle" fontSize="9" fill="currentColor" opacity={0.5}>
-            {p.label}
-          </text>
-        ))}
+        {series[0]?.data.map((p, i) => {
+          const step = Math.max(1, Math.ceil(series[0].data.length / 12));
+          if (i % step !== 0 && i !== series[0].data.length - 1) return null;
+          return (
+            <text key={i} x={xFor(i)} y={height - 10} textAnchor="middle" fontSize="9" fill="currentColor" opacity={0.5}>
+              {p.label}
+            </text>
+          );
+        })}
         {/* Areas */}
         {paths.map((s, idx) => (
           <motion.path
@@ -332,11 +336,15 @@ export function GroupedBarChart({
             </text>
           </g>
         ))}
-        {series[0]?.data.map((p, i) => (
-          <text key={i} x={xGroup(i)} y={height - 10} textAnchor="middle" fontSize="9" fill="currentColor" opacity={0.5}>
-            {p.label}
-          </text>
-        ))}
+        {series[0]?.data.map((p, i) => {
+          const step = Math.max(1, Math.ceil(series[0].data.length / 12));
+          if (i % step !== 0 && i !== series[0].data.length - 1) return null;
+          return (
+            <text key={i} x={xGroup(i)} y={height - 10} textAnchor="middle" fontSize="9" fill="currentColor" opacity={0.5}>
+              {p.label}
+            </text>
+          );
+        })}
         {series.map((s, sIdx) =>
           s.data.map((d, i) => {
             const groupCenter = xGroup(i);
@@ -348,18 +356,18 @@ export function GroupedBarChart({
               <g key={`${s.key}-${i}`}>
                 <motion.rect
                   x={x}
-                  y={yFor(d.value)}
+                  y={Number.isNaN(yFor(d.value)) ? 0 : yFor(d.value)}
                   width={barWidth}
-                  height={h}
+                  height={Number.isNaN(h) ? 0 : Math.max(0, h)}
                   rx={3}
                   fill={s.color}
-                  initial={{ height: 0, y: yFor(0) }}
-                  animate={{ height: h, y: yFor(d.value) }}
+                  initial={{ height: 0, y: Number.isNaN(yFor(0)) ? 0 : yFor(0) }}
+                  animate={{ height: Number.isNaN(h) ? 0 : Math.max(0, h), y: Number.isNaN(yFor(d.value)) ? 0 : yFor(d.value) }}
                   transition={{ duration: 0.5, delay: i * 0.05 + sIdx * 0.05 }}
                 />
-                {d.value > 0 && (
-                  <text x={x + barWidth / 2} y={yFor(d.value) - 5} textAnchor="middle" fontSize="8" fontWeight="bold" fill={s.color}>
-                    {currency ? `GH₵${formatCurrencyShort(d.value)}` : d.value}
+                {(d.value || 0) > 0 && series[0]?.data.length <= 15 && (
+                  <text x={x + barWidth / 2} y={(Number.isNaN(yFor(d.value)) ? 0 : yFor(d.value)) - 5} textAnchor="middle" fontSize="8" fontWeight="bold" fill={s.color}>
+                    {currency ? `GH₵${formatCurrencyShort(d.value || 0)}` : d.value}
                   </text>
                 )}
               </g>

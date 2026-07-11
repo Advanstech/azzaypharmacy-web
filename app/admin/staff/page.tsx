@@ -242,6 +242,12 @@ export default function StaffIntelligencePage() {
 
   if (!mounted) return null;
 
+  const formatCurrencyShort = (val: number) => {
+    if (val >= 1000000) return `GH₵ ${(val / 1000000).toFixed(2)}M`;
+    if (val >= 1000) return `GH₵ ${(val / 1000).toFixed(1)}k`;
+    return `GH₵ ${val.toFixed(2)}`;
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -270,7 +276,7 @@ export default function StaffIntelligencePage() {
             <Users size={24} />
           </div>
           <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Active Staff</p>
-          <p className="text-3xl font-display font-black" style={{ color: card.text }}>{activeStaffCount}</p>
+          <p className="text-2xl font-display font-black truncate" style={{ color: card.text }}>{activeStaffCount}</p>
           <div className="flex items-center gap-1.5 mt-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span className="text-xs font-bold text-emerald-500">{onDutyCount} on duty now</span>
@@ -291,7 +297,7 @@ export default function StaffIntelligencePage() {
             <TrendingUp size={24} />
           </div>
           <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Total Team Revenue</p>
-          <p className="text-3xl font-display font-black" style={{ color: card.text }}>GH₵ {totalRevenue.toFixed(2)}</p>
+          <p className="text-2xl font-display font-black truncate" style={{ color: card.text }}>{formatCurrencyShort(totalRevenue)}</p>
         </motion.div>
         
         <motion.div whileHover={{ y: -4 }} className="p-6 rounded-3xl border shadow-sm relative overflow-hidden" style={{ background: card.bg, borderColor: card.border }}>
@@ -299,7 +305,7 @@ export default function StaffIntelligencePage() {
             <Activity size={24} />
           </div>
           <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: card.muted }}>Total Transactions</p>
-          <p className="text-3xl font-display font-black" style={{ color: card.text }}>{totalTransactions}</p>
+          <p className="text-2xl font-display font-black truncate" style={{ color: card.text }}>{totalTransactions}</p>
         </motion.div>
       </div>
 

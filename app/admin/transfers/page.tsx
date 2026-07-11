@@ -147,7 +147,7 @@ function DR({ label, value, c, icon }: { label: string; value: string; c: any; i
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-const LIMIT = 10;
+const LIMIT = 5;
 
 export default function StockTransferPage() {
   const { theme, resolvedTheme } = useTheme();

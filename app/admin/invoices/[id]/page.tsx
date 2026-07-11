@@ -24,6 +24,10 @@ export default function InvoiceDetailPage() {
   // Selling price editing state: { [itemId]: { value: number, saving: boolean } }
   const [editingPrices, setEditingPrices] = useState<Record<string, { value: string; saving: boolean }>>({});
 
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const LIMIT = 5;
+
   const invoice = useMemo(() => invoices.find((inv: any) => inv.id === id), [invoices, id]);
   
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
@@ -198,8 +202,23 @@ export default function InvoiceDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {invoice.purchase?.items && invoice.purchase.items.length > 0 ? (
-                invoice.purchase.items.map((item: any, index: number) => (
+              {(() => {
+                const items = invoice.purchase?.items || [];
+                const totalPages = Math.max(1, Math.ceil(items.length / LIMIT));
+                const safePage = Math.min(Math.max(1, page), totalPages);
+                const paginatedItems = items.slice((safePage - 1) * LIMIT, safePage * LIMIT);
+
+                if (items.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-12 text-center text-slate-500 font-medium">
+                        No products found for this invoice.
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return paginatedItems.map((item: any, index: number) => (
                   <tr 
                     key={item.id}
                     className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
@@ -269,14 +288,8 @@ export default function InvoiceDetailPage() {
                       GH₵ {item.total.toFixed(2)}
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-slate-500 font-medium">
-                    No products found for this invoice.
-                  </td>
-                </tr>
-              )}
+                ));
+              })()}
             </tbody>
             {invoice.purchase?.items && invoice.purchase.items.length > 0 && (
               <tfoot>
@@ -292,6 +305,49 @@ export default function InvoiceDetailPage() {
             )}
           </table>
         </div>
+        
+        {/* Pagination Controls */}
+        {(() => {
+          const items = invoice.purchase?.items || [];
+          const totalPages = Math.max(1, Math.ceil(items.length / LIMIT));
+          const safePage = Math.min(Math.max(1, page), totalPages);
+
+          if (totalPages <= 1) return null;
+
+          return (
+            <div className="px-5 py-3 border-t flex items-center justify-between" style={{ borderColor: isDark ? '#1E293B' : '#E2E8F0', background: isDark ? '#0F172A' : '#F8FAFC' }}>
+              <p className="text-xs" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>
+                Showing {(safePage - 1) * LIMIT + 1}–{Math.min(safePage * LIMIT, items.length)} of {items.length}
+              </p>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage(1)} disabled={safePage === 1}
+                  className="px-2 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                  style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>«</button>
+                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                  className="px-2 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                  style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>‹</button>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const start = Math.max(1, safePage - 2);
+                  const p = start + i;
+                  if (p > totalPages) return null;
+                  return (
+                    <button key={p} onClick={() => setPage(p)}
+                      className="w-7 h-7 rounded-lg text-xs font-bold"
+                      style={{ background: p === safePage ? '#3B82F6' : (isDark ? '#1E293B' : '#F1F5F9'), color: p === safePage ? '#fff' : (isDark ? '#94A3B8' : '#64748B') }}>
+                      {p}
+                    </button>
+                  );
+                })}
+                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                  className="px-2 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                  style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>›</button>
+                <button onClick={() => setPage(totalPages)} disabled={safePage === totalPages}
+                  className="px-2 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                  style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>»</button>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {invoice.payments && invoice.payments.length > 0 && (

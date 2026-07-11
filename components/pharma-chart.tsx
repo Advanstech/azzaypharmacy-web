@@ -12,9 +12,11 @@ interface PharmaChartProps {
   isDark: boolean;
   accent: string;
   height?: number;
+  valuePrefix?: string;
+  valueSuffix?: string;
 }
 
-export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartProps) {
+export function PharmaChart({ data, isDark, accent, height = 200, valuePrefix = 'GH₵', valueSuffix = '' }: PharmaChartProps) {
   const [mounted, setMounted] = useState(false);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [animatedValues, setAnimatedValues] = useState<number[]>([]);
@@ -160,14 +162,16 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
 
       {/* Data points */}
       {points.map((p, i) => {
-        const isToday = p.day === todayStrShort || p.day === todayStrDate || (points.length > 7 && p.day.startsWith('W') && i === points.length - 1);
+        const isLastPoint = i === points.length - 1;
         const isHovered = hoveredIndex === i;
-        const radius = isToday ? 6 : isHovered ? 5 : 3.5;
+        const showTooltip = isHovered || (hoveredIndex === null && isLastPoint);
+        const radius = showTooltip ? 5 : isLastPoint ? 6 : 3.5;
+        
         return (
           <g key={i} onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)}
             style={{ cursor: 'pointer' }}>
-            {/* Outer glow ring for today */}
-            {isToday && (
+            {/* Outer glow ring for last point */}
+            {isLastPoint && (
               <circle cx={p.x} cy={p.y} r={14} fill="none" stroke={accent} strokeWidth={1}
                 opacity={0.3}>
                 <animate attributeName="r" values="12;16;12" dur="2.5s" repeatCount="indefinite" />
@@ -177,21 +181,21 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
             {/* Point */}
             <circle cx={p.x} cy={p.y} r={radius}
               fill={isDark ? '#0A0E1A' : '#FFFFFF'}
-              stroke={isToday ? accent : isHovered ? accent : isDark ? 'rgba(148,163,184,0.4)' : 'rgba(203,213,225,0.6)'}
-              strokeWidth={isToday ? 2.5 : 2}
-              filter={isToday || isHovered ? 'url(#glow)' : undefined}
+              stroke={showTooltip ? accent : isDark ? 'rgba(148,163,184,0.4)' : 'rgba(203,213,225,0.6)'}
+              strokeWidth={showTooltip ? 2.5 : 2}
+              filter={showTooltip ? 'url(#glow)' : undefined}
               style={{ transition: 'all 0.3s ease' }} />
-            {/* Tooltip on hover */}
-            {(isHovered || isToday) && p.val > 0 && (
+            {/* Tooltip on hover or default for last point */}
+            {showTooltip && p.val >= 0 && (
               <g>
-                <rect x={p.x - 35} y={p.y - 42} width={70} height={28} rx={8}
+                <rect x={p.x - 40} y={p.y - 42} width={80} height={28} rx={8}
                   fill={isDark ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)'}
                   stroke={accent} strokeWidth={1} strokeOpacity={0.3}
                   style={{ backdropFilter: 'blur(8px)' }} />
                 <text x={p.x} y={p.y - 23} textAnchor="middle"
                   fill={isDark ? '#F8FAFC' : '#0F172A'}
                   fontSize="11" fontWeight="600" fontFamily="monospace">
-                  GH₵{p.val.toLocaleString('en-GH')}
+                  {valuePrefix}{p.val.toLocaleString('en-GH')}{valueSuffix}
                 </text>
               </g>
             )}
@@ -201,7 +205,7 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
 
       {/* X-axis labels */}
       {points.map((p, i) => {
-        const isToday = p.day === todayStrShort || p.day === todayStrDate || (points.length > 7 && p.day.startsWith('W') && i === points.length - 1);
+        const isLastPoint = i === points.length - 1;
         
         const tooMany = points.length > 10;
         const interval = Math.ceil(points.length / 7);
@@ -219,8 +223,8 @@ export function PharmaChart({ data, isDark, accent, height = 200 }: PharmaChartP
 
         return (
           <text key={`label-${i}`} x={p.x} y={height - 12} textAnchor="middle"
-            fill={isToday ? accent : isDark ? '#64748B' : '#94A3B8'}
-            fontSize="10" fontWeight={isToday ? 600 : 500}
+            fill={isLastPoint ? accent : isDark ? '#64748B' : '#94A3B8'}
+            fontSize="10" fontWeight={isLastPoint ? 600 : 500}
             style={{ transition: 'all 0.3s ease' }}>
             {p.day}
           </text>
