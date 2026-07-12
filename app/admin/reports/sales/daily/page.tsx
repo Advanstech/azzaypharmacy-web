@@ -135,86 +135,99 @@ export default function DailySalesReportPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
+        <div className="flex items-center gap-4">
           <button 
             onClick={() => router.push('/admin/reports')}
-            className="p-2 rounded-xl transition-all hover:opacity-80"
-            style={{ background: card.bg, border: `1px solid ${card.border}` }}>
-            <ArrowLeft size={20} style={{ color: card.text }} />
+            className="p-3 rounded-2xl transition-all hover:scale-105 hover:shadow-lg flex items-center justify-center backdrop-blur-xl"
+            style={{ background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)', border: `1px solid ${card.border}`, color: card.text }}>
+            <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Daily Sales Report</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Detailed transaction history with profit analysis</p>
+            <h1 className="font-display text-3xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-500 mb-1">
+              Daily Sales Report
+            </h1>
+            <p className="text-sm font-medium" style={{ color: card.muted }}>Detailed transaction history with profit analysis</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <input 
-            type="date" 
-            value={selectedDate}
-            onChange={(e) => { setSelectedDate(e.target.value); setCurrentPage(1); }}
-            className="px-3 py-2 rounded-xl text-sm font-medium"
-            style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center p-1 rounded-2xl backdrop-blur-xl shadow-inner" style={{ background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)', border: `1px solid ${card.border}` }}>
+            <Calendar size={16} className="mx-3" style={{ color: card.subtle }} />
+            <input 
+              type="date" 
+              value={selectedDate}
+              onChange={(e) => { setSelectedDate(e.target.value); setCurrentPage(1); }}
+              className="pr-4 py-2 rounded-xl text-sm font-bold bg-transparent focus:outline-none"
+              style={{ color: card.text }}
+            />
+          </div>
           <button 
             onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
-            style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-black transition-all hover:scale-105 shadow-lg"
+            style={{ background: 'linear-gradient(135deg, #0EA5E9, #0284C7)', color: '#FFF' }}>
             <Download size={16} />
-            Export CSV
+            Export Data
           </button>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
         {[
-          { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}`, icon: TrendingUp, color: '#10B981' },
-          { label: 'Transactions', value: String(metrics.totalTransactions), icon: Receipt, color: '#0EA5E9' },
-          { label: 'Customers', value: String(metrics.uniqueCustomers), icon: Users, color: '#8B5CF6' },
-          { label: 'Items Sold', value: String(metrics.totalItems), icon: ShoppingBag, color: '#F59E0B' },
+          { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}`, icon: TrendingUp, color: '#10B981', glow: 'rgba(16,185,129,0.2)' },
+          { label: 'Transactions', value: String(metrics.totalTransactions), icon: Receipt, color: '#0EA5E9', glow: 'rgba(14,165,233,0.2)' },
+          { label: 'Customers', value: String(metrics.uniqueCustomers), icon: Users, color: '#8B5CF6', glow: 'rgba(139,92,246,0.2)' },
+          { label: 'Items Sold', value: String(metrics.totalItems), icon: ShoppingBag, color: '#F59E0B', glow: 'rgba(245,158,11,0.2)' },
         ].map((kpi, i) => (
-          <div key={i} className="rounded-xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-            <div className="flex items-center gap-2 mb-2">
-              <kpi.icon size={16} style={{ color: kpi.color }} />
-              <span className="text-xs font-medium" style={{ color: card.subtle }}>{kpi.label}</span>
+          <div key={i} className="rounded-3xl border p-5 relative overflow-hidden group transition-all hover:-translate-y-1 hover:shadow-xl backdrop-blur-xl" 
+            style={{ background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.7)', borderColor: card.border }}>
+            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full blur-2xl opacity-30 transition-opacity group-hover:opacity-50" style={{ background: kpi.color }} />
+            <div className="flex items-center gap-3 mb-3 relative z-10">
+              <div className="p-2.5 rounded-xl shadow-inner" style={{ background: `linear-gradient(135deg, ${kpi.color}30, ${kpi.color}05)`, color: kpi.color, border: `1px solid ${kpi.color}40` }}>
+                <kpi.icon size={18} />
+              </div>
+              <span className="text-[11px] font-black uppercase tracking-wider" style={{ color: card.subtle }}>{kpi.label}</span>
             </div>
-            <p className="font-display text-xl font-bold" style={{ color: card.text }}>{kpi.value}</p>
+            <p className="font-display text-2xl font-black relative z-10 tracking-tight" style={{ color: card.text }}>{kpi.value}</p>
           </div>
         ))}
       </div>
 
       {/* Payment Method Breakdown */}
-      <div className="rounded-xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-        <h3 className="font-bold text-sm mb-3" style={{ color: card.text }}>Payment Methods</h3>
-        <div className="flex flex-wrap gap-3">
+      <div className="rounded-3xl border p-6 backdrop-blur-xl shadow-lg relative z-10" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.7)', borderColor: card.border }}>
+        <h3 className="font-black text-sm mb-4 tracking-wider uppercase" style={{ color: card.subtle }}>Payment Methods Breakdown</h3>
+        <div className="flex flex-wrap gap-4">
           {Object.entries(metrics.byPayment).map(([method, amount]) => (
-            <div key={method} className="px-3 py-2 rounded-lg" style={{ background: card.primaryBg }}>
-              <span className="text-xs font-bold" style={{ color: card.primary }}>{method}</span>
-              <p className="font-bold" style={{ color: card.text }}>GH₵ {amount.toFixed(2)}</p>
+            <div key={method} className="px-5 py-3 rounded-2xl flex items-center gap-3 transition-transform hover:scale-105 cursor-default" 
+              style={{ background: card.primaryBg, border: `1px solid ${card.primaryBorder}` }}>
+              <span className="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md" style={{ background: card.primaryBg, color: card.primary }}>{method}</span>
+              <p className="font-display font-black" style={{ color: card.text }}>GH₵ {amount.toFixed(2)}</p>
             </div>
           ))}
+          {Object.keys(metrics.byPayment).length === 0 && (
+             <p className="text-xs font-medium" style={{ color: card.muted }}>No payment data for this period.</p>
+          )}
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={16} style={{ color: card.subtle }} />
+      <div className="flex flex-col sm:flex-row gap-4 relative z-10">
+        <div className="flex-1 relative group">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 transition-colors group-focus-within:text-sky-500" size={18} style={{ color: card.subtle }} />
           <input 
             type="text"
             placeholder="Search customer, receipt, or product..."
             value={searchTerm}
             onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
-            style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
+            className="w-full pl-12 pr-4 py-3.5 rounded-2xl text-sm font-medium transition-all focus:ring-2 focus:outline-none backdrop-blur-xl shadow-sm"
+            style={{ background: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)', border: `1px solid ${card.border}`, color: card.text, outlineColor: card.primary }}
           />
         </div>
         <select 
           value={paymentFilter}
           onChange={(e) => { setPaymentFilter(e.target.value); setCurrentPage(1); }}
-          className="px-4 py-2.5 rounded-xl text-sm font-medium"
-          style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>
+          className="px-5 py-3.5 rounded-2xl text-sm font-bold transition-all focus:ring-2 focus:outline-none backdrop-blur-xl shadow-sm appearance-none cursor-pointer"
+          style={{ background: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)', border: `1px solid ${card.border}`, color: card.text, outlineColor: card.primary, minWidth: '180px' }}>
           <option value="All">All Payments</option>
           <option value="Cash">Cash</option>
           <option value="MoMo">Mobile Money</option>
@@ -225,18 +238,18 @@ export default function DailySalesReportPage() {
       </div>
 
       {/* Transactions Table */}
-      <div className="rounded-xl border overflow-hidden" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
+      <div className="rounded-3xl border overflow-hidden shadow-2xl relative z-10 backdrop-blur-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.7)', borderColor: card.border }}>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC' }}>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Time</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Receipt</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Customer</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Items</th>
-                <th className="px-4 py-3 text-left text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Payment</th>
-                <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Total</th>
-                <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wider" style={{ color: card.subtle }}>Profit</th>
+              <tr style={{ background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(241,245,249,0.5)' }}>
+                <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Time</th>
+                <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Receipt</th>
+                <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Customer</th>
+                <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Items</th>
+                <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Payment</th>
+                <th className="px-5 py-4 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Total</th>
+                <th className="px-5 py-4 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Profit</th>
               </tr>
             </thead>
             <tbody>
@@ -247,46 +260,40 @@ export default function DailySalesReportPage() {
                 }, 0);
                 const profit = sale.totalAmount - saleCogs;
                 return (
-                  <tr key={sale.id} className="border-t" style={{ borderColor: card.border }}>
-                    <td className="px-4 py-3 text-sm" style={{ color: card.text }}>
+                  <tr key={sale.id} className="border-t transition-colors hover:bg-black/5 dark:hover:bg-white/5" style={{ borderColor: card.border }}>
+                    <td className="px-5 py-4 text-xs font-bold" style={{ color: card.text }}>
                       {new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-mono px-2 py-1 rounded" style={{ background: card.primaryBg, color: card.primary }}>
-                        {sale.receiptNo || sale.id.slice(-6)}
-                      </span>
+                    <td className="px-5 py-4 text-xs font-mono" style={{ color: card.muted }}>{sale.receiptNo || sale.id.slice(-6)}</td>
+                    <td className="px-5 py-4">
+                      <p className="text-xs font-bold" style={{ color: card.text }}>{sale.customerName || 'Walk-in'}</p>
+                      {sale.customerPhone && <p className="text-[10px]" style={{ color: card.subtle }}>{sale.customerPhone}</p>}
                     </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium" style={{ color: card.text }}>{sale.customerName || 'Walk-in'}</p>
-                      {sale.customerPhone && <p className="text-xs" style={{ color: card.subtle }}>{sale.customerPhone}</p>}
+                    <td className="px-5 py-4 text-xs font-medium" style={{ color: card.text }}>
+                      {sale.items.reduce((sum, i) => sum + i.quantity, 0)} units
                     </td>
-                    <td className="px-4 py-3 text-sm" style={{ color: card.text }}>
-                      {sale.items.reduce((sum, i) => sum + i.quantity, 0)} items
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs font-bold px-2 py-1 rounded" 
-                        style={{ 
-                          background: sale.paymentMethod === 'Cash' ? 'rgba(16,185,129,0.1)' : 
-                                    sale.paymentMethod === 'MoMo' ? 'rgba(139,92,246,0.1)' : 
-                                    sale.paymentMethod === 'NHIS' ? 'rgba(14,165,233,0.1)' : 'rgba(245,158,11,0.1)',
-                          color: sale.paymentMethod === 'Cash' ? '#10B981' : 
-                                 sale.paymentMethod === 'MoMo' ? '#8B5CF6' : 
-                                 sale.paymentMethod === 'NHIS' ? '#0EA5E9' : '#F59E0B'
-                        }}>
+                    <td className="px-5 py-4">
+                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md"
+                        style={{ background: card.primaryBg, color: card.primary }}>
                         {sale.paymentMethod}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono font-bold" style={{ color: card.text }}>
+                    <td className="px-5 py-4 text-right font-mono text-sm font-black" style={{ color: card.text }}>
                       GH₵ {sale.totalAmount.toFixed(2)}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="font-mono font-bold" style={{ color: profit > 0 ? '#10B981' : '#EF4444' }}>
-                        GH₵ {profit.toFixed(2)}
-                      </span>
+                    <td className="px-5 py-4 text-right font-mono text-sm font-black" style={{ color: profit >= 0 ? '#10B981' : '#EF4444' }}>
+                      GH₵ {profit.toFixed(2)}
                     </td>
                   </tr>
                 );
               })}
+              {paginatedSales.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-5 py-8 text-center text-sm font-bold" style={{ color: card.muted }}>
+                    No sales found for this date.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

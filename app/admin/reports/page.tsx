@@ -555,21 +555,24 @@ export default function ReportsPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col gap-6 relative z-10">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Reports</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Live data — export any report as CSV instantly.</p>
+            <h1 className="font-display text-4xl font-black mb-2 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-400 via-indigo-500 to-purple-500 animate-gradient-x">
+              Command Reports
+            </h1>
+            <p className="text-sm font-medium" style={{ color: card.muted }}>Live intelligence — export actionable data instantly.</p>
           </div>
           {/* Live summary strip */}
           <div className="flex items-center gap-3 flex-wrap">
             {[
-              { label: 'Today Revenue', value: `GH₵ ${todaySales.reduce((s, x) => s + x.totalAmount, 0).toFixed(2)}`, color: '#10B981' },
-              { label: 'Low Stock', value: String(lowStock.length), color: '#F59E0B' },
-              { label: 'Staff On Duty', value: String(staff.filter(s => s.isOnDuty).length), color: '#0EA5E9' },
+              { label: 'Today Revenue', value: `GH₵ ${todaySales.reduce((s, x) => s + x.totalAmount, 0).toFixed(2)}`, color: '#10B981', glow: 'rgba(16,185,129,0.3)' },
+              { label: 'Low Stock', value: String(lowStock.length), color: '#F59E0B', glow: 'rgba(245,158,11,0.3)' },
+              { label: 'Staff On Duty', value: String(staff.filter(s => s.isOnDuty).length), color: '#0EA5E9', glow: 'rgba(14,165,233,0.3)' },
             ].map(k => (
-              <div key={k.label} className="px-3 py-1.5 rounded-xl text-xs font-bold"
-                style={{ background: `${k.color}15`, color: k.color, border: `1px solid ${k.color}30` }}>
+              <div key={k.label} className="px-4 py-2 rounded-2xl text-[11px] font-bold tracking-wide flex items-center gap-2 backdrop-blur-md transition-all hover:scale-105"
+                style={{ background: `${k.color}15`, color: k.color, border: `1px solid ${k.color}40`, boxShadow: `0 4px 12px ${k.glow}` }}>
+                <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: k.color }} />
                 {k.label}: {k.value}
               </div>
             ))}
@@ -577,26 +580,34 @@ export default function ReportsPage() {
         </div>
 
         {/* Date Range Filter */}
-        <div className="flex flex-wrap items-center gap-3 p-4 rounded-2xl border" style={{ background: card.bg, borderColor: card.border }}>
-          <Calendar size={16} style={{ color: card.primary }} />
-          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: card.muted }}>Date Range</span>
-          <div className="flex items-center gap-2">
-            <label className="text-xs" style={{ color: card.muted }}>From</label>
-            <input
-              type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none"
-              style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
-            />
+        <div className="flex flex-wrap items-center gap-4 p-4 rounded-3xl border backdrop-blur-xl shadow-xl transition-all" 
+          style={{ background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.7)', borderColor: card.border }}>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl" style={{ background: `${card.primary}15` }}>
+            <Calendar size={16} style={{ color: card.primary }} />
+            <span className="text-xs font-black uppercase tracking-widest" style={{ color: card.primary }}>Date Range</span>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs" style={{ color: card.muted }}>To</label>
-            <input
-              type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium focus:outline-none"
-              style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
-            />
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase" style={{ color: card.subtle }}>From</span>
+              <input
+                type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="px-3 py-2 rounded-xl text-xs font-bold focus:outline-none transition-all focus:ring-2"
+                style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text, outlineColor: card.primary }}
+              />
+            </div>
+            <span className="text-xs font-bold" style={{ color: card.subtle }}>—</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase" style={{ color: card.subtle }}>To</span>
+              <input
+                type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="px-3 py-2 rounded-xl text-xs font-bold focus:outline-none transition-all focus:ring-2"
+                style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text, outlineColor: card.primary }}
+              />
+            </div>
           </div>
-          <div className="flex gap-1.5 ml-auto flex-wrap">
+
+          <div className="flex gap-2 ml-auto flex-wrap bg-opacity-50 p-1 rounded-2xl" style={{ background: card.bg }}>
             {[
               { label: 'Today', fn: () => { setDateFrom(today); setDateTo(today); } },
               { label: 'This Week', fn: () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); setDateFrom(d.toISOString().split('T')[0]); setDateTo(today); } },
@@ -604,28 +615,24 @@ export default function ReportsPage() {
               { label: 'Last 3M', fn: () => { const d = new Date(); d.setMonth(d.getMonth() - 3); setDateFrom(d.toISOString().split('T')[0]); setDateTo(today); } },
             ].map(q => (
               <button key={q.label} onClick={q.fn}
-                className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:opacity-90"
+                className="px-4 py-1.5 rounded-xl text-[11px] font-bold transition-all hover:scale-105 hover:shadow-lg"
                 style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
                 {q.label}
               </button>
             ))}
           </div>
-          <div className="text-xs font-bold" style={{ color: '#10B981' }}>
-            {rangeSales.length} sales · GH₵ {rangeRevenue.toFixed(2)}
-          </div>
         </div>
       </div>
 
       {/* Category Filter */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-3 flex-wrap relative z-10">
         {CATEGORIES.map(cat => (
           <button key={cat} onClick={() => setActiveCategory(cat)}
-            className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
+            className={`px-5 py-2.5 rounded-2xl text-xs font-black tracking-wide transition-all duration-300 ${activeCategory === cat ? 'scale-105 shadow-xl' : 'hover:scale-105 hover:shadow-md'}`}
             style={{
-              background: activeCategory === cat ? card.primaryBg : card.bg,
-              color: activeCategory === cat ? card.primary : card.muted,
-              border: `1px solid ${activeCategory === cat ? card.primaryBorder : card.border}`,
-              boxShadow: activeCategory === cat ? 'none' : card.shadow,
+              background: activeCategory === cat ? (isDark ? 'rgba(255,255,255,0.1)' : '#0F172A') : card.bg,
+              color: activeCategory === cat ? (isDark ? '#FFF' : '#FFF') : card.muted,
+              border: `1px solid ${activeCategory === cat ? 'transparent' : card.border}`,
             }}>
             {cat}
           </button>
@@ -633,38 +640,42 @@ export default function ReportsPage() {
       </div>
 
       {/* Report Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 relative z-10">
         {filtered.map(report => {
           const Icon = report.icon;
           const isGenerating = generating === report.id;
           return (
             <div key={report.id}
-              className="rounded-2xl border backdrop-blur-xl p-5 transition-all hover:scale-[1.01] group flex flex-col"
-              style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-              <div className="flex items-start justify-between mb-4">
-                <div className="p-3 rounded-xl" style={{ background: `${report.color}18`, color: report.color }}>
-                  <Icon size={22} />
+              className="rounded-3xl border p-6 transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl group flex flex-col relative overflow-hidden"
+              style={{ background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(255,255,255,0.6)', borderColor: card.border, backdropFilter: 'blur(20px)' }}>
+              
+              {/* Subtle background glow */}
+              <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-3xl opacity-20 transition-opacity group-hover:opacity-40" style={{ background: report.color }} />
+
+              <div className="flex items-start justify-between mb-5 relative z-10">
+                <div className="p-3.5 rounded-2xl shadow-inner" style={{ background: `linear-gradient(135deg, ${report.color}20, ${report.color}05)`, color: report.color, border: `1px solid ${report.color}30` }}>
+                  <Icon size={24} />
                 </div>
-                <span className="text-[10px] font-bold px-2 py-1 rounded-full"
-                  style={{ background: `${report.color}15`, color: report.color }}>
+                <span className="text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full"
+                  style={{ background: `${report.color}15`, color: report.color, border: `1px solid ${report.color}30` }}>
                   {report.category}
                 </span>
               </div>
-              <h3 className="font-display text-sm font-bold mb-1" style={{ color: card.text }}>{report.title}</h3>
-              <p className="text-xs mb-4 leading-relaxed flex-1" style={{ color: card.muted }}>{report.desc}</p>
+              <h3 className="font-display text-lg font-black mb-1.5 relative z-10" style={{ color: card.text }}>{report.title}</h3>
+              <p className="text-xs mb-6 leading-relaxed flex-1 relative z-10 font-medium" style={{ color: card.subtle }}>{report.desc}</p>
               
               {/* Action Buttons */}
-              <div className="flex items-center gap-2 mt-auto">
+              <div className="flex items-center gap-3 mt-auto relative z-10">
                 <button
                   onClick={() => router.push(report.detailPath)}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all active:scale-95 hover:opacity-90"
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all hover:scale-[1.03] active:scale-95"
                   style={{
-                    background: `${report.color}15`,
-                    color: report.color,
-                    border: `1px solid ${report.color}30`,
+                    background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                    color: card.text,
+                    border: `1px solid ${card.border}`,
                   }}>
-                  <Eye size={13} />
-                  View Details
+                  <Eye size={14} />
+                  View
                 </button>
                 <button
                   onClick={async () => {
@@ -674,20 +685,19 @@ export default function ReportsPage() {
                     setGenerating(null);
                   }}
                   disabled={isGenerating}
-                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-all active:scale-95"
+                  className="flex-[1.5] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all hover:scale-[1.03] active:scale-95 shadow-md"
                   style={{
-                    background: isGenerating ? `${report.color}30` : card.primaryBg,
-                    color: isGenerating ? report.color : card.primary,
-                    border: `1px solid ${card.primaryBorder}`,
+                    background: isGenerating ? `${report.color}50` : `linear-gradient(135deg, ${report.color}, ${report.color}DD)`,
+                    color: '#FFF',
                     opacity: isGenerating ? 0.7 : 1,
                   }}>
-                  <Download size={13} />
-                  {isGenerating ? 'Generating...' : 'Export CSV'}
+                  <Download size={14} />
+                  {isGenerating ? 'Generating...' : 'Export Data'}
                 </button>
               </div>
               
-              <div className="flex items-center justify-between mt-3 pt-3 border-t" style={{ borderColor: card.border }}>
-                <span className="text-[10px]" style={{ color: card.subtle }}>
+              <div className="flex items-center justify-between mt-4 pt-4 border-t relative z-10" style={{ borderColor: card.border }}>
+                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: card.subtle }}>
                   Updated: {report.lastGenerated}
                 </span>
                 <ChevronRight size={14} style={{ color: card.subtle }} />

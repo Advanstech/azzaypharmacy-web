@@ -258,7 +258,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       </div>
 
       {/* ── ALL SECTIONS hidden while skeleton shows ─────────── */}
-      <div style={{ display: loadingStats && !stats ? 'none' : undefined }}>
+      <div className="space-y-6" style={{ display: loadingStats && !stats ? 'none' : undefined }}>
       {/* ── MAIN GRID: Sparkline + Top Products + Payments ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -404,7 +404,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       </div>
 
       {/* ── RECENT TRANSACTIONS ──────────────────────────────── */}
-      <div className="rounded-2xl border p-6 backdrop-blur-xl"
+      <div className="mt-6 rounded-2xl border p-6 backdrop-blur-xl"
         style={{ background: s.bg, borderColor: s.border, boxShadow: s.shadow }}>
         <div className="flex items-center justify-between mb-4">
           <div>
