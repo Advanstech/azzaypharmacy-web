@@ -180,10 +180,13 @@ export default function SuppliersPage() {
 
   // Enrich suppliers with real computed stats
   const suppliers = useMemo(() => {
-    const maxSpend = Math.max(...storeSuppliers.map(s => {
-      const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
-      return supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
-    }), 1);
+    const maxSpend = Math.max(
+      1,
+      ...storeSuppliers.map(s => {
+        const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
+        return supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
+      })
+    );
 
     return storeSuppliers.map(s => {
       const supplierProducts = products.filter(p => p.supplierId === s.id || (p as any).supplier?.id === s.id);
@@ -191,34 +194,41 @@ export default function SuppliersPage() {
       const supplierInvoices = invoices.filter(i => i.supplierId === s.id || i.supplier?.id === s.id);
       const totalPurchases = supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
       const totalProducts = supplierProducts.length;
-      
+
       const stockOut = supplierProducts.filter(p => p.stockQuantity === 0).length;
       const stockLow = supplierProducts.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10).length;
       const stockOk = supplierProducts.filter(p => p.stockQuantity > 10).length;
-      
+
       // Real on-time payment rate from invoices (paid on or before due date)
       const invoicesWithDueDate = supplierInvoices.filter(i => i.dueDate);
       let onTimeRate = Math.floor((s as any).onTimeRate ?? 0);
       if (invoicesWithDueDate.length > 0) {
         const onTimeCount = invoicesWithDueDate.filter(inv => {
           if (inv.paymentStatus !== 'PAID' || !inv.payments?.length) return false;
-          const lastPaid = Math.max(...inv.payments.map(p => new Date(p.paidAt || p.createdAt).getTime()));
+          const paidTimes = inv.payments.map(p => new Date(p.paidAt || p.createdAt).getTime()).filter(t => !isNaN(t));
+          if (!paidTimes.length) return false;
+          const lastPaid = Math.max(...paidTimes);
           return lastPaid <= new Date(inv.dueDate!).getTime();
         }).length;
         onTimeRate = Math.round((onTimeCount / invoicesWithDueDate.length) * 100);
       }
-      
+
       // Last order from supplier record or computed from purchases
       let lastOrder = 'No orders yet';
-      const lastOrderDate = (s as any).lastOrderDate
-        ? new Date((s as any).lastOrderDate)
-        : supplierPurchases.length > 0
-          ? new Date(Math.max(...supplierPurchases.filter(p => p.createdAt).map(p => new Date(p.createdAt!).getTime())))
-          : null;
-      if (lastOrderDate) {
+      const recordDate = (s as any).lastOrderDate ? new Date((s as any).lastOrderDate) : null;
+      const purchaseDates = supplierPurchases
+        .map(p => p.createdAt ? new Date(p.createdAt).getTime() : NaN)
+        .filter(t => !isNaN(t));
+      const lastOrderDate =
+        recordDate && !isNaN(recordDate.getTime())
+          ? recordDate
+          : purchaseDates.length > 0
+            ? new Date(Math.max(...purchaseDates))
+            : null;
+      if (lastOrderDate && !isNaN(lastOrderDate.getTime())) {
         lastOrder = lastOrderDate.toISOString().split('T')[0];
       }
-      
+
       // Stored payment terms or default
       const paymentTerms = (s as any).paymentTerms || 'Net 30';
       
