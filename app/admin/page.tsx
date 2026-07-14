@@ -9,7 +9,6 @@ import {
   Calendar
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
-import { getEffectiveToday } from '@/lib/effective-date';
 import { useMemo, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/pharma-toast';
@@ -111,7 +110,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const loadData = async () => {
-      if (sales.length === 0) await refetchSales();
+      await refetchSales(undefined, rangeBounds.start.toISOString(), rangeBounds.end.toISOString());
       if (invoices.length === 0) await refetchInvoices();
       if (staff.length === 0) await refetchStaff();
       if (products.length === 0) await refetchProducts();
@@ -122,8 +121,8 @@ export default function AdminDashboardPage() {
         fetchAiInsight();
       }, 1500);
     };
-    loadData();
-  }, []);
+    if (mounted) loadData();
+  }, [mounted, rangeBounds.start, rangeBounds.end]);
 
   const timeSeriesData = useMemo(() => {
     const days = Math.max(1, Math.round((rangeBounds.end.getTime() - rangeBounds.start.getTime()) / (1000 * 60 * 60 * 24)));
@@ -170,15 +169,10 @@ export default function AdminDashboardPage() {
   ], [timeSeriesData]);
 
   // Real KPIs calculation
-  const totalRevenue = useMemo(() => sales.reduce((acc, s) => acc + s.totalAmount, 0), [sales]);
   const pendingInvoices = useMemo(() => invoices.filter(i => i.paymentStatus !== 'PAID').length, [invoices]);
   const activeStaffCount = useMemo(() => staff.filter(s => s.isActive).length, [staff]);
   const staffOnDuty = useMemo(() => staff.filter(s => s.isOnDuty).length, [staff]);
   const stockValue = useMemo(() => products.reduce((acc, p) => acc + (p.stockQuantity * (p.costPrice || p.sellingPrice || 0)), 0), [products]);
-
-  const todayStr = useMemo(() => getEffectiveToday(sales), [sales]);
-  const todaySalesData = useMemo(() => sales.filter(s => new Date(s.createdAt).toISOString().split('T')[0] === todayStr), [sales, todayStr]);
-  const todayRevenue = useMemo(() => todaySalesData.reduce((acc, s) => acc + s.totalAmount, 0), [todaySalesData]);
 
   const criticalStock = useMemo(() => products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 5), [products]);
   const outOfStock = useMemo(() => products.filter(p => p.stockQuantity === 0), [products]);
@@ -192,9 +186,9 @@ export default function AdminDashboardPage() {
   const periodSalesData = useMemo(() => sales.filter(s => inRange(s.createdAt)), [sales, inRange]);
   const periodRevenue = useMemo(() => periodSalesData.reduce((acc, sale) => acc + (sale.totalAmount || 0), 0), [periodSalesData]);
 
-  const topProductToday = useMemo(() => {
+  const topProductPeriod = useMemo(() => {
     const counts: Record<string, { name: string; qty: number; revenue: number }> = {};
-    todaySalesData.forEach(s => {
+    periodSalesData.forEach(s => {
       s.items?.forEach((item: any) => {
         const name = item.product?.name || item.name || 'Unknown';
         if (!counts[name]) counts[name] = { name, qty: 0, revenue: 0 };
@@ -203,7 +197,7 @@ export default function AdminDashboardPage() {
       });
     });
     return Object.values(counts).sort((a, b) => b.qty - a.qty)[0] || null;
-  }, [todaySalesData]);
+  }, [periodSalesData]);
 
   const totalSupplierDebt = useMemo(() => invoices.filter(i => i.paymentStatus !== 'PAID').reduce((acc, i) => acc + (i.balance || 0), 0), [invoices]);
 
@@ -388,8 +382,8 @@ export default function AdminDashboardPage() {
         {/* 4 Primary KPIs in a Column/Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
           {[
-            { label: 'Today\'s Revenue', value: formatCurrency(todayRevenue), sub: `${todaySalesData.length} transactions`, icon: DollarSign, color: '#10B981', gradient: 'from-emerald-500/20 to-teal-500/5', route: '/admin/reports/sales' },
-            { label: dateRange === 'today' ? 'Revenue (Today)' : dateRange === 'custom' ? 'Period Revenue' : `Revenue (${dateRange.toUpperCase()})`, value: formatCurrency(periodRevenue), sub: `${periodSalesData.length} total sales`, icon: TrendingUp, color: '#0EA5E9', gradient: 'from-sky-500/20 to-cyan-500/5', route: '/admin/reports/sales' },
+            { label: 'Revenue', value: formatCurrency(periodRevenue), sub: `${periodSalesData.length} transactions in ${dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}`, icon: DollarSign, color: '#10B981', gradient: 'from-emerald-500/20 to-teal-500/5', route: '/admin/reports/sales' },
+            { label: 'Expenses', value: formatCurrency(periodExpenses), sub: `${expenses.filter(e => inRange(e.date || e.createdAt)).length} records in ${dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}`, icon: TrendingDown, color: '#0EA5E9', gradient: 'from-sky-500/20 to-cyan-500/5', route: '/admin/reports/financial/expenses' },
             { label: 'Staff On Duty', value: `${staffOnDuty} / ${activeStaffCount}`, sub: 'active staff members', icon: UserCheck, color: '#8B5CF6', gradient: 'from-violet-500/20 to-purple-500/5', route: '/admin/staff' },
             { label: 'Stock Value', value: formatCurrency(stockValue), sub: `${products.length} products`, icon: Package, color: '#F59E0B', gradient: 'from-amber-500/20 to-orange-500/5', route: '/dashboard/inventory' },
           ].map(s => {
@@ -513,8 +507,8 @@ export default function AdminDashboardPage() {
           </h3>
           <div className="space-y-4">
             <div>
-              <p className="text-xs font-bold uppercase tracking-wide" style={{ color: cardStyle.muted }}>Revenue (Month)</p>
-              <p className="text-xl font-black text-emerald-500">{formatCurrency(todayRevenue)}</p>
+              <p className="text-xs font-bold uppercase tracking-wide" style={{ color: cardStyle.muted }}>{dateRange === 'today' ? 'Revenue (Today)' : dateRange === 'custom' ? 'Revenue (Period)' : `Revenue (${dateRange.toUpperCase()})`}</p>
+              <p className="text-xl font-black text-emerald-500">{formatCurrency(periodRevenue)}</p>
             </div>
             <div className="w-full h-px" style={{ background: cardStyle.border }} />
             <div>
@@ -533,31 +527,31 @@ export default function AdminDashboardPage() {
         <div className="rounded-[24px] border p-6 backdrop-blur-xl flex flex-col" style={{ background: cardStyle.bg, borderColor: cardStyle.border, boxShadow: cardStyle.shadow }}>
           <div className="flex items-center justify-between mb-5">
             <h3 className="font-display font-bold text-lg flex items-center gap-2" style={{ color: cardStyle.text }}>
-              <Flame size={20} className="text-orange-500" /> Top Seller Today
+              <Flame size={20} className="text-orange-500" /> Top Seller
             </h3>
             <Link href="/admin/reports/sales" className="text-xs font-bold hover:underline" style={{ color: cardStyle.primary }}>Sales</Link>
           </div>
-          {topProductToday ? (
+          {topProductPeriod ? (
             <div className="flex-1 flex flex-col justify-center">
               <div className="p-5 rounded-2xl border" style={{ background: isDark ? 'rgba(249,115,22,0.05)' : '#FFF7ED', borderColor: isDark ? 'rgba(249,115,22,0.2)' : '#FFEDD5' }}>
-                <p className="font-black text-xl leading-tight mb-4" style={{ color: cardStyle.text }}>{topProductToday.name}</p>
+                <p className="font-black text-xl leading-tight mb-4" style={{ color: cardStyle.text }}>{topProductPeriod.name}</p>
                 <div className="flex justify-between items-end">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400">Units Sold</p>
-                    <p className="text-3xl font-black text-orange-600 dark:text-orange-400">{topProductToday.qty}</p>
+                    <p className="text-3xl font-black text-orange-600 dark:text-orange-400">{topProductPeriod.qty}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-teal-400">Revenue</p>
-                    <p className="text-xl font-black text-emerald-600 dark:text-teal-400">{formatCurrency(topProductToday.revenue)}</p>
+                    <p className="text-xl font-black text-emerald-600 dark:text-teal-400">{formatCurrency(topProductPeriod.revenue)}</p>
                   </div>
                 </div>
               </div>
-              <p className="text-xs mt-4 text-center font-medium" style={{ color: cardStyle.muted }}>Based on {todaySalesData.length} transactions today</p>
+              <p className="text-xs mt-4 text-center font-medium" style={{ color: cardStyle.muted }}>Based on {periodSalesData.length} transactions in {dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}</p>
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: cardStyle.muted }}>
               <ShoppingBag size={40} className="opacity-30 mb-2" />
-              <p className="text-sm font-medium">No sales recorded today yet</p>
+              <p className="text-sm font-medium">No sales recorded in this period yet</p>
             </div>
           )}
         </div>

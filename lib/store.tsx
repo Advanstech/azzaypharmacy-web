@@ -450,6 +450,7 @@ interface StoreState {
 
   // Refetch helpers
   refetchProducts: () => Promise<void>;
+  refetchSuppliers: () => Promise<void>;
   refetchSales: (branchId?: string, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchStaff: () => Promise<void>;
   refetchCustomers: () => Promise<void>;
@@ -534,7 +535,7 @@ interface StoreState {
   }) => Promise<Customer>;
 
   refundRequests: RefundRequest[];
-  refetchRefundRequests: () => Promise<void>;
+  refetchRefundRequests: (branchId?: string | null) => Promise<void>;
   requestRefund: (saleId: string, reason: string) => Promise<void>;
   approveRefund: (requestId: string) => Promise<void>;
   rejectRefund: (requestId: string) => Promise<void>;
@@ -578,6 +579,7 @@ interface StoreState {
     address?: string;
     tin?: string;
     categories?: string[];
+    paymentTerms?: string;
   }) => Promise<Supplier>;
 
   updateSupplier: (args: {
@@ -589,6 +591,7 @@ interface StoreState {
     address?: string;
     tin?: string;
     categories?: string[];
+    paymentTerms?: string;
   }) => Promise<Supplier>;
 
   deleteSupplier: (id: string) => Promise<void>;
@@ -918,9 +921,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       setLoadingBudgetVsActual(false);
     }
   }, [me?.branchId]);
-  const refetchRefundRequests = useCallback(async () => {
+  const refetchRefundRequests = useCallback(async (branchId?: string | null) => {
     try {
-      const data = await gql<{ refundRequests: { items: RefundRequest[] } }>(Q_REFUND_REQUESTS, { page: 1, limit: 1000 });
+      const data = await gql<{ refundRequests: { items: RefundRequest[] } }>(Q_REFUND_REQUESTS, { page: 1, limit: 1000, branchId: branchId ?? undefined });
       setRefundRequests(data.refundRequests?.items || []);
     } catch (err: any) {
       console.error('Failed to fetch refund requests', err);
@@ -1424,7 +1427,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const createSupplier = useCallback(async (args: {
     name: string; contact?: string; phone?: string; email?: string;
-    address?: string; tin?: string; categories?: string[];
+    address?: string; tin?: string; categories?: string[]; paymentTerms?: string;
   }): Promise<Supplier> => {
     const data = await gql<{ createSupplier: Supplier }>(M_CREATE_SUPPLIER, { input: args });
     const newSupplier = data.createSupplier;
@@ -1434,7 +1437,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const updateSupplier = useCallback(async (args: {
     id: string; name?: string; contact?: string; phone?: string;
-    email?: string; address?: string; tin?: string; categories?: string[];
+    email?: string; address?: string; tin?: string; categories?: string[]; paymentTerms?: string;
   }): Promise<Supplier> => {
     const { id, ...rest } = args;
     const data = await gql<{ updateSupplier: Supplier }>(M_UPDATE_SUPPLIER, { id, input: rest });
@@ -1547,7 +1550,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       error, syncStatus,
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
-      refetchProducts, refetchSales, refetchStaff, refetchCustomers,
+      refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers,
       refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
       createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, bulkUpdateProductPrices, updateProductFull,

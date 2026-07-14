@@ -53,7 +53,8 @@ const navItems = [
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useCustomAuth();
-  const { me } = useStore();
+  const { me, refetchSales } = useStore();
+  const { activeBranchId } = useBranch();
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -64,6 +65,12 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (mounted && me?.id) {
+      refetchSales(activeBranchId ?? undefined);
+    }
+  }, [activeBranchId, me?.id, mounted, refetchSales]);
 
   useEffect(() => {
     console.log(`[DASHBOARD] auth check: loading=${loading} user=${user?.email ?? 'null'}`);

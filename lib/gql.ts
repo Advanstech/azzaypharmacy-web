@@ -183,6 +183,7 @@ export const Q_SUPPLIERS = `
   query GetSuppliers {
     suppliers {
       id name contact phone email address tin aiScore categories
+      paymentTerms onTimeRate performanceScore lastOrderDate status riskLevel
     }
   }
 `;
@@ -405,8 +406,8 @@ export const Q_AUTHORIZATIONS_SHIFT = `
 `;
 
 export const Q_MY_SHIFT_RECONCILIATIONS = `
-  query GetMyShiftReconciliations($userId: String!) {
-    myShiftReconciliations(userId: $userId) {
+  query GetMyShiftReconciliations($userId: String!, $branchId: String) {
+    myShiftReconciliations(userId: $userId, branchId: $branchId) {
       id totalRevenue physicalCash digitalPayments discrepancy notes status createdAt
       branch { id name }
       approvedBy { id name }
@@ -415,8 +416,8 @@ export const Q_MY_SHIFT_RECONCILIATIONS = `
 `;
 
 export const Q_ALL_SHIFT_RECONCILIATIONS = `
-  query GetAllShiftReconciliations {
-    allShiftReconciliations {
+  query GetAllShiftReconciliations($branchId: String) {
+    allShiftReconciliations(branchId: $branchId) {
       id totalRevenue physicalCash digitalPayments discrepancy notes status createdAt
       branch { id name }
       pharmacist { id name }
@@ -437,10 +438,11 @@ export const Q_SHIFT_RECONCILIATION_BY_ID = `
 `;
 
 export const Q_AUTHORIZATIONS_EXPENSE = `
-  query GetExpensesPaginated($page: Float, $limit: Float) {
-    expenses(page: $page, limit: $limit) {
+  query GetExpensesPaginated($page: Float, $limit: Float, $branchId: String) {
+    expenses(page: $page, limit: $limit, branchId: $branchId) {
       items {
         id amount description date status createdAt
+        branchId
         category { id name }
         requestedBy { id name }
         approvedBy { id name }
@@ -583,11 +585,11 @@ export const M_BULK_UPDATE_PRODUCT_SUPPLIER = `
 `;
 
 export const Q_REFUND_REQUESTS = `
-  query GetRefundRequests($page: Float, $limit: Float) {
-    refundRequests(page: $page, limit: $limit) {
+  query GetRefundRequests($page: Float, $limit: Float, $branchId: String) {
+    refundRequests(page: $page, limit: $limit, branchId: $branchId) {
       items {
         id saleId reason status createdAt
-        sale { id totalAmount paymentMethod }
+        sale { id totalAmount paymentMethod branchId }
         requestedBy { id name }
         approvedBy { id name }
       }
@@ -921,7 +923,7 @@ export const M_UPDATE_PRODUCT = `
 export const M_CREATE_SUPPLIER = `
   mutation CreateSupplier($input: CreateSupplierInput!) {
     createSupplier(input: $input) {
-      id name contact phone email address tin aiScore
+      id name contact phone email address tin aiScore paymentTerms onTimeRate performanceScore lastOrderDate status riskLevel
     }
   }
 `;
@@ -929,7 +931,7 @@ export const M_CREATE_SUPPLIER = `
 export const M_UPDATE_SUPPLIER = `
   mutation UpdateSupplier($id: ID!, $input: CreateSupplierInput!) {
     updateSupplier(id: $id, input: $input) {
-      id name contact phone email address tin aiScore
+      id name contact phone email address tin aiScore paymentTerms onTimeRate performanceScore lastOrderDate status riskLevel
     }
   }
 `;

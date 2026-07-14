@@ -194,6 +194,7 @@ export default function FinancialsPage() {
       amount: inv.balance,
       total: inv.total,
       paidAmount: inv.paidAmount,
+      payments: inv.payments || [],
       status: inv.paymentStatus === 'PAID' ? 'paid' : (inv.dueDate && new Date(inv.dueDate) < new Date() ? 'overdue' : 'pending'),
       dueDate: inv.dueDate ? new Date(inv.dueDate).toLocaleDateString() : 'No due date',
       issueDate: new Date(inv.issueDate).toLocaleDateString(),
@@ -420,7 +421,7 @@ export default function FinancialsPage() {
     setSelectedPayable(payable);
     setPaymentAmount(String(payable.amount || 0));
     setPaymentMethod('CASH');
-    setPaymentReference('');
+    setPaymentReference(`PAY-${Date.now()}`);
     setPaymentNote('');
     setShowPaymentModal(true);
   };
@@ -910,7 +911,7 @@ export default function FinancialsPage() {
               };
               const st = statusColors[p.status] || statusColors.pending;
               return (
-                <div key={p.invoice} className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto_auto_auto] gap-3 p-4 items-center" style={{ background: i % 2 === 0 ? 'transparent' : (isDark ? 'rgba(15,23,42,0.2)' : 'rgba(248,250,252,0.5)'), borderBottom: `1px solid ${card.divider}` }}>
+                <div key={p.id} className="grid grid-cols-1 sm:grid-cols-[auto_1fr_auto_auto_auto] gap-3 p-4 items-center" style={{ background: i % 2 === 0 ? 'transparent' : (isDark ? 'rgba(15,23,42,0.2)' : 'rgba(248,250,252,0.5)'), borderBottom: `1px solid ${card.divider}` }}>
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: card.primaryBg }}>
                     <Building2 size={18} style={{ color: card.primary }} />
                   </div>
@@ -1211,26 +1212,82 @@ export default function FinancialsPage() {
       {/* Supplier Payment Modal */}
       {showPaymentModal && selectedPayable && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.4)' }}>
-          <div className="rounded-2xl w-full max-w-md p-6 shadow-2xl relative" style={{ background: card.bg, border: `1px solid ${card.border}` }}>
+          <div className="rounded-2xl w-full max-w-lg p-6 shadow-2xl relative" style={{ background: card.bg, border: `1px solid ${card.border}` }}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold" style={{ color: card.text }}>Record Supplier Payment</h2>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: card.primaryBg }}>
+                  <CreditCard size={20} style={{ color: card.primary }} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold" style={{ color: card.text }}>Record Supplier Payment</h2>
+                  <p className="text-xs" style={{ color: card.muted }}>{selectedPayable.supplier} · {selectedPayable.invoice}</p>
+                </div>
+              </div>
               <button onClick={() => setShowPaymentModal(false)} className="p-1 rounded-lg transition-colors" style={{ color: card.muted }}><X size={18} /></button>
             </div>
-            <div className="mb-4 p-3 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC' }}>
-              <p className="text-sm font-medium" style={{ color: card.text }}>{selectedPayable.supplier}</p>
-              <p className="text-xs" style={{ color: card.muted }}>Invoice {selectedPayable.invoice}</p>
-              <p className="text-sm font-bold mt-1" style={{ color: card.primary }}>Balance: GH₵ {Number(selectedPayable.amount || 0).toLocaleString()}</p>
+
+            <div className="mb-4 p-4 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC' }}>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm" style={{ color: card.muted }}>Invoice Total</span>
+                <span className="font-mono text-sm font-bold" style={{ color: card.text }}>GH₵ {Number(selectedPayable.total || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm" style={{ color: card.muted }}>Already Paid</span>
+                <span className="font-mono text-sm font-medium" style={{ color: '#10B981' }}>GH₵ {Number(selectedPayable.paidAmount || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t" style={{ borderColor: card.border }}>
+                <span className="text-sm font-medium" style={{ color: card.text }}>Balance Due</span>
+                <span className="font-mono text-lg font-bold" style={{ color: card.primary }}>GH₵ {Number(selectedPayable.amount || 0).toLocaleString()}</span>
+              </div>
             </div>
+
+            {selectedPayable.payments && selectedPayable.payments.length > 0 && (
+              <div className="mb-4 p-4 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC' }}>
+                <h3 className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: card.muted }}>Payment History</h3>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {selectedPayable.payments.map((p: any, i: number) => (
+                    <div key={i} className="flex justify-between items-center text-xs">
+                      <span style={{ color: card.muted }}>{new Date(p.paidAt || p.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: card.primaryBg, color: card.primary }}>{p.method || 'CASH'}</span>
+                        <span className="font-mono font-bold" style={{ color: '#10B981' }}>GH₵ {Number(p.amount).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <form onSubmit={handleRecordPayment} className="space-y-4">
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Amount (GH₵)</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Quick Payment</label>
+                <div className="flex gap-2">
+                  {[
+                    { label: 'Pay Full', value: Number(selectedPayable.amount || 0) },
+                    { label: '50%', value: Number(selectedPayable.amount || 0) * 0.5 },
+                    { label: '25%', value: Number(selectedPayable.amount || 0) * 0.25 },
+                  ].map(btn => {
+                    const isActive = Math.abs(Number(paymentAmount || 0) - btn.value) < 0.01;
+                    return (
+                      <button key={btn.label} type="button" onClick={() => setPaymentAmount(btn.value.toFixed(2))}
+                        className="flex-1 py-2 rounded-lg text-xs font-bold transition-all"
+                        style={{ background: isActive ? card.primary : (isDark ? 'rgba(0,0,0,0.2)' : '#F1F5F9'), color: isActive ? '#fff' : card.text, border: `1px solid ${card.border}` }}>
+                        {btn.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Amount (GH₵)</label>
                 <input required type="number" step="0.01" min="0.01" max={selectedPayable.amount || 0} value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)}
                   className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}
                   placeholder="0.00" />
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Payment Method</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Payment Method</label>
                 <select required value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}
                   className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
@@ -1242,14 +1299,14 @@ export default function FinancialsPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Reference (optional)</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Reference / Transaction No (optional)</label>
                 <input type="text" value={paymentReference} onChange={e => setPaymentReference(e.target.value)}
                   className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}
-                  placeholder="e.g. TXN123456" />
+                  placeholder={`PAY-${Date.now()}`} />
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1" style={{ color: card.muted }}>Notes (optional)</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Notes (optional)</label>
                 <input type="text" value={paymentNote} onChange={e => setPaymentNote(e.target.value)}
                   className="w-full p-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                   style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}

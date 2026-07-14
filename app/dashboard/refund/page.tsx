@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
-import { useBranchFilter } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 
 export default function RefundPage() {
@@ -18,12 +18,21 @@ export default function RefundPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests } = useStore();
+  const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests, refetchRefundRequests } = useStore();
   const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
   const branchFilter = useBranchFilter();
+  const { activeBranchId } = useBranch();
+
+  useEffect(() => {
+    refetchRefundRequests(activeBranchId ?? null);
+  }, [activeBranchId, refetchRefundRequests]);
   const branchSales = branchFilter(sales);
+
+  const branchRefundRequests = activeBranchId
+    ? refundRequests.filter(r => r.sale?.branchId === activeBranchId)
+    : refundRequests;
 
   const [receiptSearch, setReceiptSearch] = useState('');
   const [foundSale, setFoundSale] = useState<any>(null);
@@ -88,12 +97,12 @@ export default function RefundPage() {
     }
   };
 
-  const pendingRefunds = refundRequests.filter(r => r.status === 'PENDING');
-  const processedRefunds = refundRequests.filter(r => r.status === 'APPROVED' || r.status === 'REJECTED').slice(0, 20);
+  const pendingRefunds = branchRefundRequests.filter(r => r.status === 'PENDING');
+  const processedRefunds = branchRefundRequests.filter(r => r.status === 'APPROVED' || r.status === 'REJECTED').slice(0, 20);
 
   // Check if an active (PENDING or APPROVED) refund request already exists for the found sale
   const existingRefundRequest = foundSale
-    ? refundRequests.find(r => r.saleId === foundSale.id && (r.status === 'PENDING' || r.status === 'APPROVED'))
+    ? branchRefundRequests.find(r => r.saleId === foundSale.id && (r.status === 'PENDING' || r.status === 'APPROVED'))
     : null;
 
   if (!mounted) return null;

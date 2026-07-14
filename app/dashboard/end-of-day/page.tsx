@@ -12,7 +12,7 @@ import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { gql, Q_MY_SHIFT_RECONCILIATIONS, Q_ALL_SHIFT_RECONCILIATIONS } from '@/lib/gql';
 import { useRouter } from 'next/navigation';
-import { useBranchFilter } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 
 export default function EndOfDayDashboardPage() {
@@ -22,6 +22,7 @@ export default function EndOfDayDashboardPage() {
   const [mounted, setMounted] = useState(false);
   const { closeTerminal, todaySales, todayRevenue, todayTransactions, me, staff } = useStore();
   const branchFilter = useBranchFilter();
+  const { activeBranchId } = useBranch();
   const branchTodaySales = useMemo(() => branchFilter(todaySales), [branchFilter, todaySales]);
   const [report, setReport] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -82,12 +83,12 @@ export default function EndOfDayDashboardPage() {
     setLoadingPastShifts(true);
     try {
       if (isManager) {
-        // Fetch all reconciliations for managers
-        const data = await gql<{ allShiftReconciliations: any[] }>(Q_ALL_SHIFT_RECONCILIATIONS);
+        // Fetch branch reconciliations for managers
+        const data = await gql<{ allShiftReconciliations: any[] }>(Q_ALL_SHIFT_RECONCILIATIONS, { branchId: activeBranchId ?? undefined });
         setPastShifts(data.allShiftReconciliations || []);
       } else {
-        // Fetch only own reconciliations for regular staff
-        const data = await gql<{ myShiftReconciliations: any[] }>(Q_MY_SHIFT_RECONCILIATIONS, { userId: me.id });
+        // Fetch own reconciliations for the active branch
+        const data = await gql<{ myShiftReconciliations: any[] }>(Q_MY_SHIFT_RECONCILIATIONS, { userId: me.id, branchId: activeBranchId ?? undefined });
         setPastShifts(data.myShiftReconciliations || []);
       }
     } catch (e) {
@@ -101,7 +102,7 @@ export default function EndOfDayDashboardPage() {
     if (mounted && me?.id) {
       fetchPastShifts();
     }
-  }, [mounted, me?.id]);
+  }, [mounted, me?.id, activeBranchId]);
 
   // Pre-populate inputs when sales load
   useEffect(() => {

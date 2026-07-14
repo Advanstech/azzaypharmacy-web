@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
@@ -189,7 +189,19 @@ export default function InventoryPage() {
   const [invoiceNotes, setInvoiceNotes] = useState<string>('');
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [openSuggestionItemId, setOpenSuggestionItemId] = useState<string | null>(null);
+  const invoiceSearchRef = useRef<HTMLDivElement>(null);
   const [invoiceDuplicateStatus, setInvoiceDuplicateStatus] = useState<'idle' | 'checking' | 'duplicate' | 'ok'>('idle');
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (invoiceSearchRef.current && !invoiceSearchRef.current.contains(e.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -243,6 +255,7 @@ export default function InventoryPage() {
       id: p.id,
       name: p.name,
       brand: p.brand || '',
+      genericName: p.genericName || '',
       medClass: p.isControlled !== undefined || p.requiresRx !== undefined ? dbClass : (isPOM ? 'POM' : 'OTC'),
       generic: p.strength || p.dosageForm || '',
       cat: p.category || 'OTC',
@@ -257,6 +270,49 @@ export default function InventoryPage() {
       supplierId: p.supplierId,
     };
   });
+
+  // Fuzzy product matcher for invoice line items (AI or manual)
+  const getProductSuggestions = useCallback((query: string, limit = 5) => {
+    const q = query.toLowerCase().trim();
+    if (!q) return [];
+    const qWords = q.split(/\s+/).filter(Boolean);
+    const scored = products.map((p: any) => {
+      const name = (p.name || '').toLowerCase();
+      const genericName = (p.genericName || '').toLowerCase();
+      const brand = (p.brand || '').toLowerCase();
+      const generic = (p.generic || '').toLowerCase();
+      let score = 0;
+
+      if (name === q) score += 100;
+      if (genericName === q) score += 90;
+      if (brand === q) score += 70;
+      if (name.includes(q)) score += 50;
+      if (genericName.includes(q)) score += 45;
+      if (brand.includes(q)) score += 30;
+      if (generic.includes(q)) score += 20;
+
+      const tokenSets = [name, genericName, brand, generic].map(s => s.split(/\s+/).filter(Boolean));
+      for (const word of qWords) {
+        for (const tokens of tokenSets) {
+          if (tokens.includes(word)) score += 8;
+          else if (tokens.some((t: string) => t.includes(word))) score += 4;
+        }
+      }
+
+      return { product: p, score };
+    });
+
+    return scored
+      .filter((s: any) => s.score > 0)
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, limit)
+      .map((s: any) => s.product);
+  }, [products]);
+
+  const invoiceSearchResults = useMemo(() => {
+    if (invoiceSearchQuery.trim().length < 2) return [];
+    return getProductSuggestions(invoiceSearchQuery, 8);
+  }, [getProductSuggestions, invoiceSearchQuery]);
 
   const categories = ['All', ...Array.from(new Set(products.map((p: any) => p.cat)))].sort();
   const filteredProducts = products.filter((p: any) => {
@@ -820,17 +876,14 @@ export default function InventoryPage() {
       if (data && data.items && data.items.length > 0) {
         console.log(`📦 [AI_SCAN] Mapping ${data.items.length} items to verification table...`);
         setInvoiceItems(data.items.map((i: any) => {
-          const iName = (i.name || '').toLowerCase().trim();
-          // Find matching product (bidirectional includes)
-          const matchedProduct = products.find(p => {
-            const pName = p.name.toLowerCase();
-            return pName === iName || pName.includes(iName) || iName.includes(pName);
-          });
-          
+          const cleanName = (i.name || 'Unnamed Item').trim();
+          const suggestions = getProductSuggestions(cleanName, 5);
+          const matchedProduct = suggestions[0];
+
           return {
             id: Math.random().toString(36).substring(7),
             productId: matchedProduct?.id,
-            name: (i.name || 'Unnamed Item').trim(),
+            name: cleanName,
             quantity: Math.max(1, Number(i.quantity) || 1),
             unitCost: Math.max(0, Number(i.unitCost) || 0),
             sellingPrice: matchedProduct?.sellingPrice
@@ -838,7 +891,8 @@ export default function InventoryPage() {
               : Math.max(0, Number(i.unitCost) || 0) * 1.3,
             batchNo: i.batchNo || '',
             expiryDate: i.expiryDate || '',
-            exists: !!matchedProduct
+            exists: !!matchedProduct,
+            suggestions,
           };
         }));
         
@@ -959,6 +1013,19 @@ export default function InventoryPage() {
     setInvoiceItems([...invoiceItems, newItem]);
     setInvoiceSearchQuery('');
     setShowSearchDropdown(false);
+  };
+
+  const linkInvoiceItemToProduct = (itemId: string, product: any) => {
+    setInvoiceItems(prev => prev.map(item => item.id === itemId ? {
+      ...item,
+      productId: product.id,
+      name: product.name,
+      unitCost: product.costPrice || item.unitCost,
+      sellingPrice: product.sellingPrice || item.sellingPrice,
+      exists: true,
+      suggestions: undefined,
+    } : item));
+    setOpenSuggestionItemId(null);
   };
 
   const handleCreateInvoiceSupplierNow = async () => {
@@ -2299,11 +2366,11 @@ export default function InventoryPage() {
       )}
 
       {showUploadModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 overflow-hidden" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(20px)' }}>
+        <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-hidden" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(20px)' }}>
           <motion.div 
-            initial={{ scale: 0.9, opacity: 0, y: 20 }}
-            animate={{ scale: 1, opacity: 1, y: 0 }}
-            className="w-full max-w-[94vw] xl:max-w-[1500px] rounded-[40px] border shadow-2xl flex flex-col max-h-[94vh] overflow-hidden" 
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-screen h-screen max-w-none max-h-none rounded-none border shadow-2xl flex flex-col overflow-hidden" 
             style={{ background: isDark ? '#0A0E1A' : '#fff', borderColor: card.border }}
           >
             {/* Header */}
@@ -2542,11 +2609,11 @@ export default function InventoryPage() {
                   </div>
                   <div className="flex items-center justify-between mb-4">
                      <h3 className="text-sm font-black uppercase tracking-widest" style={{ color: card.primary }}>Line Item Verification</h3>
-                     <div className="relative w-[460px]">
+                     <div className="relative w-[460px]" ref={invoiceSearchRef}>
                         <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-40" style={{ color: card.text }} />
                         <input 
                           type="text" 
-                          placeholder="Search product name, brand, or category..." 
+                          placeholder="Search product name, brand, generic or category..." 
                           className="w-full pl-12 pr-4 py-3 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                           style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}
                           value={invoiceSearchQuery}
@@ -2556,7 +2623,7 @@ export default function InventoryPage() {
                         
                         {/* Intelligent Search Dropdown */}
                         <AnimatePresence>
-                          {showSearchDropdown && invoiceSearchQuery.length > 1 && (
+                          {showSearchDropdown && invoiceSearchQuery.trim().length > 1 && (
                             <motion.div 
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
@@ -2565,16 +2632,16 @@ export default function InventoryPage() {
                               style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}
                             >
                                <div className="max-h-64 overflow-y-auto p-2 custom-scrollbar">
-                                  {products.filter(p => p.name.toLowerCase().includes(invoiceSearchQuery.toLowerCase())).length > 0 ? (
-                                    products.filter(p => p.name.toLowerCase().includes(invoiceSearchQuery.toLowerCase())).map(p => (
+                                  {invoiceSearchResults.length > 0 ? (
+                                    invoiceSearchResults.map(p => (
                                       <button 
                                         key={p.id}
-                                        onClick={() => addProductToInvoice(p)}
+                                        onMouseDown={(e) => { e.preventDefault(); addProductToInvoice(p); }}
                                         className="w-full text-left p-4 rounded-xl hover:bg-primary/5 flex items-center justify-between group transition-colors"
                                       >
                                         <div>
                                           <p className="text-xs font-black" style={{ color: card.text }}>{p.name}</p>
-                                          <p className="text-[9px] font-bold opacity-40 uppercase tracking-widest">{p.cat} • {p.brand}</p>
+                                          <p className="text-[9px] font-bold opacity-40 uppercase tracking-widest">{p.genericName || p.generic} {p.brand ? `• ${p.brand}` : ''} • {p.cat}</p>
                                         </div>
                                         <Plus size={14} className="opacity-0 group-hover:opacity-100 text-primary transition-opacity" />
                                       </button>
@@ -2583,7 +2650,8 @@ export default function InventoryPage() {
                                     <div className="p-8 text-center">
                                       <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-4">Product "{invoiceSearchQuery}" not found</p>
                                       <button 
-                                        onClick={() => {
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
                                           setNewProduct((prev: any) => ({ ...prev, name: invoiceSearchQuery.trim(), supplierId: invoiceSupplier || '' }));
                                           setAddModalFromInvoice(true);
                                           setShowAddModal(true);
@@ -2627,25 +2695,65 @@ export default function InventoryPage() {
                                       style={{ color: card.text }}
                                       value={item.name}
                                       onChange={(e) => {
+                                        const newName = e.target.value;
                                         const newItems = [...invoiceItems];
-                                        newItems[idx].name = e.target.value;
+                                        newItems[idx].name = newName;
+                                        newItems[idx].suggestions = getProductSuggestions(newName, 5);
+                                        newItems[idx].exists = false;
+                                        newItems[idx].productId = undefined;
                                         setInvoiceItems(newItems);
                                       }}
                                     />
                                     <div className="flex items-center gap-2 mt-1">
-                                      <p className="text-[9px] font-bold uppercase tracking-wider opacity-50" style={{ color: item.exists ? '#10B981' : '#EF4444' }}>
-                                        {item.exists ? 'Found in Catalog' : 'New Product'}
+                                      <p className="text-[9px] font-bold uppercase tracking-wider opacity-50" style={{ color: item.exists ? '#10B981' : (item.suggestions?.length ? '#F59E0B' : '#EF4444') }}>
+                                        {item.exists ? 'Found in Catalog' : item.suggestions?.length ? `${item.suggestions.length} possible match${item.suggestions.length > 1 ? 'es' : ''}` : 'New Product'}
                                       </p>
                                       {!item.exists && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleCreateInvoiceProductNow(item.id)}
-                                          disabled={creatingInvoiceProductId === item.id}
-                                          className="px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-                                          style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}
-                                        >
-                                          {creatingInvoiceProductId === item.id ? 'Creating...' : 'Create Now'}
-                                        </button>
+                                        <div className="relative">
+                                          <button
+                                            type="button"
+                                            onClick={() => setOpenSuggestionItemId(openSuggestionItemId === item.id ? null : item.id)}
+                                            disabled={creatingInvoiceProductId === item.id}
+                                            className="px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-1"
+                                            style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}
+                                          >
+                                            {creatingInvoiceProductId === item.id ? 'Creating...' : item.suggestions?.length ? 'Match Product' : 'Create New'}
+                                          </button>
+                                          {openSuggestionItemId === item.id && (
+                                            <div className="absolute top-full left-0 mt-2 w-72 rounded-2xl border shadow-2xl z-50 overflow-hidden" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+                                              <div className="p-2 max-h-64 overflow-y-auto custom-scrollbar space-y-1">
+                                                {getProductSuggestions(item.name, 5).length > 0 ? (
+                                                  getProductSuggestions(item.name, 5).map((p: any) => (
+                                                    <button
+                                                      key={p.id}
+                                                      type="button"
+                                                      onClick={() => linkInvoiceItemToProduct(item.id, p)}
+                                                      className="w-full text-left p-3 rounded-xl hover:bg-primary/5 transition-colors"
+                                                    >
+                                                      <p className="text-xs font-black" style={{ color: card.text }}>{p.name}</p>
+                                                      <p className="text-[9px] font-bold opacity-50 uppercase tracking-wider">
+                                                        {p.genericName || p.generic} {p.brand ? `• ${p.brand}` : ''} • {p.cat}
+                                                      </p>
+                                                    </button>
+                                                  ))
+                                                ) : (
+                                                  <p className="p-3 text-[10px] font-bold opacity-40 text-center uppercase tracking-wider">No similar products</p>
+                                                )}
+                                              </div>
+                                              <div className="p-2 border-t" style={{ borderColor: card.border }}>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => { setOpenSuggestionItemId(null); handleCreateInvoiceProductNow(item.id); }}
+                                                  disabled={creatingInvoiceProductId === item.id}
+                                                  className="w-full px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all disabled:opacity-50"
+                                                  style={{ background: card.success }}
+                                                >
+                                                  {creatingInvoiceProductId === item.id ? 'Creating...' : 'Create New Product'}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
                                       )}
                                     </div>
                                   </div>

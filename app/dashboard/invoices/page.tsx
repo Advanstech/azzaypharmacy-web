@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
-import { gql, M_RECEIVE_INVOICE, Q_INVOICES, M_RECORD_SUPPLIER_PAYMENT } from '@/lib/gql';
+import { gql, M_RECEIVE_INVOICE, Q_INVOICES } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
 import { useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -34,7 +34,7 @@ const PAYMENT_STATUS = {
 export default function InvoicesPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { suppliers, products, me, refetchPurchases, createSupplier, createProduct, purchases } = useStore();
+  const { suppliers, products, me, refetchPurchases, createSupplier, createProduct, purchases, recordSupplierPayment, refetchInvoices } = useStore();
   const { activeBranchId } = useBranch();
   const { addToast } = useToast();
 
@@ -75,11 +75,18 @@ export default function InvoicesPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [paymentReference, setPaymentReference] = useState('');
   const [paymentNote, setPaymentNote] = useState('');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (showPaymentModal && selectedInvoice) {
+      setPaymentReference(`PAY-${Date.now()}`);
+    }
+  }, [showPaymentModal, selectedInvoice]);
 
   useEffect(() => {
     const fetchInvoices = async () => {
@@ -245,6 +252,29 @@ export default function InvoicesPage() {
   const partialPaidCount = invoices.filter(inv => inv.paymentStatus === 'PARTIAL').length;
   const fullyPaidCount = invoices.filter(inv => inv.paymentStatus === 'PAID').length;
   const unpaidCount = invoices.filter(inv => inv.paymentStatus === 'UNPAID').length;
+
+  // Real monthly payment trend (last 6 months)
+  const monthlyPaymentTrend = useMemo(() => {
+    const months: { label: string; amount: number; height: number }[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({ label: d.toLocaleString('en-US', { month: 'short' }), amount: 0, height: 0 });
+    }
+    invoices.forEach(inv => {
+      if (inv.payments && inv.payments.length > 0) {
+        inv.payments.forEach((p: any) => {
+          const paidAt = p.paidAt ? new Date(p.paidAt) : p.createdAt ? new Date(p.createdAt) : null;
+          if (!paidAt || Number.isNaN(paidAt.getTime())) return;
+          const monthLabel = paidAt.toLocaleString('en-US', { month: 'short' });
+          const m = months.find(mo => mo.label === monthLabel);
+          if (m) m.amount += Number(p.amount || 0);
+        });
+      }
+    });
+    const max = Math.max(...months.map(m => m.amount), 1);
+    return months.map(m => ({ ...m, height: Math.max(4, Math.round((m.amount / max) * 100)) }));
+  }, [invoices]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -647,23 +677,23 @@ export default function InvoicesPage() {
 
     setIsProcessingPayment(true);
     try {
-      const result = await gql<{ recordSupplierPayment: any }>(M_RECORD_SUPPLIER_PAYMENT, {
-        invoiceId: selectedInvoice.id,
-        amount: paymentAmount,
-        method: paymentMethod,
-        reference: `PAY-${Date.now()}`,
-        notes: paymentNote,
-      });
+      const updatedInvoice = await recordSupplierPayment(
+        selectedInvoice.id,
+        paymentAmount,
+        paymentMethod,
+        paymentReference || `PAY-${Date.now()}`,
+        paymentNote
+      );
 
       // Update the invoice in the local state
       setInvoiceRecords(prev => prev.map(inv => 
         inv.id === selectedInvoice.id 
           ? { 
               ...inv, 
-              paidAmount: result.recordSupplierPayment.paidAmount,
-              balance: result.recordSupplierPayment.balance,
-              paymentStatus: result.recordSupplierPayment.paymentStatus,
-              payments: result.recordSupplierPayment.payments
+              paidAmount: updatedInvoice.paidAmount,
+              balance: updatedInvoice.balance,
+              paymentStatus: updatedInvoice.paymentStatus,
+              payments: updatedInvoice.payments
             }
           : inv
       ));
@@ -671,11 +701,13 @@ export default function InvoicesPage() {
       // Update selected invoice
       setSelectedInvoice({
         ...selectedInvoice,
-        paidAmount: result.recordSupplierPayment.paidAmount,
-        balance: result.recordSupplierPayment.balance,
-        paymentStatus: result.recordSupplierPayment.paymentStatus,
-        payments: result.recordSupplierPayment.payments
+        paidAmount: updatedInvoice.paidAmount,
+        balance: updatedInvoice.balance,
+        paymentStatus: updatedInvoice.paymentStatus,
+        payments: updatedInvoice.payments
       });
+
+      await refetchInvoices();
 
       addToast({
         type: 'success',
@@ -686,6 +718,7 @@ export default function InvoicesPage() {
 
       setShowPaymentModal(false);
       setPaymentAmount(0);
+      setPaymentReference('');
       setPaymentNote('');
     } catch (error: any) {
       console.error('Payment failed:', error);
@@ -988,24 +1021,30 @@ export default function InvoicesPage() {
           <div className="rounded-2xl border p-5 backdrop-blur-xl" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
             <h3 className="font-display text-sm font-bold mb-4" style={{ color: card.text }}>Monthly Payment Trend</h3>
             <div className="h-48 flex items-end gap-2">
-              {Array.from({ length: 6 }).map((_, i) => {
-                const height = Math.random() * 80 + 20;
-                return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    <div 
-                      className="w-full rounded-t-lg transition-all hover:opacity-80"
-                      style={{ 
-                        background: card.primary, 
-                        height: `${height}%`,
-                        opacity: 0.6 + (i * 0.1)
+              {monthlyPaymentTrend.length > 0 && monthlyPaymentTrend.some(m => m.amount > 0) ? (
+                monthlyPaymentTrend.map((m, i) => (
+                  <div key={`${m.label}-${i}`} className="flex-1 flex flex-col items-center gap-1">
+                    <div
+                      className="w-full rounded-t-lg transition-all hover:opacity-80 relative group"
+                      style={{
+                        background: card.primary,
+                        height: `${m.height}%`,
+                        opacity: 0.6 + (i * 0.08)
                       }}
-                    />
-                    <span className="text-[10px]" style={{ color: card.muted }}>
-                      {['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'][i]}
-                    </span>
+                    >
+                      <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none" style={{ background: card.text, color: card.bg }}>
+                        GH₵ {m.amount.toLocaleString()}
+                      </div>
+                    </div>
+                    <span className="text-[10px]" style={{ color: card.muted }}>{m.label}</span>
                   </div>
-                );
-              })}
+                ))
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center h-full" style={{ color: card.muted }}>
+                  <TrendingUp size={24} className="mb-2 opacity-40" />
+                  <span className="text-xs">No payment data yet</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1486,6 +1525,23 @@ export default function InvoicesPage() {
                 </div>
               </div>
 
+              {selectedInvoice.payments && selectedInvoice.payments.length > 0 && (
+                <div className="p-4 rounded-xl" style={{ background: card.inputBg }}>
+                  <h3 className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: card.muted }}>Payment History</h3>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {selectedInvoice.payments.map((p: any, i: number) => (
+                      <div key={i} className="flex justify-between items-center text-xs">
+                        <span style={{ color: card.muted }}>{new Date(p.paidAt || p.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold" style={{ background: card.primaryBg, color: card.primary }}>{p.method || 'CASH'}</span>
+                          <span className="font-mono font-bold" style={{ color: card.success }}>GH₵ {Number(p.amount).toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Quick Payment</label>
                 <div className="flex gap-2">
@@ -1545,6 +1601,11 @@ export default function InvoicesPage() {
                   <option value="MOBILE_MONEY">Mobile Money</option>
                   <option value="CHEQUE">Cheque</option>
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: card.muted }}>Reference / Cheque / Transaction No (Optional)</label>
+                <input type="text" value={paymentReference} onChange={e => setPaymentReference(e.target.value)} placeholder={`PAY-${Date.now()}`} className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none" style={{ background: card.inputBg, borderColor: card.border, color: card.text }} />
               </div>
 
               <div>

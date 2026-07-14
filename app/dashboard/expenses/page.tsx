@@ -11,7 +11,7 @@ import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { gql } from '@/lib/gql';
 import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
-import { useBranchFilter } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 
 export default function ExpensesPage() {
@@ -39,6 +39,7 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [rawExpenses, setRawExpenses] = useState<any[]>([]);
   const branchFilter = useBranchFilter();
+  const { activeBranchId } = useBranch();
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -50,12 +51,16 @@ export default function ExpensesPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    setPage(1);
+  }, [activeBranchId]);
+
+  useEffect(() => {
     fetchExpenses();
-  }, [me, page]);
+  }, [me, page, activeBranchId]);
 
   const fetchExpenses = async () => {
     try {
-      const data = await gql<any>(Q_AUTHORIZATIONS_EXPENSE, { page, limit });
+      const data = await gql<any>(Q_AUTHORIZATIONS_EXPENSE, { page, limit, branchId: isManager ? (activeBranchId ?? undefined) : undefined });
       const response = data.expenses || { items: [], totalPages: 1 };
       
       let allExp = response.items || [];
@@ -131,9 +136,10 @@ export default function ExpensesPage() {
       </div>
 
       {isManager && (() => {
-        // Calculate real KPIs from storeExpenses
+        // Calculate real KPIs from branch-filtered store expenses
+        const branchExpenses = branchFilter(storeExpenses);
         const now = new Date();
-        const thisMonthExp = storeExpenses.filter(e => {
+        const thisMonthExp = branchExpenses.filter(e => {
           const d = new Date(e.date);
           return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && e.status === 'APPROVED';
         });

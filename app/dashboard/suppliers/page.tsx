@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import {
@@ -62,12 +62,25 @@ export default function SuppliersPage() {
     updateSupplier, 
     deleteSupplier,
     purchases,
+    invoices,
+    refetchSuppliers,
+    refetchProducts,
+    refetchPurchases,
+    refetchInvoices,
     me
   } = useStore();
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (storeSuppliers.length === 0) refetchSuppliers();
+    if (products.length === 0) refetchProducts();
+    if (purchases.length === 0) refetchPurchases();
+    if (invoices.length === 0) refetchInvoices();
+  }, [mounted, refetchSuppliers, refetchProducts, refetchPurchases, refetchInvoices]);
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
@@ -76,11 +89,11 @@ export default function SuppliersPage() {
   const [sortBy, setSortBy] = useState<'score' | 'spend' | 'name'>('score');
   
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newSupplier, setNewSupplier] = useState({ name: '', contact: '', phone: '', email: '', address: '' });
+  const [newSupplier, setNewSupplier] = useState({ name: '', contact: '', phone: '', email: '', address: '', paymentTerms: 'Net 30' });
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ name: '', contact: '', phone: '', email: '', address: '' });
+  const [editForm, setEditForm] = useState({ name: '', contact: '', phone: '', email: '', address: '', paymentTerms: 'Net 30' });
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -92,7 +105,7 @@ export default function SuppliersPage() {
     try {
       await createSupplier(newSupplier);
       setShowAddModal(false);
-      setNewSupplier({ name: '', contact: '', phone: '', email: '', address: '' });
+      setNewSupplier({ name: '', contact: '', phone: '', email: '', address: '', paymentTerms: 'Net 30' });
     } catch (err) {
       console.error(err);
     }
@@ -120,7 +133,8 @@ export default function SuppliersPage() {
       contact: supplier.contact || '',
       phone: supplier.phone || '',
       email: supplier.email || '',
-      address: supplier.address || ''
+      address: supplier.address || '',
+      paymentTerms: supplier.paymentTerms || 'Net 30'
     });
     setShowEditModal(true);
   };
@@ -164,39 +178,80 @@ export default function SuppliersPage() {
     success: '#10B981',
   };
 
-  // Enrich suppliers with computed stats
-  const suppliers = storeSuppliers.map(s => {
-    const supplierProducts = products.filter(p => p.supplierId === s.id || (p as any).supplier?.id === s.id);
-    const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
-    const totalPurchases = supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
-    
-    const stockOut = supplierProducts.filter(p => p.stockQuantity === 0).length;
-    const stockLow = supplierProducts.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10).length;
-    const stockOk = supplierProducts.filter(p => p.stockQuantity > 10).length;
-    
-    // Find the most recent purchase date
-    let lastOrder = 'No orders yet';
-    if (supplierPurchases.length > 0) {
-      const sorted = [...supplierPurchases]
-        .filter(p => p.createdAt)
-        .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
-      if (sorted.length > 0 && sorted[0].createdAt) {
-        lastOrder = new Date(sorted[0].createdAt).toISOString().split('T')[0];
+  // Enrich suppliers with real computed stats
+  const suppliers = useMemo(() => {
+    const maxSpend = Math.max(...storeSuppliers.map(s => {
+      const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
+      return supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
+    }), 1);
+
+    return storeSuppliers.map(s => {
+      const supplierProducts = products.filter(p => p.supplierId === s.id || (p as any).supplier?.id === s.id);
+      const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
+      const supplierInvoices = invoices.filter(i => i.supplierId === s.id || i.supplier?.id === s.id);
+      const totalPurchases = supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
+      const totalProducts = supplierProducts.length;
+      
+      const stockOut = supplierProducts.filter(p => p.stockQuantity === 0).length;
+      const stockLow = supplierProducts.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10).length;
+      const stockOk = supplierProducts.filter(p => p.stockQuantity > 10).length;
+      
+      // Real on-time payment rate from invoices (paid on or before due date)
+      const invoicesWithDueDate = supplierInvoices.filter(i => i.dueDate);
+      let onTimeRate = Math.floor((s as any).onTimeRate ?? 0);
+      if (invoicesWithDueDate.length > 0) {
+        const onTimeCount = invoicesWithDueDate.filter(inv => {
+          if (inv.paymentStatus !== 'PAID' || !inv.payments?.length) return false;
+          const lastPaid = Math.max(...inv.payments.map(p => new Date(p.paidAt || p.createdAt).getTime()));
+          return lastPaid <= new Date(inv.dueDate!).getTime();
+        }).length;
+        onTimeRate = Math.round((onTimeCount / invoicesWithDueDate.length) * 100);
       }
-    }
-    
-    return {
-      ...s,
-      totalPurchases,
-      onTimeRate: Math.floor((s as any).onTimeRate ?? 0),
-      lastOrder,
-      paymentTerms: (s as any).paymentTerms || 'Net 30',
-      stockOut,
-      stockLow,
-      stockOk,
-      totalProducts: supplierProducts.length
-    };
-  });
+      
+      // Last order from supplier record or computed from purchases
+      let lastOrder = 'No orders yet';
+      const lastOrderDate = (s as any).lastOrderDate
+        ? new Date((s as any).lastOrderDate)
+        : supplierPurchases.length > 0
+          ? new Date(Math.max(...supplierPurchases.filter(p => p.createdAt).map(p => new Date(p.createdAt!).getTime())))
+          : null;
+      if (lastOrderDate) {
+        lastOrder = lastOrderDate.toISOString().split('T')[0];
+      }
+      
+      // Stored payment terms or default
+      const paymentTerms = (s as any).paymentTerms || 'Net 30';
+      
+      // Composite AI/performance score from real data
+      const stockHealthScore = totalProducts > 0 ? (stockOk / totalProducts) * 100 : 50;
+      const spendScore = totalPurchases > 0 ? Math.min(100, (totalPurchases / maxSpend) * 100) : 0;
+      const onTimeScore = invoicesWithDueDate.length > 0 ? onTimeRate : 50;
+      const daysSinceLastOrder = lastOrderDate ? Math.max(0, Math.floor((Date.now() - lastOrderDate.getTime()) / (1000 * 60 * 60 * 24))) : 365;
+      const recencyScore = daysSinceLastOrder <= 7 ? 100 : daysSinceLastOrder <= 30 ? 85 : daysSinceLastOrder <= 90 ? 60 : daysSinceLastOrder <= 180 ? 30 : 0;
+      const diversityScore = Math.min(100, totalProducts * 10);
+      
+      const aiScore = Math.round(
+        stockHealthScore * 0.30 +
+        spendScore * 0.20 +
+        onTimeScore * 0.20 +
+        recencyScore * 0.15 +
+        diversityScore * 0.15
+      );
+      
+      return {
+        ...s,
+        totalPurchases,
+        onTimeRate,
+        lastOrder,
+        paymentTerms,
+        stockOut,
+        stockLow,
+        stockOk,
+        totalProducts,
+        aiScore,
+      };
+    });
+  }, [storeSuppliers, products, purchases, invoices]);
 
   const filteredAndSorted = [...suppliers]
     .filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
@@ -475,6 +530,22 @@ export default function SuppliersPage() {
                       style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
                   </div>
                 </div>
+                
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Payment Terms</label>
+                  <div className="relative">
+                    <Clock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-40" style={{ color: c.text }} />
+                    <select value={newSupplier.paymentTerms} onChange={e => setNewSupplier({...newSupplier, paymentTerms: e.target.value})}
+                      className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm font-medium focus:outline-none transition-all focus:ring-2 focus:ring-[#0EA5E9]/30 appearance-none"
+                      style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                      <option value="Net 15">Net 15</option>
+                      <option value="Net 30">Net 30</option>
+                      <option value="Net 45">Net 45</option>
+                      <option value="Net 60">Net 60</option>
+                      <option value="COD">COD</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               
               <div className="flex gap-3 pt-4 mt-2 border-t" style={{ borderColor: c.border }}>
@@ -561,6 +632,22 @@ export default function SuppliersPage() {
                     <input type="text" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})}
                       className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm font-medium focus:outline-none transition-all focus:ring-2 focus:ring-indigo-500/30"
                       style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }} />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider mb-2" style={{ color: c.muted }}>Payment Terms</label>
+                  <div className="relative">
+                    <Clock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-40" style={{ color: c.text }} />
+                    <select value={editForm.paymentTerms} onChange={e => setEditForm({...editForm, paymentTerms: e.target.value})}
+                      className="w-full pl-11 pr-4 py-3.5 rounded-2xl text-sm font-medium focus:outline-none transition-all focus:ring-2 focus:ring-indigo-500/30 appearance-none"
+                      style={{ background: c.inputBg, border: `1px solid ${c.border}`, color: c.text }}>
+                      <option value="Net 15">Net 15</option>
+                      <option value="Net 30">Net 30</option>
+                      <option value="Net 45">Net 45</option>
+                      <option value="Net 60">Net 60</option>
+                      <option value="COD">COD</option>
+                    </select>
                   </div>
                 </div>
               </div>
