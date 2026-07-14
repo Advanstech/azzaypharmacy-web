@@ -41,7 +41,7 @@ export default function SecurityPage() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
-        <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Security</h1>
+        <h1 className="font-display text-2xl sm:text-3xl font-bold mb-1" style={{ color: card.text }}>Security</h1>
         <p className="text-sm" style={{ color: card.muted }}>Audit logs, access control, and security monitoring.</p>
       </div>
 

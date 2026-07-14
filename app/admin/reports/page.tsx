@@ -558,7 +558,7 @@ export default function ReportsPage() {
       <div className="flex flex-col gap-6 relative z-10">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-            <h1 className="font-display text-4xl font-black mb-2 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-400 via-indigo-500 to-purple-500 animate-gradient-x">
+            <h1 className="font-display text-2xl sm:text-3xl md:text-4xl font-black mb-2 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-400 via-indigo-500 to-purple-500 animate-gradient-x">
               Command Reports
             </h1>
             <p className="text-sm font-medium" style={{ color: card.muted }}>Live intelligence — export actionable data instantly.</p>
@@ -587,7 +587,7 @@ export default function ReportsPage() {
             <span className="text-xs font-black uppercase tracking-widest" style={{ color: card.primary }}>Date Range</span>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold uppercase" style={{ color: card.subtle }}>From</span>
               <input
@@ -607,7 +607,7 @@ export default function ReportsPage() {
             </div>
           </div>
 
-          <div className="flex gap-2 ml-auto flex-wrap bg-opacity-50 p-1 rounded-2xl" style={{ background: card.bg }}>
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:ml-auto bg-opacity-50 p-1 rounded-2xl" style={{ background: card.bg }}>
             {[
               { label: 'Today', fn: () => { setDateFrom(today); setDateTo(today); } },
               { label: 'This Week', fn: () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); setDateFrom(d.toISOString().split('T')[0]); setDateTo(today); } },

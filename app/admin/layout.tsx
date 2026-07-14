@@ -59,6 +59,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setMounted(true);
   }, []);
 
+  // On mobile, the sidebar is a drawer; keep it expanded for usability
+  useEffect(() => {
+    if (mobileMenuOpen && collapsed) setCollapsed(false);
+  }, [mobileMenuOpen, collapsed]);
+
   useEffect(() => {
     console.log(`[ADMIN] auth check: loading=${loading} user=${user?.email ?? 'null'}`);
     if (!loading && !user) {
@@ -138,9 +143,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       )}
       
       <aside
-        className={`fixed md:relative z-50 h-full flex flex-col border-r backdrop-blur-xl transition-all duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
+        className={`fixed md:relative z-50 h-full flex flex-col border-r backdrop-blur-xl transition-all duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'} ${collapsed ? 'w-[280px] md:w-[80px]' : 'w-[280px]'}`}
         style={{
-          width: collapsed ? '80px' : '280px',
           background: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(255, 255, 255, 0.9)',
           borderColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.15)',
         }}
@@ -181,11 +185,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )}
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="p-2 rounded-lg transition-all hover:scale-110"
+            className="hidden md:flex p-2 rounded-lg transition-all hover:scale-110"
             style={{
               background: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.1)',
               color: isDark ? '#EF4444' : '#EF4444',
             }}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </button>

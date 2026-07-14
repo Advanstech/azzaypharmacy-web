@@ -136,7 +136,7 @@ export default function DailySalesReportPage() {
     <div className="space-y-6 animate-in fade-in duration-500">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
           <button 
             onClick={() => router.push('/admin/reports')}
             className="p-3 rounded-2xl transition-all hover:scale-105 hover:shadow-lg flex items-center justify-center backdrop-blur-xl"
@@ -144,7 +144,7 @@ export default function DailySalesReportPage() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="font-display text-3xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-500 mb-1">
+            <h1 className="font-display text-2xl sm:text-3xl md:text-4xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-500 mb-1">
               Daily Sales Report
             </h1>
             <p className="text-sm font-medium" style={{ color: card.muted }}>Detailed transaction history with profit analysis</p>

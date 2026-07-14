@@ -648,9 +648,9 @@ export default function PriceControlPage() {
       </div>
 
       {/* ── Table ────────────────────────────────────────────────────────── */}
-      <div className="rounded-2xl border overflow-hidden" style={{ background: c.card, borderColor: c.border }}>
+      <div className="rounded-2xl border overflow-x-auto" style={{ background: c.card, borderColor: c.border }}>
         {/* Table header */}
-        <div className="px-5 py-3 border-b flex items-center justify-between"
+        <div className="min-w-[760px] px-5 py-3 border-b flex items-center justify-between flex-wrap gap-2"
           style={{ borderColor: c.border, background: c.headerBg }}>
           <div className="flex items-center gap-3">
             {canEdit && (
@@ -666,7 +666,7 @@ export default function PriceControlPage() {
               </span>
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {canEdit && selectedIds.size > 0 && selectedIds.size < filtered.length && (
               <button onClick={selectAllFiltered}
                 className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all"
@@ -679,7 +679,7 @@ export default function PriceControlPage() {
         </div>
 
         {/* Column headers */}
-        <div className="grid px-5 py-2 text-[10px] font-black uppercase tracking-widest"
+        <div className="min-w-[760px] grid px-5 py-2 text-[10px] font-black uppercase tracking-widest"
           style={{
             background: c.headerBg, color: c.muted, borderBottom: `1px solid ${c.border}`,
             gridTemplateColumns: canEdit ? '40px 1.6fr 80px 120px 120px 90px 90px 70px' : '1.6fr 80px 120px 120px 90px 90px 70px',
@@ -713,7 +713,7 @@ export default function PriceControlPage() {
             <p style={{ color: c.muted }}>No products match filters</p>
           </div>
         ) : (
-          <div className="divide-y" style={{ borderColor: c.border }}>
+          <div className="min-w-[760px] divide-y" style={{ borderColor: c.border }}>
             {pageProducts.map((p, i) => {
               const edit = getEdit(p);
               const costChanged = edit.costPrice !== edit.originalCost;

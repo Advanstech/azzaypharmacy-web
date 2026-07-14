@@ -135,9 +135,9 @@ export default function NotificationsPage() {
 
   return (
     <div className="max-w-6xl space-y-6 animate-in fade-in duration-500 pb-20">
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Notifications</h1>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold mb-1" style={{ color: card.text }}>Notifications</h1>
           <p className="text-sm" style={{ color: card.muted }}>Email & SMS delivery logs and system-wide notification history.</p>
         </div>
         <button
@@ -314,7 +314,7 @@ export default function NotificationsPage() {
 
         {/* Pagination */}
         {logs.length > 0 && (
-          <div className="px-5 py-3 border-t flex items-center justify-between" style={{ borderColor: card.border }}>
+          <div className="px-5 py-3 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: card.border }}>
             <p className="text-xs font-medium" style={{ color: card.muted }}>
               Page {currentPage} of {totalPages}
             </p>

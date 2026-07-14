@@ -105,7 +105,7 @@ export default function SupplierInvoicesPage() {
       className="space-y-6 pb-20"
     >
       <div>
-        <h1 className="text-3xl font-display font-black tracking-tight" style={{ color: textC }}>Supplier Invoices</h1>
+        <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight" style={{ color: textC }}>Supplier Invoices</h1>
         <p className="text-sm font-medium mt-1" style={{ color: mutedC }}>
           Manage, track, and clear invoices from pharmaceutical suppliers.
         </p>
@@ -119,7 +119,7 @@ export default function SupplierInvoicesPage() {
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-wider mb-0.5" style={{ color: mutedC }}>Pending Invoices</p>
-            <p className="text-3xl font-display font-black" style={{ color: textC }}>{pendingInvoices.length}</p>
+            <p className="text-2xl sm:text-3xl font-display font-black" style={{ color: textC }}>{pendingInvoices.length}</p>
           </div>
         </motion.div>
 
@@ -129,7 +129,7 @@ export default function SupplierInvoicesPage() {
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-wider mb-0.5" style={{ color: mutedC }}>Overdue Invoices</p>
-            <p className="text-3xl font-display font-black" style={{ color: textC }}>{overdueInvoices.length}</p>
+            <p className="text-2xl sm:text-3xl font-display font-black" style={{ color: textC }}>{overdueInvoices.length}</p>
           </div>
         </motion.div>
 
@@ -139,7 +139,7 @@ export default function SupplierInvoicesPage() {
           </div>
           <div>
             <p className="text-xs font-bold uppercase tracking-wider mb-0.5" style={{ color: mutedC }}>Cleared</p>
-            <p className="text-3xl font-display font-black" style={{ color: textC }}>{clearedInvoices.length}</p>
+            <p className="text-2xl sm:text-3xl font-display font-black" style={{ color: textC }}>{clearedInvoices.length}</p>
           </div>
         </motion.div>
       </div>

@@ -665,11 +665,11 @@ export default function StockTransferPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="px-5 py-3 border-t flex items-center justify-between" style={{ borderColor: c.border }}>
+          <div className="px-5 py-3 border-t flex flex-col sm:flex-row items-center justify-between gap-3" style={{ borderColor: c.border }}>
             <p className="text-xs" style={{ color: c.muted }}>
               Showing {(safePage - 1) * LIMIT + 1}–{Math.min(safePage * LIMIT, filtered.length)} of {filtered.length}
             </p>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-wrap">
               <button onClick={() => setPage(1)} disabled={safePage === 1}
                 className="px-2 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
                 style={{ background: c.inputBg, color: c.muted }}>«</button>

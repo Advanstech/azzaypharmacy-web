@@ -121,7 +121,7 @@ export default function InvoiceDetailPage() {
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h1 className="text-3xl font-display font-black tracking-tight flex items-center gap-3" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
+          <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight flex flex-wrap items-center gap-3" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>
             <FileText size={32} className="text-blue-500" />
             Invoice {invoice.invoiceNo}
           </h1>

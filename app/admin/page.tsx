@@ -263,17 +263,17 @@ export default function AdminDashboardPage() {
       {/* Header & Date Filters */}
       <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-display font-black bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-orange-500 dark:from-teal-400 dark:to-emerald-400">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-display font-black bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-orange-500 dark:from-teal-400 dark:to-emerald-400">
             Command Center
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium mt-1">
+          <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium mt-1">
             Real-time operational intelligence — sales, stock, staff, and finances.
           </p>
         </div>
         
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Date Range Selector */}
-          <div className="flex items-center gap-2 p-1 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
+          <div className="flex flex-wrap items-center gap-2 p-1 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
             {(['today', '7d', '30d', '90d', '1y'] as const).map(r => (
               <button key={r} onClick={() => setDateRange(r)}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
@@ -297,7 +297,7 @@ export default function AdminDashboardPage() {
             </button>
           </div>
           {dateRange === 'custom' && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
                 className="px-3 py-1.5 rounded-xl text-xs font-medium outline-none"
                 style={{ background: cardStyle.bg, border: `1px solid ${cardStyle.border}`, color: cardStyle.text }} />
@@ -363,7 +363,7 @@ export default function AdminDashboardPage() {
               </button>
             </div>
           </div>
-          <div className="-mx-4 relative z-10">
+          <div className="relative z-10">
             <PharmaChart 
               data={activeMetric === 'revenue' 
                 ? timeSeriesData.map(d => ({ day: d.label, amount: d.revenue }))
@@ -371,7 +371,7 @@ export default function AdminDashboardPage() {
               } 
               isDark={isDark} 
               accent={activeMetric === 'revenue' ? '#10B981' : '#0EA5E9'} 
-              height={320}
+              height={260}
               valuePrefix={activeMetric === 'revenue' ? 'GH₵' : ''}
               valueSuffix={activeMetric === 'sales' ? ' txns' : ''}
             />
@@ -538,7 +538,7 @@ export default function AdminDashboardPage() {
                 <div className="flex justify-between items-end">
                   <div>
                     <p className="text-xs font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400">Units Sold</p>
-                    <p className="text-3xl font-black text-orange-600 dark:text-orange-400">{topProductPeriod.qty}</p>
+                    <p className="text-2xl sm:text-3xl font-black text-orange-600 dark:text-orange-400">{topProductPeriod.qty}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs font-bold uppercase tracking-wide text-emerald-600 dark:text-teal-400">Revenue</p>

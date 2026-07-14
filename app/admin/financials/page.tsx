@@ -505,12 +505,12 @@ export default function FinancialsPage() {
       {/* Header */}
       <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-4 print:hidden">
         <div>
-          <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Financial Management</h1>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold mb-1" style={{ color: card.text }}>Financial Management</h1>
           <p className="text-sm" style={{ color: card.muted }}>Accounting, supplier payables, and profit analytics</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Date Range */}
-          <div className="flex items-center gap-2 p-1 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
+          <div className="flex flex-wrap items-center gap-2 p-1 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
             {(['today', '7d', '30d', '90d', '1y'] as const).map(r => (
               <button key={r} onClick={() => setDateRange(r)}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
@@ -534,7 +534,7 @@ export default function FinancialsPage() {
             </button>
           </div>
           {dateRange === 'custom' && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
                 className="px-3 py-1.5 rounded-xl text-xs font-medium outline-none"
                 style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }} />
@@ -653,7 +653,7 @@ export default function FinancialsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl print:hidden" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
+      <div className="flex flex-wrap gap-1 p-1 rounded-xl print:hidden" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
         {[
           { id: 'overview', label: 'Overview', icon: Wallet },
           { id: 'transactions', label: 'Transactions', icon: FileText, count: liveLedger.length },

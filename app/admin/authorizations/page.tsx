@@ -286,7 +286,7 @@ export default function AdminAuthorizationsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b" style={{ borderColor: c.border }}>
+      <div className="flex flex-wrap gap-1 border-b" style={{ borderColor: c.border }}>
         {(['SHIFTS', 'EXPENSES', 'REFUNDS'] as const).map(tab => {
           const counts = { SHIFTS: shifts.filter(s => s.status === 'PENDING').length, EXPENSES: expenses.filter(e => e.status === 'PENDING').length, REFUNDS: refunds.filter(r => r.status === 'PENDING').length };
           const colors = { SHIFTS: 'blue', EXPENSES: 'emerald', REFUNDS: 'orange' };
@@ -468,11 +468,11 @@ export default function AdminAuthorizationsPage() {
         </div>
 
         {/* Pagination — always shown when there's data */}
-        <div className="px-5 py-3 border-t flex justify-between items-center" style={{ background: c.headerBg, borderColor: c.border }}>
+        <div className="px-5 py-3 border-t flex flex-col sm:flex-row justify-between items-center gap-3" style={{ background: c.headerBg, borderColor: c.border }}>
           <p className="text-xs" style={{ color: c.muted }}>
             Showing {paginatedData.length > 0 ? (safePage - 1) * limit + 1 : 0}–{Math.min(safePage * limit, currentFiltered.length)} of {currentFiltered.length}
           </p>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 flex-wrap">
             <button onClick={() => setPage(1)} disabled={safePage === 1}
               className="px-2 py-1.5 rounded-lg text-xs font-bold border disabled:opacity-40 hover:bg-slate-500/10 transition-colors"
               style={{ borderColor: c.border, color: c.text }}>«</button>

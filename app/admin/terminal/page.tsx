@@ -130,9 +130,9 @@ export default function AdminTerminalPage() {
 
   return (
     <div className={`space-y-6 animate-in fade-in duration-500 ${isExpanded ? 'fixed inset-0 z-50 bg-slate-900 dark:bg-slate-950 p-6' : ''}`}>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold mb-1 flex items-center gap-3" style={{ color: card.text }}>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold mb-1 flex flex-wrap items-center gap-3" style={{ color: card.text }}>
             <Terminal size={28} style={{ color: card.primary }} />
             Admin Terminal
           </h1>

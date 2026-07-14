@@ -137,7 +137,7 @@ export default function CustomersAdminPage() {
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-bold mb-1" style={{ color: card.text }}>Customer Relations</h1>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold mb-1" style={{ color: card.text }}>Customer Relations</h1>
           <p className="text-sm" style={{ color: card.muted }}>Manage loyalty members and track customer value</p>
         </div>
         <button 

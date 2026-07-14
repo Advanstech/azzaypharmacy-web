@@ -254,16 +254,16 @@ export default function StaffIntelligencePage() {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6 pb-20"
     >
-      <div className="flex justify-between items-end">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h1 className="text-3xl font-display font-black tracking-tight" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>Staff Intelligence</h1>
+          <h1 className="text-2xl sm:text-3xl font-display font-black tracking-tight" style={{ color: isDark ? '#E2E8F0' : '#0F172A' }}>Staff Intelligence</h1>
           <p className="text-sm font-medium mt-1" style={{ color: card.muted }}>
             Profile-based analytics, sales performance, and access management.
           </p>
         </div>
         <button 
           onClick={() => setOnboardModalOpen(true)}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-lg shadow-blue-500/10 active:scale-[0.98]"
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-lg shadow-blue-500/10 active:scale-[0.98]"
         >
           <Plus size={16} />
           Onboard New Staff
@@ -502,7 +502,7 @@ export default function StaffIntelligencePage() {
               >
                 <ChevronLeft size={16} />
               </button>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-wrap">
                 {Array.from({ length: totalPages }).map((_, i) => (
                   <button
                     key={i}

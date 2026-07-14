@@ -23,7 +23,7 @@ export default function OrganizationPage() {
       {/* Header */}
       <div>
         <h1
-          className="font-display text-3xl font-bold mb-2"
+          className="font-display text-2xl sm:text-3xl font-bold mb-2"
           style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
         >
           Organization Settings
