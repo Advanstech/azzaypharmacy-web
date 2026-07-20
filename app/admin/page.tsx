@@ -9,6 +9,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
+import { useCustomAuth } from '@/lib/custom-auth';
 import { useMemo, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/pharma-toast';
@@ -38,6 +39,7 @@ export default function AdminDashboardPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const { sales, invoices, staff, products, customers, expenses, refetchSales, refetchInvoices, refetchStaff, refetchProducts, refetchCustomers, refetchExpenses, loadingSales, loadingInvoices } = useStore();
+  const { session } = useCustomAuth();
   const { addToast } = useToast();
   const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -121,8 +123,8 @@ export default function AdminDashboardPage() {
         fetchAiInsight();
       }, 1500);
     };
-    if (mounted) loadData();
-  }, [mounted, rangeBounds.start, rangeBounds.end]);
+    if (mounted && session?.access_token) loadData();
+  }, [mounted, rangeBounds.start, rangeBounds.end, session?.access_token]);
 
   const timeSeriesData = useMemo(() => {
     const days = Math.max(1, Math.round((rangeBounds.end.getTime() - rangeBounds.start.getTime()) / (1000 * 60 * 60 * 24)));

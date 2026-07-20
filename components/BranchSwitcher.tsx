@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Building2, ChevronDown, Check, Loader2, Globe } from 'lucide-react';
 import { useBranch } from '@/lib/branch-context';
-import { useTheme } from 'next-themes';
 
 export function BranchSwitcher({ isDark }: { isDark: boolean }) {
   const { branches, activeBranchId, activeBranchName, setActiveBranch, canSwitchBranch, loadingBranches } = useBranch();
@@ -21,12 +20,12 @@ export function BranchSwitcher({ isDark }: { isDark: boolean }) {
   if (!canSwitchBranch) return null;
 
   const accent = isDark ? '#00D9FF' : '#0EA5E9';
-  const cardBg = isDark ? '#0F172A' : '#FFFFFF';
-  const border = isDark ? 'rgba(0,217,255,0.12)' : 'rgba(14,165,233,0.18)';
+  const cardBg = isDark ? '#0B1222' : '#FFFFFF';
+  const border = isDark ? 'rgba(148,163,184,0.20)' : 'rgba(203,213,225,0.60)';
   const textMain = isDark ? '#F8FAFC' : '#0F172A';
-  const textMuted = isDark ? '#64748B' : '#94A3B8';
-  const hoverBg = isDark ? 'rgba(0,217,255,0.06)' : 'rgba(14,165,233,0.06)';
-  const activeBg = isDark ? 'rgba(0,217,255,0.12)' : 'rgba(14,165,233,0.12)';
+  const textMuted = isDark ? '#94A3B8' : '#64748B';
+  const hoverBg = isDark ? 'rgba(56,189,248,0.10)' : 'rgba(14,165,233,0.08)';
+  const activeBg = isDark ? 'rgba(56,189,248,0.18)' : 'rgba(14,165,233,0.14)';
 
   return (
     <div className="relative z-[1002]" ref={ref}>
@@ -51,11 +50,11 @@ export function BranchSwitcher({ isDark }: { isDark: boolean }) {
 
       {open && (
         <div
-          className="absolute top-full right-0 mt-3 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border shadow-2xl z-[1003] overflow-hidden"
+          className="absolute top-full right-0 mt-3 w-80 min-w-[18rem] max-w-[calc(100vw-2rem)] max-h-80 overflow-y-auto overscroll-contain rounded-2xl border shadow-2xl z-[1003]"
           style={{
             background: cardBg,
             borderColor: border,
-            boxShadow: isDark ? '0 24px 60px rgba(0,0,0,0.55)' : '0 24px 60px rgba(15,23,42,0.18)',
+            boxShadow: isDark ? '0 24px 60px rgba(0,0,0,0.65)' : '0 24px 60px rgba(15,23,42,0.22)',
           }}
         >
           <div className="px-3 py-2 border-b" style={{ borderColor: border }}>
@@ -70,7 +69,8 @@ export function BranchSwitcher({ isDark }: { isDark: boolean }) {
             className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
             style={{
               background: activeBranchId === null ? activeBg : 'transparent',
-              color: activeBranchId === null ? accent : textMain,
+              color: textMain,
+              fontWeight: activeBranchId === null ? 700 : 400,
             }}
             onMouseEnter={e => { if (activeBranchId !== null) (e.currentTarget as HTMLElement).style.background = hoverBg; }}
             onMouseLeave={e => { if (activeBranchId !== null) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
@@ -98,7 +98,8 @@ export function BranchSwitcher({ isDark }: { isDark: boolean }) {
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors"
                 style={{
                   background: activeBranchId === b.id ? activeBg : 'transparent',
-                  color: activeBranchId === b.id ? accent : textMain,
+                  color: textMain,
+                  fontWeight: activeBranchId === b.id ? 700 : 400,
                 }}
                 onMouseEnter={e => { if (activeBranchId !== b.id) (e.currentTarget as HTMLElement).style.background = hoverBg; }}
                 onMouseLeave={e => { if (activeBranchId !== b.id) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}

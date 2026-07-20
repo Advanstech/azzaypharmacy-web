@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday, getEffectiveDateRange } from '@/lib/effective-date';
 import { 
   FileText, Download, BarChart3, Package, DollarSign, Users, Calendar, 
@@ -14,19 +16,6 @@ import {
 
 const CATEGORIES = ['All', 'Sales', 'Inventory', 'Staff', 'Financial', 'Customers', 'Suppliers'];
 
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function ReportsPage() {
   const router = useRouter();
   const { theme, resolvedTheme } = useTheme();
@@ -34,9 +23,17 @@ export default function ReportsPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, products, staff, customers, suppliers, expenses, purchases, prescriptions } = useStore();
+  const { sales: allSales, products: allProducts, staff: allStaff, customers, suppliers, expenses: allExpenses, purchases, prescriptions } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
   const [activeCategory, setActiveCategory] = useState('All');
   const [generating, setGenerating] = useState<string | null>(null);
+
+  // Branch-scoped data — "All Branches" (activeBranchId === null) shows everything
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const products = useMemo(() => activeBranchId ? allProducts.filter(p => p.branchId === activeBranchId) : allProducts, [allProducts, activeBranchId]);
+  const staff = useMemo(() => activeBranchId ? allStaff.filter(s => s.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
+  const expenses = useMemo(() => activeBranchId ? allExpenses.filter(e => e.branchId === activeBranchId) : allExpenses, [allExpenses, activeBranchId]);
+
   // Date range filter — use effective date (most recent day with data)
   const effectiveRange = useMemo(() => getEffectiveDateRange(sales), [sales]);
   const today = useMemo(() => getEffectiveToday(sales), [sales]);
@@ -151,24 +148,37 @@ export default function ReportsPage() {
       lastGenerated: today,
       detailPath: '/admin/reports/sales/daily',
       onExport: () => {
-        const rows = [
-          ['Sale ID', 'Customer', 'Items', 'Payment', 'Amount', 'Profit', 'Date & Time'],
-          ...rangeSales.map(s => {
-            const saleCogs = s.items.reduce((sum, item) => {
-              const product = products.find(p => p.id === item.product.id);
-              const cost = product ? product.costPrice : (item.unitPrice * 0.5);
-              return sum + (cost * item.quantity);
-            }, 0);
-            return [
-              s.id, s.customerName || 'Walk-in',
-              String(s.items.length), s.paymentMethod,
-              s.totalAmount.toFixed(2),
-              (s.totalAmount - saleCogs).toFixed(2),
-              new Date(s.createdAt).toLocaleString('en-GB'),
-            ];
-          }),
-        ];
-        downloadCSV(`sales-${dateFrom}-to-${dateTo}.csv`, rows);
+        const rows = rangeSales.map(s => {
+          const saleCogs = s.items.reduce((sum, item) => {
+            const product = products.find(p => p.id === item.product.id);
+            const cost = product ? product.costPrice : (item.unitPrice * 0.5);
+            return sum + (cost * item.quantity);
+          }, 0);
+          return [
+            s.id, s.customerName || 'Walk-in',
+            s.items.length, s.paymentMethod,
+            s.totalAmount, (s.totalAmount - saleCogs),
+            new Date(s.createdAt).toLocaleString('en-GB'),
+          ];
+        });
+        exportToExcel({
+          filename: `daily-sales-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${dateFrom}-to-${dateTo}`,
+          title: 'Daily Sales Report',
+          subtitle: 'Azzay Pharmacy — Transaction Ledger',
+          meta: [
+            { label: 'Branch', value: activeBranchName },
+            { label: 'Period', value: `${dateFrom} to ${dateTo}` },
+          ],
+          summary: [
+            { label: 'Total Transactions', value: rangeSales.length },
+            { label: 'Total Revenue', value: `GH₵ ${rangeRevenue.toFixed(2)}` },
+          ],
+          headers: ['Sale ID', 'Customer', 'Items', 'Payment', 'Amount', 'Profit', 'Date & Time'],
+          rows,
+          currencyColumns: [4, 5],
+          numberColumns: [2],
+          sheetName: 'Daily Sales',
+        });
       },
     },
     {
@@ -192,19 +202,32 @@ export default function ReportsPage() {
           byMethod[s.paymentMethod].cogs += saleCogs;
         });
         const rows = [
-          ['Payment Method', 'Revenue', 'COGS', 'Profit', 'Transactions', 'Avg Sale'],
           ...Object.entries(byMethod).map(([m, data]) => [
-            m, data.amount.toFixed(2), data.cogs.toFixed(2),
-            (data.amount - data.cogs).toFixed(2),
-            String(data.count),
-            (data.amount / data.count).toFixed(2),
+            m, data.amount, data.cogs, (data.amount - data.cogs), data.count, (data.amount / data.count),
           ]),
-          ['TOTAL', rangeRevenue.toFixed(2), rangeCogs.toFixed(2),
-           rangeGrossProfit.toFixed(2),
-           String(rangeSales.length),
-           rangeSales.length > 0 ? (rangeRevenue / rangeSales.length).toFixed(2) : '0.00'],
+          ['TOTAL', rangeRevenue, rangeCogs, rangeGrossProfit, rangeSales.length,
+           rangeSales.length > 0 ? (rangeRevenue / rangeSales.length) : 0],
         ];
-        downloadCSV(`revenue-${dateFrom}-to-${dateTo}.csv`, rows);
+        exportToExcel({
+          filename: `revenue-summary-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${dateFrom}-to-${dateTo}`,
+          title: 'Revenue Summary',
+          subtitle: 'Azzay Pharmacy — Revenue by Payment Method',
+          meta: [
+            { label: 'Branch', value: activeBranchName },
+            { label: 'Period', value: `${dateFrom} to ${dateTo}` },
+          ],
+          summary: [
+            { label: 'Total Revenue', value: `GH₵ ${rangeRevenue.toFixed(2)}` },
+            { label: 'Gross Profit', value: `GH₵ ${rangeGrossProfit.toFixed(2)}` },
+            { label: 'Transactions', value: rangeSales.length },
+          ],
+          headers: ['Payment Method', 'Revenue', 'COGS', 'Profit', 'Transactions', 'Avg Sale'],
+          rows,
+          currencyColumns: [1, 2, 3, 5],
+          numberColumns: [4],
+          totalRowIndices: [rows.length - 1],
+          sheetName: 'Revenue Summary',
+        });
       },
     },
     {
@@ -228,16 +251,24 @@ export default function ReportsPage() {
           });
         });
         const sorted = Object.entries(productSales).sort((a, b) => b[1].revenue - a[1].revenue);
-        const rows = [
-          ['Product', 'Category', 'Qty Sold', 'Revenue', 'COGS', 'Profit', 'Margin %'],
-          ...sorted.map(([, data]) => [
-            data.name, data.category, String(data.qty),
-            data.revenue.toFixed(2), data.cogs.toFixed(2),
-            (data.revenue - data.cogs).toFixed(2),
-            data.revenue > 0 ? (((data.revenue - data.cogs) / data.revenue) * 100).toFixed(1) : '0',
-          ]),
-        ];
-        downloadCSV(`sales-by-product-${today}.csv`, rows);
+        const rows = sorted.map(([, data]) => [
+          data.name, data.category, data.qty, data.revenue, data.cogs,
+          (data.revenue - data.cogs),
+          data.revenue > 0 ? (((data.revenue - data.cogs) / data.revenue) * 100) : 0,
+        ]);
+        exportToExcel({
+          filename: `sales-by-product-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+          title: 'Sales by Product',
+          subtitle: 'Azzay Pharmacy — Top Selling Products',
+          meta: [{ label: 'Branch', value: activeBranchName }],
+          summary: [{ label: 'Products Sold', value: sorted.length }],
+          headers: ['Product', 'Category', 'Qty Sold', 'Revenue', 'COGS', 'Profit', 'Margin %'],
+          rows,
+          currencyColumns: [3, 4, 5],
+          numberColumns: [2],
+          percentColumns: [6],
+          sheetName: 'Sales by Product',
+        });
       },
     },
     // INVENTORY REPORTS
@@ -249,17 +280,29 @@ export default function ReportsPage() {
       lastGenerated: today,
       detailPath: '/admin/reports/inventory/stock',
       onExport: () => {
-        const rows = [
-          ['Product', 'Category', 'Dosage Form', 'Stock Qty', 'Cost Price', 'Sell Price', 'Stock Value', 'Status'],
-          ...products.map(p => [
-            p.name, p.category, p.dosageForm || 'N/A',
-            String(p.stockQuantity),
-            p.costPrice.toFixed(2), p.sellingPrice.toFixed(2),
-            (p.costPrice * p.stockQuantity).toFixed(2),
-            p.stockQuantity === 0 ? 'OUT OF STOCK' : p.stockQuantity <= 10 ? 'LOW STOCK' : 'OK',
-          ]),
-        ];
-        downloadCSV(`stock-levels-${today}.csv`, rows);
+        const rows = products.map(p => [
+          p.name, p.category, p.dosageForm || 'N/A', p.stockQuantity,
+          p.costPrice, p.sellingPrice, (p.costPrice * p.stockQuantity),
+          p.stockQuantity === 0 ? 'OUT OF STOCK' : p.stockQuantity <= 10 ? 'LOW STOCK' : 'OK',
+        ]);
+        const totalStockValue = products.reduce((sum, p) => sum + (p.costPrice * p.stockQuantity), 0);
+        exportToExcel({
+          filename: `stock-level-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+          title: 'Stock Level Report',
+          subtitle: 'Azzay Pharmacy — Complete Inventory Status and Valuation',
+          meta: [{ label: 'Branch', value: activeBranchName }],
+          summary: [
+            { label: 'Total Products', value: products.length },
+            { label: 'Total Stock Value', value: `GH₵ ${totalStockValue.toFixed(2)}` },
+            { label: 'Low Stock', value: lowStock.length },
+            { label: 'Out of Stock', value: outOfStock.length },
+          ],
+          headers: ['Product', 'Category', 'Dosage Form', 'Stock Qty', 'Cost Price', 'Sell Price', 'Stock Value', 'Status'],
+          rows,
+          currencyColumns: [4, 5, 6],
+          numberColumns: [3],
+          sheetName: 'Stock Levels',
+        });
       },
     },
     {
@@ -290,15 +333,21 @@ export default function ReportsPage() {
           });
         });
         expiryData.sort((a, b) => a.daysLeft - b.daysLeft);
-        const rows = [
-          ['Product', 'Category', 'Batch No', 'Expiry Date', 'Quantity', 'Days Left', 'Status'],
-          ...expiryData.map(d => [
-            d.product, d.category, d.batch, d.expiry,
-            String(d.qty), String(d.daysLeft),
-            d.daysLeft <= 0 ? 'EXPIRED' : d.daysLeft <= 30 ? 'CRITICAL' : d.daysLeft <= 60 ? 'WARNING' : 'ATTENTION',
-          ]),
-        ];
-        downloadCSV(`expiry-tracking-${today}.csv`, rows);
+        const rows = expiryData.map(d => [
+          d.product, d.category, d.batch, d.expiry, d.qty, d.daysLeft,
+          d.daysLeft <= 0 ? 'EXPIRED' : d.daysLeft <= 30 ? 'CRITICAL' : d.daysLeft <= 60 ? 'WARNING' : 'ATTENTION',
+        ]);
+        exportToExcel({
+          filename: `expiry-tracking-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+          title: 'Expiry Tracking Report',
+          subtitle: 'Azzay Pharmacy — Items Expiring Within 90 Days',
+          meta: [{ label: 'Branch', value: activeBranchName }],
+          summary: [{ label: 'Items Tracked', value: expiryData.length }, { label: 'Out of Stock', value: outOfStock.length }],
+          headers: ['Product', 'Category', 'Batch No', 'Expiry Date', 'Quantity', 'Days Left', 'Status'],
+          rows,
+          numberColumns: [4, 5],
+          sheetName: 'Expiry Tracking',
+        });
       },
     },
     {
@@ -311,18 +360,34 @@ export default function ReportsPage() {
       onExport: () => {
         const totalCost = products.reduce((sum, p) => sum + (p.costPrice * p.stockQuantity), 0);
         const totalRetail = products.reduce((sum, p) => sum + (p.sellingPrice * p.stockQuantity), 0);
+        const dataRows = products.filter(p => p.stockQuantity > 0).map(p => [
+          p.name, p.category, p.stockQuantity,
+          p.costPrice, (p.costPrice * p.stockQuantity),
+          p.sellingPrice, (p.sellingPrice * p.stockQuantity),
+          ((p.sellingPrice - p.costPrice) * p.stockQuantity),
+        ]);
         const rows = [
-          ['Product', 'Category', 'Qty', 'Unit Cost', 'Total Cost', 'Unit Price', 'Total Retail', 'Potential Profit'],
-          ...products.filter(p => p.stockQuantity > 0).map(p => [
-            p.name, p.category, String(p.stockQuantity),
-            p.costPrice.toFixed(2), (p.costPrice * p.stockQuantity).toFixed(2),
-            p.sellingPrice.toFixed(2), (p.sellingPrice * p.stockQuantity).toFixed(2),
-            ((p.sellingPrice - p.costPrice) * p.stockQuantity).toFixed(2),
-          ]),
-          ['TOTAL', '', String(products.reduce((sum, p) => sum + p.stockQuantity, 0)),
-           '', totalCost.toFixed(2), '', totalRetail.toFixed(2), (totalRetail - totalCost).toFixed(2)],
+          ...dataRows,
+          ['TOTAL', '', products.reduce((sum, p) => sum + p.stockQuantity, 0),
+           '', totalCost, '', totalRetail, (totalRetail - totalCost)],
         ];
-        downloadCSV(`inventory-valuation-${today}.csv`, rows);
+        exportToExcel({
+          filename: `inventory-valuation-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+          title: 'Inventory Valuation',
+          subtitle: 'Azzay Pharmacy — Cost vs Retail Valuation',
+          meta: [{ label: 'Branch', value: activeBranchName }],
+          summary: [
+            { label: 'Total Cost Value', value: `GH₵ ${totalCost.toFixed(2)}` },
+            { label: 'Total Retail Value', value: `GH₵ ${totalRetail.toFixed(2)}` },
+            { label: 'Potential Profit', value: `GH₵ ${(totalRetail - totalCost).toFixed(2)}` },
+          ],
+          headers: ['Product', 'Category', 'Qty', 'Unit Cost', 'Total Cost', 'Unit Price', 'Total Retail', 'Potential Profit'],
+          rows,
+          currencyColumns: [3, 4, 5, 6, 7],
+          numberColumns: [2],
+          totalRowIndices: [rows.length - 1],
+          sheetName: 'Inventory Valuation',
+        });
       },
     },
     // STAFF REPORTS
@@ -346,19 +411,27 @@ export default function ReportsPage() {
             staffSales[s.cashierId].items += s.items.reduce((sum, i) => sum + i.quantity, 0);
           }
         });
-        const rows = [
-          ['Name', 'Role', 'Branch', 'Status', 'Total Sales', 'Revenue', 'Items Sold', 'Avg Sale'],
-          ...staff.map(s => {
-            const perf = staffSales[s.id] || { sales: 0, revenue: 0, items: 0 };
-            return [
-              s.name, s.role, s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'N/A'),
-              s.isOnDuty ? 'On Duty' : s.isActive ? 'Active' : 'Inactive',
-              String(perf.sales), perf.revenue.toFixed(2), String(perf.items),
-              perf.sales > 0 ? (perf.revenue / perf.sales).toFixed(2) : '0.00',
-            ];
-          }),
-        ];
-        downloadCSV(`staff-performance-${today}.csv`, rows);
+        const rows = staff.map(s => {
+          const perf = staffSales[s.id] || { sales: 0, revenue: 0, items: 0 };
+          return [
+            s.name, s.role, s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'N/A'),
+            s.isOnDuty ? 'On Duty' : s.isActive ? 'Active' : 'Inactive',
+            perf.sales, perf.revenue, perf.items,
+            perf.sales > 0 ? (perf.revenue / perf.sales) : 0,
+          ];
+        });
+        exportToExcel({
+          filename: `staff-performance-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+          title: 'Staff Performance Report',
+          subtitle: 'Azzay Pharmacy — Staff Sales Performance',
+          meta: [{ label: 'Branch', value: activeBranchName }],
+          summary: [{ label: 'Active Staff', value: staff.filter(s => s.isActive).length }, { label: 'On Duty Now', value: staff.filter(s => s.isOnDuty).length }],
+          headers: ['Name', 'Role', 'Branch', 'Status', 'Total Sales', 'Revenue', 'Items Sold', 'Avg Sale'],
+          rows,
+          currencyColumns: [5, 7],
+          numberColumns: [4, 6],
+          sheetName: 'Staff Performance',
+        });
       },
     },
     {
@@ -369,18 +442,24 @@ export default function ReportsPage() {
       lastGenerated: today,
       detailPath: '/admin/reports/staff/attendance',
       onExport: () => {
-        const rows = [
-          ['Name', 'Email', 'Role', 'Branch', 'On Duty', 'Last Seen', 'Active', 'Phone'],
-          ...staff.map(s => [
-            s.name, s.email, s.role,
-            s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'N/A'),
-            s.isOnDuty ? 'Yes' : 'No',
-            s.lastSeen ? new Date(s.lastSeen).toLocaleString('en-GB') : 'Never',
-            s.isActive ? 'Yes' : 'No',
-            s.phone || 'N/A',
-          ]),
-        ];
-        downloadCSV(`staff-attendance-${today}.csv`, rows);
+        const rows = staff.map(s => [
+          s.name, s.email, s.role,
+          s.branch?.name?.toLowerCase().includes('chemical') ? 'Chemical Shop' : (s.branch?.name ? 'Main Branch' : 'N/A'),
+          s.isOnDuty ? 'Yes' : 'No',
+          s.lastSeen ? new Date(s.lastSeen).toLocaleString('en-GB') : 'Never',
+          s.isActive ? 'Yes' : 'No',
+          s.phone || 'N/A',
+        ]);
+        exportToExcel({
+          filename: `staff-attendance-log-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+          title: 'Staff Attendance Log',
+          subtitle: 'Azzay Pharmacy — Duty Status and Attendance Tracking',
+          meta: [{ label: 'Branch', value: activeBranchName }],
+          summary: [{ label: 'On Duty', value: staff.filter(s => s.isOnDuty).length }, { label: 'Total Staff', value: staff.length }],
+          headers: ['Name', 'Email', 'Role', 'Branch', 'On Duty', 'Last Seen', 'Active', 'Phone'],
+          rows,
+          sheetName: 'Attendance',
+        });
       },
     },
     // FINANCIAL REPORTS
@@ -392,24 +471,38 @@ export default function ReportsPage() {
       lastGenerated: today,
       detailPath: '/admin/reports/financial/pnl',
       onExport: () => {
-        const rows = [
-          ['Account', 'Amount (GH₵)', 'Notes'],
-          [`REPORT PERIOD: ${dateFrom} to ${dateTo}`, '', ''],
-          ['TOTAL REVENUE', rangeRevenue.toFixed(2), `${rangeSales.length} transactions`],
+        const rows: (string | number)[][] = [
+          ['TOTAL REVENUE', rangeRevenue, `${rangeSales.length} transactions`],
           ['', '', ''],
           ['COST OF GOODS SOLD', '', ''],
-          ['  Product Costs', rangeCogs.toFixed(2), 'Based on cost prices'],
-          ['GROSS PROFIT', rangeGrossProfit.toFixed(2), 'Revenue - COGS'],
-          ['GROSS MARGIN %', rangeRevenue > 0 ? ((rangeGrossProfit / rangeRevenue) * 100).toFixed(1) + '%' : '0%', ''],
+          ['  Product Costs', rangeCogs, 'Based on cost prices'],
+          ['GROSS PROFIT', rangeGrossProfit, 'Revenue - COGS'],
+          ['GROSS MARGIN %', rangeRevenue > 0 ? Number(((rangeGrossProfit / rangeRevenue) * 100).toFixed(1)) : 0, ''],
           ['', '', ''],
           ['OPERATING EXPENSES', '', ''],
-          ...rangeExpenses.map(e => [`  ${e.category?.name || e.category || 'Other'}`, Number(e.amount).toFixed(2), e.description || '']),
-          ['  TOTAL EXPENSES', rangeExpenseTotal.toFixed(2), ''],
+          ...rangeExpenses.map(e => [`  ${e.category?.name || e.category || 'Other'}`, Number(e.amount), e.description || '']),
+          ['  TOTAL EXPENSES', rangeExpenseTotal, ''],
           ['', '', ''],
-          ['NET PROFIT', rangeNetProfit.toFixed(2), 'Gross Profit - Expenses'],
-          ['NET MARGIN %', rangeRevenue > 0 ? ((rangeNetProfit / rangeRevenue) * 100).toFixed(1) + '%' : '0%', ''],
+          ['NET PROFIT', rangeNetProfit, 'Gross Profit - Expenses'],
+          ['NET MARGIN %', rangeRevenue > 0 ? Number(((rangeNetProfit / rangeRevenue) * 100).toFixed(1)) : 0, ''],
         ];
-        downloadCSV(`profit-loss-${dateFrom}-to-${dateTo}.csv`, rows);
+        exportToExcel({
+          filename: `profit-loss-statement-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${dateFrom}-to-${dateTo}`,
+          title: 'Profit & Loss Statement',
+          subtitle: 'Azzay Pharmacy — Income Statement',
+          meta: [
+            { label: 'Branch', value: activeBranchName },
+            { label: 'Period', value: `${dateFrom} to ${dateTo}` },
+          ],
+          summary: [
+            { label: 'Net Profit', value: `GH₵ ${rangeNetProfit.toFixed(2)}` },
+            { label: 'Net Margin', value: rangeRevenue > 0 ? `${((rangeNetProfit / rangeRevenue) * 100).toFixed(1)}%` : '0%' },
+          ],
+          headers: ['Account', 'Amount (GH₵)', 'Notes'],
+          rows,
+          currencyColumns: [1],
+          sheetName: 'Profit & Loss',
+        });
       },
     },
     {
@@ -425,21 +518,34 @@ export default function ReportsPage() {
           const cat = String(e.category || 'Uncategorized');
           byCategory[cat] = (byCategory[cat] || 0) + Number(e.amount);
         });
-        const rows = [
-          ['Date', 'Category', 'Amount', 'Description', 'Status'],
+        const rows: (string | number)[][] = [
           ...rangeExpenses.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(e => [
             new Date(e.date || e.createdAt).toLocaleDateString('en-GB'),
             String(e.category?.name || e.category || 'Uncategorized'),
-            Number(e.amount).toFixed(2),
+            Number(e.amount),
             String(e.description || ''),
             String(e.status),
           ]),
           ['', '', '', '', ''],
           ['CATEGORY SUMMARY', '', '', '', ''],
-          ...Object.entries(byCategory).map(([cat, amount]) => ['', String(cat), (amount as number).toFixed(2), '', '']),
-          ['', 'TOTAL', rangeExpenseTotal.toFixed(2), '', ''],
+          ...Object.entries(byCategory).map(([cat, amount]) => ['', String(cat), amount as number, '', '']),
+          ['', 'TOTAL', rangeExpenseTotal, '', ''],
         ];
-        downloadCSV(`expense-report-${dateFrom}-to-${dateTo}.csv`, rows);
+        exportToExcel({
+          filename: `expense-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${dateFrom}-to-${dateTo}`,
+          title: 'Expense Report',
+          subtitle: 'Azzay Pharmacy — Approved Operating Expenses',
+          meta: [
+            { label: 'Branch', value: activeBranchName },
+            { label: 'Period', value: `${dateFrom} to ${dateTo}` },
+          ],
+          summary: [{ label: 'Total Expenses', value: `GH₵ ${rangeExpenseTotal.toFixed(2)}` }, { label: 'Records', value: rangeExpenses.length }],
+          headers: ['Date', 'Category', 'Amount', 'Description', 'Status'],
+          rows,
+          currencyColumns: [2],
+          totalRowIndices: [rows.length - 1],
+          sheetName: 'Expenses',
+        });
       },
     },
     // CUSTOMER REPORTS
@@ -464,16 +570,23 @@ export default function ReportsPage() {
           }
         });
         const sorted = Object.entries(customerData).sort((a, b) => b[1].spent - a[1].spent);
-        const rows = [
-          ['Customer', 'Phone', 'Visits', 'Total Spent', 'Avg Sale', 'Last Visit'],
-          ...sorted.map(([, data]) => [
-            data.name, data.phone, String(data.visits),
-            data.spent.toFixed(2),
-            (data.spent / data.visits).toFixed(2),
-            new Date(data.lastVisit).toLocaleDateString('en-GB'),
-          ]),
-        ];
-        downloadCSV(`customer-analysis-${today}.csv`, rows);
+        const rows = sorted.map(([, data]) => [
+          data.name, data.phone, data.visits, data.spent,
+          (data.spent / data.visits),
+          new Date(data.lastVisit).toLocaleDateString('en-GB'),
+        ]);
+        exportToExcel({
+          filename: `customer-analysis-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+          title: 'Customer Analysis',
+          subtitle: 'Azzay Pharmacy — Customer Purchase Behaviour',
+          meta: [{ label: 'Branch', value: activeBranchName }],
+          summary: [{ label: 'Total Customers', value: sorted.length }],
+          headers: ['Customer', 'Phone', 'Visits', 'Total Spent', 'Avg Sale', 'Last Visit'],
+          rows,
+          currencyColumns: [3, 4],
+          numberColumns: [2],
+          sheetName: 'Customer Analysis',
+        });
       },
     },
     // SUPPLIER REPORTS
@@ -498,20 +611,27 @@ export default function ReportsPage() {
             }
           }
         });
-        const rows = [
-          ['Supplier', 'Contact', 'Categories', 'Total Orders', 'Total Value', 'Avg Order', 'Last Order'],
-          ...suppliers.map(s => {
-            const data = supplierData[s.id] || { orders: 0, totalValue: 0, lastOrder: 'N/A' };
-            return [
-              s.name, s.phone || s.email || 'N/A',
-              s.categories?.join(', ') || 'N/A',
-              String(data.orders), data.totalValue.toFixed(2),
-              data.orders > 0 ? (data.totalValue / data.orders).toFixed(2) : '0.00',
-              data.lastOrder !== 'N/A' ? new Date(data.lastOrder).toLocaleDateString('en-GB') : 'N/A',
-            ];
-          }),
-        ];
-        downloadCSV(`supplier-performance-${today}.csv`, rows);
+        const rows = suppliers.map(s => {
+          const data = supplierData[s.id] || { orders: 0, totalValue: 0, lastOrder: 'N/A' };
+          return [
+            s.name, s.phone || s.email || 'N/A',
+            s.categories?.join(', ') || 'N/A',
+            data.orders, data.totalValue,
+            data.orders > 0 ? (data.totalValue / data.orders) : 0,
+            data.lastOrder !== 'N/A' ? new Date(data.lastOrder).toLocaleDateString('en-GB') : 'N/A',
+          ];
+        });
+        exportToExcel({
+          filename: `supplier-performance-${today}`,
+          title: 'Supplier Performance',
+          subtitle: 'Azzay Pharmacy — Company-wide Supplier Metrics (not branch-scoped)',
+          summary: [{ label: 'Total Suppliers', value: suppliers.length }, { label: 'Pending Orders', value: pendingPurchases.length }],
+          headers: ['Supplier', 'Contact', 'Categories', 'Total Orders', 'Total Value', 'Avg Order', 'Last Order'],
+          rows,
+          currencyColumns: [4, 5],
+          numberColumns: [3],
+          sheetName: 'Supplier Performance',
+        });
       },
     },
     {
@@ -522,18 +642,26 @@ export default function ReportsPage() {
       lastGenerated: today,
       detailPath: '/admin/reports/suppliers/purchase-orders',
       onExport: () => {
-        const rows = [
-          ['Invoice #', 'Date', 'Supplier', 'Status', 'Items', 'Total Value'],
-          ...purchases.sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()).map(p => [
-            p.invoiceNo || 'N/A',
-            new Date(p.invoiceDate).toLocaleDateString('en-GB'),
-            p.supplier?.name || 'Unknown',
-            p.status,
-            String(p.items?.length || 0),
-            p.total.toFixed(2),
-          ]),
-        ];
-        downloadCSV(`purchase-orders-${today}.csv`, rows);
+        const rows = purchases.slice().sort((a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()).map(p => [
+          p.invoiceNo || 'N/A',
+          new Date(p.invoiceDate).toLocaleDateString('en-GB'),
+          p.supplier?.name || 'Unknown',
+          p.status,
+          p.items?.length || 0,
+          p.total,
+        ]);
+        const totalValue = purchases.reduce((sum, p) => sum + p.total, 0);
+        exportToExcel({
+          filename: `purchase-orders-report-${today}`,
+          title: 'Purchase Orders Report',
+          subtitle: 'Azzay Pharmacy — Company-wide Purchase Orders (not branch-scoped)',
+          summary: [{ label: 'Total Orders', value: purchases.length }, { label: 'Total Value', value: `GH₵ ${totalValue.toFixed(2)}` }],
+          headers: ['Invoice #', 'Date', 'Supplier', 'Status', 'Items', 'Total Value'],
+          rows,
+          currencyColumns: [5],
+          numberColumns: [4],
+          sheetName: 'Purchase Orders',
+        });
       },
     },
   ];
@@ -561,7 +689,10 @@ export default function ReportsPage() {
             <h1 className="font-display text-2xl sm:text-3xl md:text-4xl font-black mb-2 tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-sky-400 via-indigo-500 to-purple-500 animate-gradient-x">
               Command Reports
             </h1>
-            <p className="text-sm font-medium" style={{ color: card.muted }}>Live intelligence — export actionable data instantly.</p>
+            <p className="text-sm font-medium" style={{ color: card.muted }}>
+              Live intelligence — export actionable data instantly.{' '}
+              <span className="font-bold" style={{ color: card.primary }}>Scope: {activeBranchName}</span>
+            </p>
           </div>
           {/* Live summary strip */}
           <div className="flex items-center gap-3 flex-wrap">

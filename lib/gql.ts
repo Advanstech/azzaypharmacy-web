@@ -679,7 +679,7 @@ export const Q_PRESCRIPTIONS = `
 export const Q_PURCHASES = `
   query GetPurchases {
     purchases {
-      id invoiceNo invoiceDate status total
+      id invoiceNo invoiceDate status total branchId
       supplier { id name }
       items { id quantity unitCost total product { id name } }
     }

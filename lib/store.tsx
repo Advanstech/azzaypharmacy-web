@@ -204,6 +204,7 @@ export interface Purchase {
   invoiceDate: string;
   status: string;
   total: number;
+  branchId?: string;
   supplier?: { id: string; name: string };
   items: PurchaseItem[];
   createdAt: string;

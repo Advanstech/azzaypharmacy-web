@@ -4,23 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { 
   ArrowLeft, Download, Package, Search, TrendingUp, ShoppingCart,
   ChevronLeft, ChevronRight, Star, Award
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function SalesByProductReportPage() {
   const router = useRouter();
@@ -29,11 +18,13 @@ export default function SalesByProductReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, products } = useStore();
+  const { sales: allSales, products } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
+  const itemsPerPage = 10;
 
   // Get unique categories
   const categories = useMemo(() => {
@@ -123,18 +114,28 @@ export default function SalesByProductReportPage() {
   }, [productAnalysis]);
 
   const handleExport = () => {
-    const rows = [
-      ['Product', 'Category', 'Dosage Form', 'Qty Sold', 'Revenue', 'COGS', 'Profit', 'Margin %'],
-      ...filteredProducts.map(p => [
-        p.name, p.category, p.dosageForm,
-        String(p.quantitySold),
-        p.revenue.toFixed(2),
-        p.cogs.toFixed(2),
-        p.profit.toFixed(2),
-        p.profitMargin.toFixed(1),
-      ]),
-    ];
-    downloadCSV(`sales-by-product-${new Date().toISOString().split('T')[0]}.csv`, rows);
+    const rows = filteredProducts.map(p => [
+      p.name, p.category, p.dosageForm,
+      p.quantitySold, p.revenue, p.cogs, p.profit, p.profitMargin,
+    ]);
+    exportToExcel({
+      filename: `sales-by-product-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Sales by Product',
+      subtitle: 'Azzay Pharmacy — Product Performance and Profit Analysis',
+      meta: [{ label: 'Branch', value: activeBranchName }],
+      summary: [
+        { label: 'Products Sold', value: metrics.totalProducts },
+        { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
+        { label: 'Total Profit', value: `GH₵ ${metrics.totalProfit.toFixed(2)}` },
+        { label: 'Avg Margin', value: `${metrics.avgMargin.toFixed(1)}%` },
+      ],
+      headers: ['Product', 'Category', 'Dosage Form', 'Qty Sold', 'Revenue', 'COGS', 'Profit', 'Margin %'],
+      rows,
+      currencyColumns: [4, 5, 6],
+      numberColumns: [3],
+      percentColumns: [7],
+      sheetName: 'Sales by Product',
+    });
   };
 
   const card = {
@@ -162,7 +163,7 @@ export default function SalesByProductReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Sales by Product</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Product performance with revenue and profit analysis</p>
+            <p className="text-sm" style={{ color: card.muted }}>Product performance with revenue and profit analysis · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <button 
@@ -170,7 +171,7 @@ export default function SalesByProductReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 

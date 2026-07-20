@@ -4,23 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { 
   ArrowLeft, Download, Package, AlertTriangle, CheckCircle,
   Search, Filter, ChevronLeft, ChevronRight, ArrowUpDown
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function StockLevelReportPage() {
   const router = useRouter();
@@ -29,14 +18,16 @@ export default function StockLevelReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { products } = useStore();
+  const { products: allProducts } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const products = useMemo(() => activeBranchId ? allProducts.filter(p => p.branchId === activeBranchId) : allProducts, [allProducts, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortField, setSortField] = useState<'name' | 'stock' | 'value'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
+  const itemsPerPage = 10;
 
   // Get unique categories
   const categories = useMemo(() => {
@@ -99,19 +90,30 @@ export default function StockLevelReportPage() {
   }, [products]);
 
   const handleExport = () => {
-    const rows = [
-      ['Product', 'Category', 'Dosage Form', 'Stock Qty', 'Unit Cost', 'Total Cost', 'Unit Price', 'Total Retail', 'Status'],
-      ...filteredProducts.map(p => [
-        p.name, p.category, p.dosageForm || 'N/A',
-        String(p.stockQuantity),
-        p.costPrice.toFixed(2),
-        (p.costPrice * p.stockQuantity).toFixed(2),
-        p.sellingPrice.toFixed(2),
-        (p.sellingPrice * p.stockQuantity).toFixed(2),
-        p.stockQuantity === 0 ? 'OUT OF STOCK' : p.stockQuantity <= 10 ? 'LOW STOCK' : 'OK',
-      ]),
-    ];
-    downloadCSV(`stock-levels-${new Date().toISOString().split('T')[0]}.csv`, rows);
+    const rows = filteredProducts.map(p => [
+      p.name, p.category, p.dosageForm || 'N/A', p.stockQuantity,
+      p.costPrice, (p.costPrice * p.stockQuantity),
+      p.sellingPrice, (p.sellingPrice * p.stockQuantity),
+      p.stockQuantity === 0 ? 'OUT OF STOCK' : p.stockQuantity <= 10 ? 'LOW STOCK' : 'OK',
+    ]);
+    exportToExcel({
+      filename: `stock-level-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Stock Level Report',
+      subtitle: 'Azzay Pharmacy — Complete Inventory Status and Valuation',
+      meta: [{ label: 'Branch', value: activeBranchName }],
+      summary: [
+        { label: 'Total Products', value: metrics.totalProducts },
+        { label: 'Total Stock Value', value: `GH₵ ${metrics.totalStockValue.toFixed(2)}` },
+        { label: 'Total Retail Value', value: `GH₵ ${metrics.totalRetailValue.toFixed(2)}` },
+        { label: 'Low Stock', value: metrics.lowStock },
+        { label: 'Out of Stock', value: metrics.outOfStock },
+      ],
+      headers: ['Product', 'Category', 'Dosage Form', 'Stock Qty', 'Unit Cost', 'Total Cost', 'Unit Price', 'Total Retail', 'Status'],
+      rows,
+      currencyColumns: [4, 5, 6, 7],
+      numberColumns: [3],
+      sheetName: 'Stock Levels',
+    });
   };
 
   const handleSort = (field: 'name' | 'stock' | 'value') => {
@@ -153,7 +155,7 @@ export default function StockLevelReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Stock Level Report</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Complete inventory status and valuation</p>
+            <p className="text-sm" style={{ color: card.muted }}>Complete inventory status and valuation · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <button 
@@ -161,7 +163,7 @@ export default function StockLevelReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 

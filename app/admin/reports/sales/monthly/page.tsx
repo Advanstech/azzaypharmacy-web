@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday } from '@/lib/effective-date';
 import { 
   ArrowLeft, Download, Calendar, TrendingUp, TrendingDown,
@@ -12,19 +14,6 @@ import {
 } from 'lucide-react';
 // Simple CSS-based chart components instead of recharts
 
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function MonthlyRevenueReportPage() {
   const router = useRouter();
   const { theme, resolvedTheme } = useTheme();
@@ -32,7 +21,9 @@ export default function MonthlyRevenueReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, products } = useStore();
+  const { sales: allSales, products } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -123,30 +114,50 @@ export default function MonthlyRevenueReportPage() {
   const COLORS = ['#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
 
   const handleExport = () => {
-    const rows = [
-      ['Date', 'Day', 'Transactions', 'Revenue', 'Avg Sale'],
-      ...Object.entries(metrics.dailyRevenue)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, revenue]) => {
-          const daySales = monthlySales.filter(s => new Date(s.createdAt).toISOString().split('T')[0] === date);
-          return [
-            date,
-            new Date(date).toLocaleDateString('en-GB', { weekday: 'short' }),
-            String(daySales.length),
-            revenue.toFixed(2),
-            daySales.length > 0 ? (revenue / daySales.length).toFixed(2) : '0.00',
-          ];
-        }),
-      ['', '', '', '', ''],
-      ['Payment Method', 'Revenue', 'Transactions', 'Percentage'],
-      ...Object.entries(metrics.byPayment).map(([method, data]) => [
-        method,
-        data.amount.toFixed(2),
-        String(data.count),
-        metrics.totalRevenue > 0 ? ((data.amount / metrics.totalRevenue) * 100).toFixed(1) + '%' : '0%',
-      ]),
-    ];
-    downloadCSV(`monthly-revenue-${selectedMonth}.csv`, rows);
+    const dailyRows = Object.entries(metrics.dailyRevenue)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, revenue]) => {
+        const daySales = monthlySales.filter(s => new Date(s.createdAt).toISOString().split('T')[0] === date);
+        return [
+          date,
+          new Date(date).toLocaleDateString('en-GB', { weekday: 'short' }),
+          daySales.length,
+          revenue,
+          daySales.length > 0 ? (revenue / daySales.length) : 0,
+        ];
+      });
+    exportToExcel({
+      filename: `monthly-revenue-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${selectedMonth}`,
+      title: 'Monthly Revenue Report',
+      subtitle: 'Azzay Pharmacy — Daily Revenue Breakdown',
+      meta: [{ label: 'Branch', value: activeBranchName }, { label: 'Month', value: selectedMonth }],
+      summary: [
+        { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
+        { label: 'Net Profit', value: `GH₵ ${(metrics.totalRevenue - metrics.totalCogs).toFixed(2)}` },
+        { label: 'Transactions', value: metrics.totalTransactions },
+      ],
+      headers: ['Date', 'Day', 'Transactions', 'Revenue', 'Avg Sale'],
+      rows: dailyRows,
+      currencyColumns: [3, 4],
+      numberColumns: [2],
+      sheetName: 'Daily Revenue',
+    });
+    const paymentRows = Object.entries(metrics.byPayment).map(([method, data]) => [
+      method, data.amount, data.count,
+      metrics.totalRevenue > 0 ? (data.amount / metrics.totalRevenue) * 100 : 0,
+    ]);
+    exportToExcel({
+      filename: `monthly-revenue-by-payment-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${selectedMonth}`,
+      title: 'Monthly Revenue by Payment Method',
+      subtitle: 'Azzay Pharmacy',
+      meta: [{ label: 'Branch', value: activeBranchName }, { label: 'Month', value: selectedMonth }],
+      headers: ['Payment Method', 'Revenue', 'Transactions', 'Percentage'],
+      rows: paymentRows,
+      currencyColumns: [1],
+      numberColumns: [2],
+      percentColumns: [3],
+      sheetName: 'By Payment Method',
+    });
   };
 
   const card = {
@@ -173,7 +184,7 @@ export default function MonthlyRevenueReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Monthly Revenue Report</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Comprehensive revenue analysis and trends</p>
+            <p className="text-sm" style={{ color: card.muted }}>Comprehensive revenue analysis and trends · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <div className="flex items-center gap-2">

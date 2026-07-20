@@ -4,24 +4,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { 
   ArrowLeft, Download, Users, TrendingUp, ShoppingBag,
   Search, ChevronLeft, ChevronRight, Award, Clock, Store
 } from 'lucide-react';
 // Using CSS-based charts instead of recharts
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function StaffPerformanceReportPage() {
   const router = useRouter();
@@ -30,7 +19,10 @@ export default function StaffPerformanceReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, staff, products } = useStore();
+  const { sales: allSales, staff: allStaff, products } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const staff = useMemo(() => activeBranchId ? allStaff.filter(s => s.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -151,17 +143,30 @@ export default function StaffPerformanceReportPage() {
   }, [staffPerformance]);
 
   const handleExport = () => {
-    const rows = [
-      ['Name', 'Email', 'Role', 'Branch', 'Status', 'Total Sales', 'Revenue', 'Items Sold', 'Unique Customers', 'Avg Sale'],
-      ...filteredStaff.map(s => [
-        s.name, s.email, s.role, s.branch,
-        s.isOnDuty ? 'On Duty' : s.isActive ? 'Active' : 'Inactive',
-        String(s.sales), s.revenue.toFixed(2), String(s.items),
-        String(s.customers.size),
-        s.sales > 0 ? (s.revenue / s.sales).toFixed(2) : '0.00',
-      ]),
-    ];
-    downloadCSV(`staff-performance-${new Date().toISOString().split('T')[0]}.csv`, rows);
+    const rows = filteredStaff.map(s => [
+      s.name, s.email, s.role, s.branch,
+      s.isOnDuty ? 'On Duty' : s.isActive ? 'Active' : 'Inactive',
+      s.sales, s.revenue, s.items,
+      s.customers.size,
+      s.sales > 0 ? (s.revenue / s.sales) : 0,
+    ]);
+    exportToExcel({
+      filename: `staff-performance-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Staff Performance Report',
+      subtitle: 'Azzay Pharmacy — Sales Performance and Activity by Staff Member',
+      meta: [{ label: 'Branch', value: activeBranchName }],
+      summary: [
+        { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
+        { label: 'Total Sales', value: metrics.totalSales },
+        { label: 'Active Staff', value: metrics.activeStaff },
+        { label: 'On Duty Now', value: metrics.onDuty },
+      ],
+      headers: ['Name', 'Email', 'Role', 'Branch', 'Status', 'Total Sales', 'Revenue', 'Items Sold', 'Unique Customers', 'Avg Sale'],
+      rows,
+      currencyColumns: [6, 9],
+      numberColumns: [5, 7, 8],
+      sheetName: 'Staff Performance',
+    });
   };
 
   const card = {
@@ -188,7 +193,7 @@ export default function StaffPerformanceReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Staff Performance Report</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Sales performance and activity metrics by staff member</p>
+            <p className="text-sm" style={{ color: card.muted }}>Sales performance and activity metrics by staff member · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <button 
@@ -196,7 +201,7 @@ export default function StaffPerformanceReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 

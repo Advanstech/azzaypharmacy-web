@@ -4,25 +4,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveDateRange } from '@/lib/effective-date';
 import { 
   ArrowLeft, Download, FileText, TrendingUp, TrendingDown,
   DollarSign, ShoppingCart, Receipt, ArrowUpRight, ArrowDownRight,
   Percent
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function ProfitLossReportPage() {
   const router = useRouter();
@@ -31,12 +20,15 @@ export default function ProfitLossReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, products, expenses, refetchSales, refetchExpenses } = useStore();
+  const { sales: allSales, products, expenses: allExpenses, refetchSales, refetchExpenses } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const expenses = useMemo(() => activeBranchId ? allExpenses.filter(e => e.branchId === activeBranchId) : allExpenses, [allExpenses, activeBranchId]);
 
   // Ensure data is loaded
   useEffect(() => {
-    if (sales.length === 0) refetchSales();
-    if (expenses.length === 0) refetchExpenses();
+    if (allSales.length === 0) refetchSales();
+    if (allExpenses.length === 0) refetchExpenses();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -103,33 +95,43 @@ export default function ProfitLossReportPage() {
   }, [sales, products, expenses, dateFrom, dateTo]);
 
   const handleExport = () => {
-    const rows = [
-      ['PROFIT & LOSS STATEMENT'],
-      ['Generated:', new Date().toLocaleString('en-GB')],
-      ['Period:', `${dateFrom} to ${dateTo}`],
-      [''],
-      ['REVENUE'],
-      ['Total Revenue', metrics.totalRevenue.toFixed(2), `${metrics.totalTransactions} transactions`],
-      ['Average Transaction', metrics.avgTransaction.toFixed(2)],
-      [''],
-      ['COST OF GOODS SOLD'],
-      ['Total COGS', `-${metrics.totalCogs.toFixed(2)}`],
-      [''],
-      ['GROSS PROFIT'],
-      ['Gross Profit', metrics.grossProfit.toFixed(2)],
-      ['Gross Margin %', `${metrics.grossMargin.toFixed(1)}%`],
-      [''],
-      ['OPERATING EXPENSES'],
+    const rows: (string | number)[][] = [
+      ['REVENUE', '', ''],
+      ['Total Revenue', metrics.totalRevenue, `${metrics.totalTransactions} transactions`],
+      ['Average Transaction', metrics.avgTransaction, ''],
+      ['', '', ''],
+      ['COST OF GOODS SOLD', '', ''],
+      ['Total COGS', -metrics.totalCogs, ''],
+      ['', '', ''],
+      ['GROSS PROFIT', metrics.grossProfit, `${metrics.grossMargin.toFixed(1)}% margin`],
+      ['', '', ''],
+      ['OPERATING EXPENSES', '', ''],
       ...Object.entries(metrics.expensesByCategory).map(([cat, { amount, count }]) => [
-        cat, `-${amount.toFixed(2)}`, `${count} item(s)`
+        cat, -amount, `${count} item(s)`
       ]),
-      ['Total Operating Expenses', `-${metrics.totalOperatingExpenses.toFixed(2)}`],
-      [''],
-      ['NET PROFIT'],
-      ['Net Profit', metrics.netProfit.toFixed(2)],
-      ['Net Margin %', `${metrics.netMargin.toFixed(1)}%`],
+      ['Total Operating Expenses', -metrics.totalOperatingExpenses, ''],
+      ['', '', ''],
+      ['NET PROFIT', metrics.netProfit, `${metrics.netMargin.toFixed(1)}% net margin`],
     ];
-    downloadCSV(`profit-loss-statement-${new Date().toISOString().split('T')[0]}.csv`, rows);
+    exportToExcel({
+      filename: `profit-loss-statement-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Profit & Loss Statement',
+      subtitle: 'Azzay Pharmacy — Financial Performance Summary',
+      meta: [
+        { label: 'Branch', value: activeBranchName },
+        { label: 'Period', value: `${dateFrom} to ${dateTo}` },
+      ],
+      summary: [
+        { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
+        { label: 'Gross Profit', value: `GH₵ ${metrics.grossProfit.toFixed(2)}` },
+        { label: 'Net Profit', value: `GH₵ ${metrics.netProfit.toFixed(2)}` },
+        { label: 'Net Margin', value: `${metrics.netMargin.toFixed(1)}%` },
+      ],
+      headers: ['Account', 'Amount (GH₵)', 'Notes'],
+      rows,
+      currencyColumns: [1],
+      sheetName: 'Profit & Loss',
+    });
   };
 
   const card = {
@@ -160,7 +162,7 @@ export default function ProfitLossReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Profit & Loss Statement</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Financial performance summary</p>
+            <p className="text-sm" style={{ color: card.muted }}>Financial performance summary · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <button 
@@ -168,7 +170,7 @@ export default function ProfitLossReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 

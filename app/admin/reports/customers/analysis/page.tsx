@@ -4,23 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { 
   ArrowLeft, Download, Users, Search, Phone, ShoppingBag,
   ChevronLeft, ChevronRight, Crown, Star, TrendingUp
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function CustomerAnalysisReportPage() {
   const router = useRouter();
@@ -29,11 +18,13 @@ export default function CustomerAnalysisReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, customers } = useStore();
+  const { sales: allSales, customers } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'spent' | 'visits' | 'name'>('spent');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
+  const itemsPerPage = 10;
 
   // Analyze customer data from sales
   const customerAnalysis = useMemo(() => {
@@ -118,16 +109,28 @@ export default function CustomerAnalysisReportPage() {
   }, [customerAnalysis]);
 
   const handleExport = () => {
-    const rows = [
-      ['Customer', 'Phone', 'Visits', 'Items', 'Total Spent', 'Avg Sale', 'First Visit', 'Last Visit'],
-      ...filteredCustomers.map(c => [
-        c.name, c.phone, String(c.visits), String(c.items),
-        c.totalSpent.toFixed(2), c.avgSale.toFixed(2),
-        new Date(c.firstVisit).toLocaleDateString('en-GB'),
-        new Date(c.lastVisit).toLocaleDateString('en-GB'),
-      ]),
-    ];
-    downloadCSV(`customer-analysis-${new Date().toISOString().split('T')[0]}.csv`, rows);
+    const rows = filteredCustomers.map(c => [
+      c.name, c.phone, c.visits, c.items, c.totalSpent, c.avgSale,
+      new Date(c.firstVisit).toLocaleDateString('en-GB'),
+      new Date(c.lastVisit).toLocaleDateString('en-GB'),
+    ]);
+    exportToExcel({
+      filename: `customer-analysis-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Customer Analysis',
+      subtitle: 'Azzay Pharmacy — Customer Spending and Loyalty Metrics',
+      meta: [{ label: 'Branch', value: activeBranchName }],
+      summary: [
+        { label: 'Total Customers', value: metrics.totalCustomers },
+        { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
+        { label: 'Total Visits', value: metrics.totalVisits },
+        { label: 'Avg Customer Value', value: `GH₵ ${metrics.avgCustomerValue.toFixed(2)}` },
+      ],
+      headers: ['Customer', 'Phone', 'Visits', 'Items', 'Total Spent', 'Avg Sale', 'First Visit', 'Last Visit'],
+      rows,
+      currencyColumns: [4, 5],
+      numberColumns: [2, 3],
+      sheetName: 'Customer Analysis',
+    });
   };
 
   const card = {
@@ -155,7 +158,7 @@ export default function CustomerAnalysisReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Customer Analysis</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Customer spending patterns and loyalty metrics</p>
+            <p className="text-sm" style={{ color: card.muted }}>Customer spending patterns and loyalty metrics · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <button 
@@ -163,7 +166,7 @@ export default function CustomerAnalysisReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 

@@ -4,23 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { 
   ArrowLeft, Download, Calendar, AlertTriangle, Clock,
   Search, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function ExpiryTrackingReportPage() {
   const router = useRouter();
@@ -29,11 +18,13 @@ export default function ExpiryTrackingReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { products } = useStore();
+  const { products: allProducts } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const products = useMemo(() => activeBranchId ? allProducts.filter(p => p.branchId === activeBranchId) : allProducts, [allProducts, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [daysFilter, setDaysFilter] = useState('90');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
+  const itemsPerPage = 10;
 
   // Get expiry data
   const expiryData = useMemo(() => {
@@ -105,18 +96,31 @@ export default function ExpiryTrackingReportPage() {
   }, [expiryData]);
 
   const handleExport = () => {
-    const rows = [
-      ['Product', 'Category', 'Batch No', 'Expiry Date', 'Quantity', 'Days Left', 'Status', 'Value at Risk'],
-      ...filteredData.map(d => {
-        const status = d.daysLeft <= 0 ? 'EXPIRED' : d.daysLeft <= 30 ? 'CRITICAL' : d.daysLeft <= 60 ? 'WARNING' : 'ATTENTION';
-        return [
-          d.product, d.category, d.batchNo, d.expiryDate,
-          String(d.quantity), String(d.daysLeft), status,
-          (d.costPrice * d.quantity).toFixed(2),
-        ];
-      }),
-    ];
-    downloadCSV(`expiry-tracking-${new Date().toISOString().split('T')[0]}.csv`, rows);
+    const rows = filteredData.map(d => {
+      const status = d.daysLeft <= 0 ? 'EXPIRED' : d.daysLeft <= 30 ? 'CRITICAL' : d.daysLeft <= 60 ? 'WARNING' : 'ATTENTION';
+      return [
+        d.product, d.category, d.batchNo, d.expiryDate,
+        d.quantity, d.daysLeft, status,
+        (d.costPrice * d.quantity),
+      ];
+    });
+    exportToExcel({
+      filename: `expiry-tracking-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Expiry Tracking Report',
+      subtitle: 'Azzay Pharmacy — Products Approaching Expiration',
+      meta: [{ label: 'Branch', value: activeBranchName }],
+      summary: [
+        { label: 'Expired', value: metrics.expired },
+        { label: 'Critical (≤30d)', value: metrics.critical },
+        { label: 'Warning (31-60d)', value: metrics.warning },
+        { label: 'Value at Risk', value: `GH₵ ${metrics.totalValue.toFixed(2)}` },
+      ],
+      headers: ['Product', 'Category', 'Batch No', 'Expiry Date', 'Quantity', 'Days Left', 'Status', 'Value at Risk'],
+      rows,
+      currencyColumns: [7],
+      numberColumns: [4, 5],
+      sheetName: 'Expiry Tracking',
+    });
   };
 
   const getStatusBadge = (days: number) => {
@@ -150,7 +154,7 @@ export default function ExpiryTrackingReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Expiry Tracking Report</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Monitor products approaching expiration</p>
+            <p className="text-sm" style={{ color: card.muted }}>Monitor products approaching expiration · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <button 
@@ -158,7 +162,7 @@ export default function ExpiryTrackingReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 

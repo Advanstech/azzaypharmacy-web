@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { PageTransition } from '@/components/page-transition';
+import { BranchProvider } from '@/lib/branch-context';
+import { BranchSwitcher } from '@/components/BranchSwitcher';
 import {
   LayoutDashboard,
   Shield,
@@ -45,7 +47,7 @@ const adminItems = [
   { label: 'Super Terminal', href: '/admin/terminal', icon: Activity, color: '#00D9FF' },
 ];
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useCustomAuth();
   const { me } = useStore();
   const router = useRouter();
@@ -369,7 +371,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <main className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Top Bar */}
         <header
-          className="h-16 shrink-0 border-b backdrop-blur-xl flex items-center justify-between px-4 md:px-6 gap-3 md:gap-6"
+          className="relative z-30 h-16 shrink-0 border-b backdrop-blur-xl flex items-center justify-between px-4 md:px-6 gap-3 md:gap-6"
           style={{
             background: isDark ? 'rgba(15, 23, 42, 0.6)' : 'rgba(255, 255, 255, 0.8)',
             borderColor: isDark ? 'rgba(239, 68, 68, 0.1)' : 'rgba(239, 68, 68, 0.15)',
@@ -408,18 +410,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
 
-          {/* Right: Date */}
-          <div className="hidden sm:flex items-center">
-            <span
-              className="font-data text-xs"
-              style={{ color: isDark ? '#64748B' : '#94A3B8' }}
-            >
-              {new Date().toLocaleDateString('en-GB', {
-                day: '2-digit',
-                month: 'short',
-                year: 'numeric',
-              })}
-            </span>
+          {/* Right: Branch Switcher + Date */}
+          <div className="flex items-center gap-3">
+            <BranchSwitcher isDark={isDark} />
+            <div className="hidden sm:flex items-center">
+              <span
+                className="font-data text-xs"
+                style={{ color: isDark ? '#64748B' : '#94A3B8' }}
+              >
+                {new Date().toLocaleDateString('en-GB', {
+                  day: '2-digit',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              </span>
+            </div>
           </div>
         </header>
 
@@ -429,5 +434,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </main>
     </div>
+  );
+}
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const { user } = useCustomAuth();
+  const { me } = useStore();
+  const role = (me?.role || (user?.user_metadata?.role as string)) ?? '';
+  return (
+    <BranchProvider
+      role={role}
+      assignedBranchId={me?.branchId}
+      assignedBranchName={me?.branch?.name}
+    >
+      <AdminLayoutInner>{children}</AdminLayoutInner>
+    </BranchProvider>
   );
 }

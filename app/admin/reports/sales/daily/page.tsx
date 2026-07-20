@@ -4,25 +4,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday } from '@/lib/effective-date';
 import { 
   ArrowLeft, Download, Calendar, Filter, RefreshCw, 
   TrendingUp, Users, ShoppingBag, CreditCard, Search,
   ChevronLeft, ChevronRight, Receipt
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function DailySalesReportPage() {
   const router = useRouter();
@@ -31,7 +20,9 @@ export default function DailySalesReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, products } = useStore();
+  const { sales: allSales, products } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   // Update to effective date once data loads
@@ -95,29 +86,41 @@ export default function DailySalesReportPage() {
   }, [dailySales, products]);
 
   const handleExport = () => {
-    const rows = [
-      ['Date', 'Sale ID', 'Customer', 'Phone', 'Items', 'Payment', 'Subtotal', 'Discount', 'Total', 'Profit', 'Cashier'],
-      ...filteredSales.map(s => {
-        const saleCogs = s.items.reduce((sum, item) => {
-          const product = products.find(p => p.id === item.product.id);
-          return sum + ((product ? product.costPrice : item.unitPrice * 0.5) * item.quantity);
-        }, 0);
-        return [
-          new Date(s.createdAt).toLocaleDateString('en-GB'),
-          s.id,
-          s.customerName || 'Walk-in',
-          s.customerPhone || 'N/A',
-          String(s.items.reduce((sum, i) => sum + i.quantity, 0)),
-          s.paymentMethod,
-          (s.subtotal || s.totalAmount).toFixed(2),
-          (s.discountAmt || 0).toFixed(2),
-          s.totalAmount.toFixed(2),
-          (s.totalAmount - saleCogs).toFixed(2),
-          s.user?.name || 'Unknown',
-        ];
-      }),
-    ];
-    downloadCSV(`daily-sales-detail-${selectedDate}.csv`, rows);
+    const rows = filteredSales.map(s => {
+      const saleCogs = s.items.reduce((sum, item) => {
+        const product = products.find(p => p.id === item.product.id);
+        return sum + ((product ? product.costPrice : item.unitPrice * 0.5) * item.quantity);
+      }, 0);
+      return [
+        new Date(s.createdAt).toLocaleDateString('en-GB'),
+        s.id,
+        s.customerName || 'Walk-in',
+        s.customerPhone || 'N/A',
+        s.items.reduce((sum, i) => sum + i.quantity, 0),
+        s.paymentMethod,
+        (s.subtotal || s.totalAmount),
+        (s.discountAmt || 0),
+        s.totalAmount,
+        (s.totalAmount - saleCogs),
+        s.user?.name || 'Unknown',
+      ];
+    });
+    exportToExcel({
+      filename: `daily-sales-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${selectedDate}`,
+      title: 'Daily Sales Report',
+      subtitle: 'Azzay Pharmacy — Detailed Transaction History',
+      meta: [{ label: 'Branch', value: activeBranchName }, { label: 'Date', value: selectedDate }],
+      summary: [
+        { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
+        { label: 'Transactions', value: metrics.totalTransactions },
+        { label: 'Total Profit', value: `GH₵ ${metrics.totalProfit.toFixed(2)}` },
+      ],
+      headers: ['Date', 'Sale ID', 'Customer', 'Phone', 'Items', 'Payment', 'Subtotal', 'Discount', 'Total', 'Profit', 'Cashier'],
+      rows,
+      currencyColumns: [6, 7, 8, 9],
+      numberColumns: [4],
+      sheetName: 'Daily Sales',
+    });
   };
 
   const card = {
@@ -147,7 +150,7 @@ export default function DailySalesReportPage() {
             <h1 className="font-display text-2xl sm:text-3xl md:text-4xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-500 mb-1">
               Daily Sales Report
             </h1>
-            <p className="text-sm font-medium" style={{ color: card.muted }}>Detailed transaction history with profit analysis</p>
+            <p className="text-sm font-medium" style={{ color: card.muted }}>Detailed transaction history with profit analysis · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">

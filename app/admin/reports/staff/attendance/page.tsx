@@ -4,24 +4,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { useCustomAuth } from '@/lib/custom-auth';
+import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday } from '@/lib/effective-date';
 import {
   ArrowLeft, Download, Users, Clock, CheckCircle, XCircle,
   Search, UserCircle, Wifi, WifiOff, Shield, Building2,
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 const ROLE_COLORS: Record<string, string> = {
   ROOT: '#EF4444', SE_ADMIN: '#EF4444', OWNER: '#F97316',
@@ -50,12 +40,16 @@ export default function StaffAttendancePage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { staff, sales, refetchStaff } = useStore();
+  const { staff: allStaff, sales: allSales, refetchStaff } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const { session } = useCustomAuth();
+  const staff = useMemo(() => activeBranchId ? allStaff.filter(m => m.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
+  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
 
   useEffect(() => {
-    if (staff.length === 0) refetchStaff();
+    if (allStaff.length === 0 && session?.access_token) refetchStaff();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [session?.access_token]);
 
   const today = useMemo(() => getEffectiveToday(sales), [sales]);
 
@@ -64,6 +58,8 @@ export default function StaffAttendancePage() {
   const [dutyFilter, setDutyFilter] = useState<'All' | 'OnDuty' | 'OffDuty'>('All');
   const [branchFilter, setBranchFilter] = useState('All');
   const [roleFilter, setRoleFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const uniqueBranches = useMemo(() => {
     const s = new Set(staff.map(m => m.branch?.name).filter(Boolean) as string[]);
@@ -110,6 +106,10 @@ export default function StaffAttendancePage() {
     });
   }, [staff, dutyFilter, branchFilter, roleFilter, search]);
 
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const safeCurrentPage = Math.min(currentPage, totalPages || 1);
+  const paginatedStaff = filtered.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+
   const kpis = useMemo(() => ({
     total: staff.length,
     onDuty: staff.filter(m => m.isOnDuty).length,
@@ -119,33 +119,36 @@ export default function StaffAttendancePage() {
   }), [staff]);
 
   const handleExport = () => {
-    const rows: (string | number | boolean | null | undefined)[][] = [
-      ['STAFF ATTENDANCE REPORT'],
-      ['Generated:', new Date().toLocaleString('en-GB')],
-      ['Date:', today],
-      [''],
-      ['Name', 'Email', 'Role', 'Branch', 'On Duty', 'Active', 'Last Seen', 'Phone', "Today's Sales", "Today's Revenue (GH₵)"],
-      ...filtered.map(m => {
-        const perf = todaySalesByStaff[m.id];
-        return [
-          m.name, m.email, m.role,
-          m.branch?.name || 'N/A',
-          m.isOnDuty ? 'YES' : 'NO',
-          m.isActive ? 'YES' : 'NO',
-          m.lastSeen ? new Date(m.lastSeen).toLocaleString('en-GB') : 'Never',
-          m.phone || 'N/A',
-          String(perf?.count || 0),
-          (perf?.revenue || 0).toFixed(2),
-        ];
-      }),
-      [''],
-      ['SUMMARY'],
-      ['Total Staff', String(kpis.total)],
-      ['On Duty', String(kpis.onDuty)],
-      ['Active', String(kpis.active)],
-      ['Inactive', String(kpis.inactive)],
-    ];
-    downloadCSV(`staff-attendance-${today}.csv`, rows);
+    const rows = filtered.map(m => {
+      const perf = todaySalesByStaff[m.id];
+      return [
+        m.name, m.email, m.role,
+        m.branch?.name || 'N/A',
+        m.isOnDuty ? 'YES' : 'NO',
+        m.isActive ? 'YES' : 'NO',
+        m.lastSeen ? new Date(m.lastSeen).toLocaleString('en-GB') : 'Never',
+        m.phone || 'N/A',
+        perf?.count || 0,
+        perf?.revenue || 0,
+      ];
+    });
+    exportToExcel({
+      filename: `staff-attendance-log-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+      title: 'Staff Attendance Log',
+      subtitle: 'Azzay Pharmacy — Live Duty Status and Attendance',
+      meta: [{ label: 'Branch', value: activeBranchName }, { label: 'Date', value: today }],
+      summary: [
+        { label: 'Total Staff', value: kpis.total },
+        { label: 'On Duty', value: kpis.onDuty },
+        { label: 'Active', value: kpis.active },
+        { label: 'Inactive', value: kpis.inactive },
+      ],
+      headers: ['Name', 'Email', 'Role', 'Branch', 'On Duty', 'Active', 'Last Seen', 'Phone', "Today's Sales", "Today's Revenue"],
+      rows,
+      currencyColumns: [9],
+      numberColumns: [8],
+      sheetName: 'Attendance',
+    });
   };
 
   const card = {
@@ -181,7 +184,7 @@ export default function StaffAttendancePage() {
               Staff Attendance Log
             </h1>
             <p className="text-sm" style={{ color: card.muted }}>
-              Live duty status · {kpis.onDuty} of {kpis.total} currently on duty
+              Live duty status · {kpis.onDuty} of {kpis.total} currently on duty · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span>
             </p>
           </div>
         </div>
@@ -190,7 +193,7 @@ export default function StaffAttendancePage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 
@@ -233,13 +236,13 @@ export default function StaffAttendancePage() {
         <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: card.muted }} />
           <input
-            type="text" value={search} onChange={e => setSearch(e.target.value)}
+            type="text" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
             placeholder="Search name, email, role…"
             className="w-full pl-9 pr-4 py-2 rounded-lg text-sm border outline-none"
             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }} />
         </div>
         {(['All', 'OnDuty', 'OffDuty'] as const).map(f => (
-          <button key={f} onClick={() => setDutyFilter(f)}
+          <button key={f} onClick={() => { setDutyFilter(f); setCurrentPage(1); }}
             className="px-3 py-2 rounded-lg text-xs font-bold transition-all"
             style={{
               background: dutyFilter === f ? (f === 'OnDuty' ? `${card.success}20` : f === 'OffDuty' ? `${card.danger}15` : card.primaryBg) : card.bg,
@@ -249,12 +252,12 @@ export default function StaffAttendancePage() {
             {f === 'All' ? 'All Staff' : f === 'OnDuty' ? '● On Duty' : '○ Off Duty'}
           </button>
         ))}
-        <select value={branchFilter} onChange={e => setBranchFilter(e.target.value)}
+        <select value={branchFilter} onChange={e => { setBranchFilter(e.target.value); setCurrentPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueBranches.map(b => <option key={b} value={b}>{b === 'All' ? 'All Branches' : b}</option>)}
         </select>
-        <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
+        <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setCurrentPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueRoles.map(r => <option key={r} value={r}>{r === 'All' ? 'All Roles' : r}</option>)}
@@ -286,7 +289,7 @@ export default function StaffAttendancePage() {
           </div>
         ) : (
           <div className="divide-y" style={{ borderColor: card.border }}>
-            {filtered.map(m => {
+            {paginatedStaff.map(m => {
               const roleColor = ROLE_COLORS[m.role] || card.primary;
               const { text: lastSeenText, isRecent } = lastSeenLabel(m.lastSeen);
               const perf = todaySalesByStaff[m.id];
@@ -389,11 +392,24 @@ export default function StaffAttendancePage() {
         {filtered.length > 0 && (
           <div className="flex justify-between items-center px-4 py-3 border-t text-xs"
             style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC', borderColor: card.border, color: card.muted }}>
-            <span>{filtered.filter(m => m.isOnDuty).length} on duty · {filtered.filter(m => !m.isOnDuty).length} off duty</span>
-            <span>
-              Total today: {Object.values(todaySalesByStaff).reduce((s, v) => s + v.count, 0)} sales ·
-              GH₵ {Object.values(todaySalesByStaff).reduce((s, v) => s + v.revenue, 0).toFixed(2)}
-            </span>
+            <span>Showing {(safeCurrentPage - 1) * itemsPerPage + 1}–{Math.min(safeCurrentPage * itemsPerPage, filtered.length)} of {filtered.length} staff</span>
+            <div className="flex items-center gap-3">
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safeCurrentPage === 1}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                    style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Previous</button>
+                  <span className="font-bold" style={{ color: card.primary }}>{safeCurrentPage} / {totalPages}</span>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safeCurrentPage === totalPages}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                    style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Next</button>
+                </div>
+              )}
+              <span>
+                Total today: {Object.values(todaySalesByStaff).reduce((s, v) => s + v.count, 0)} sales ·
+                GH₵ {Object.values(todaySalesByStaff).reduce((s, v) => s + v.revenue, 0).toFixed(2)}
+              </span>
+            </div>
           </div>
         )}
       </div>

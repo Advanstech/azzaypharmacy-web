@@ -4,24 +4,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import {
   ArrowLeft, Download, PackageCheck, Search, Filter,
   ChevronDown, ChevronUp, TrendingUp, Clock, CheckCircle,
   XCircle, AlertCircle, Package, Truck,
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 const STATUS_META: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
   RECEIVED:  { label: 'Received',  color: '#10B981', icon: CheckCircle },
@@ -37,7 +26,9 @@ export default function PurchaseOrdersReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { purchases, suppliers, refetchPurchases } = useStore();
+  const { purchases: allPurchases, suppliers, refetchPurchases } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const purchases = useMemo(() => activeBranchId ? allPurchases.filter(p => p.branchId === activeBranchId) : allPurchases, [allPurchases, activeBranchId]);
 
   useEffect(() => {
     if (purchases.length === 0) refetchPurchases();
@@ -52,6 +43,8 @@ export default function PurchaseOrdersReportPage() {
   const [sortField, setSortField] = useState<'date' | 'total' | 'items'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const uniqueStatuses = useMemo(() => {
     const s = new Set(purchases.map(p => p.status));
@@ -85,6 +78,10 @@ export default function PurchaseOrdersReportPage() {
     return list;
   }, [purchases, statusFilter, supplierFilter, search, sortField, sortDir]);
 
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const safeCurrentPage = Math.min(currentPage, totalPages || 1);
+  const paginatedPurchases = filtered.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+
   // Summary KPIs
   const kpis = useMemo(() => {
     const total = purchases.reduce((s, p) => s + p.total, 0);
@@ -105,30 +102,41 @@ export default function PurchaseOrdersReportPage() {
   }, [purchases]);
 
   const handleExport = () => {
-    const rows: (string | number | boolean | null | undefined)[][] = [
-      ['PURCHASE ORDERS REPORT'],
-      ['Generated:', new Date().toLocaleString('en-GB')],
-      [''],
-      ['Invoice #', 'Date', 'Supplier', 'Status', 'Items', 'Total Value (GH₵)'],
-      ...filtered.map(p => [
-        p.invoiceNo || 'N/A',
-        new Date(p.invoiceDate).toLocaleDateString('en-GB'),
-        p.supplier?.name || 'Unknown',
-        p.status,
-        String(p.items?.length || 0),
-        p.total.toFixed(2),
-      ]),
-      [''],
-      ['SUMMARY'],
-      ['Total Orders', String(filtered.length)],
-      ['Total Value', filtered.reduce((s, p) => s + p.total, 0).toFixed(2)],
-    ];
-    downloadCSV(`purchase-orders-${today}.csv`, rows);
+    const rows = filtered.map(p => [
+      p.invoiceNo || 'N/A',
+      new Date(p.invoiceDate).toLocaleDateString('en-GB'),
+      p.supplier?.name || 'Unknown',
+      p.status,
+      p.items?.length || 0,
+      p.total,
+    ]);
+    const totalValue = filtered.reduce((s, p) => s + p.total, 0);
+    exportToExcel({
+      filename: `purchase-orders-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+      title: 'Purchase Orders Report',
+      subtitle: 'Azzay Pharmacy — Purchase order tracking by status and supplier',
+      meta: [
+        { label: 'Branch', value: activeBranchName },
+        { label: 'Generated', value: new Date().toLocaleString('en-GB') },
+      ],
+      summary: [
+        { label: 'Total Orders', value: filtered.length },
+        { label: 'Total Value', value: `GH₵ ${totalValue.toFixed(2)}` },
+        { label: 'Received', value: kpis.received },
+        { label: 'Pending', value: kpis.pending },
+      ],
+      headers: ['Invoice #', 'Date', 'Supplier', 'Status', 'Items', 'Total Value (GH₵)'],
+      rows,
+      currencyColumns: [5],
+      numberColumns: [4],
+      sheetName: 'Purchase Orders',
+    });
   };
 
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
+    setCurrentPage(1);
   };
 
   const card = {
@@ -171,7 +179,7 @@ export default function PurchaseOrdersReportPage() {
               Purchase Orders Report
             </h1>
             <p className="text-sm" style={{ color: card.muted }}>
-              {kpis.count} orders · GH₵ {kpis.total.toFixed(2)} total value
+              {kpis.count} orders · GH₵ {kpis.total.toFixed(2)} total value · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span>
             </p>
           </div>
         </div>
@@ -180,7 +188,7 @@ export default function PurchaseOrdersReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 
@@ -210,7 +218,7 @@ export default function PurchaseOrdersReportPage() {
           <input
             type="text"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
             placeholder="Search invoice, supplier, product…"
             className="w-full pl-9 pr-4 py-2 rounded-lg text-sm border outline-none"
             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}
@@ -218,14 +226,14 @@ export default function PurchaseOrdersReportPage() {
         </div>
         <select
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
+          onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueStatuses.map(s => <option key={s} value={s}>{s === 'All' ? 'All Statuses' : s}</option>)}
         </select>
         <select
           value={supplierFilter}
-          onChange={e => setSupplierFilter(e.target.value)}
+          onChange={e => { setSupplierFilter(e.target.value); setCurrentPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueSuppliers.map(s => <option key={s} value={s}>{s === 'All' ? 'All Suppliers' : s}</option>)}
@@ -264,7 +272,7 @@ export default function PurchaseOrdersReportPage() {
           </div>
         ) : (
           <div className="divide-y" style={{ borderColor: card.border }}>
-            {filtered.map(p => {
+            {paginatedPurchases.map(p => {
               const meta = STATUS_META[p.status] || { label: p.status, color: card.muted, icon: AlertCircle };
               const StatusIcon = meta.icon;
               const isExpanded = expandedId === p.id;
@@ -368,13 +376,26 @@ export default function PurchaseOrdersReportPage() {
           <div className="flex justify-between items-center px-4 py-3 border-t"
             style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC', borderColor: card.border }}>
             <span className="text-xs font-bold" style={{ color: card.muted }}>
-              {filtered.length} order{filtered.length !== 1 ? 's' : ''} shown
+              Showing {(safeCurrentPage - 1) * itemsPerPage + 1}–{Math.min(safeCurrentPage * itemsPerPage, filtered.length)} of {filtered.length} orders
             </span>
-            <div className="text-right">
-              <span className="text-xs font-bold" style={{ color: card.muted }}>Filtered Total: </span>
-              <span className="font-display text-base font-bold font-mono" style={{ color: card.text }}>
-                GH₵ {filtered.reduce((s, p) => s + p.total, 0).toFixed(2)}
-              </span>
+            <div className="flex items-center gap-3">
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safeCurrentPage === 1}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                    style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Previous</button>
+                  <span className="text-xs font-bold" style={{ color: card.primary }}>{safeCurrentPage} / {totalPages}</span>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safeCurrentPage === totalPages}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
+                    style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Next</button>
+                </div>
+              )}
+              <div className="text-right">
+                <span className="text-xs font-bold" style={{ color: card.muted }}>Filtered Total: </span>
+                <span className="font-display text-base font-bold font-mono" style={{ color: card.text }}>
+                  GH₵ {filtered.reduce((s, p) => s + p.total, 0).toFixed(2)}
+                </span>
+              </div>
             </div>
           </div>
         )}

@@ -18,6 +18,7 @@ import { gql, M_RECEIVE_INVOICE, M_REPAIR_STOCK_BRANCHES } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
 import { useBranchFilter, useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
+import { ProductModalTabs } from '@/components/ProductModalTabs';
 
 const STATUS_CONFIG = {
   OK: { label: 'In Stock', color: '#10B981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)' },
@@ -56,6 +57,19 @@ const PRODUCT_CATEGORIES = [
   'MISCELLANEOUS'
 ];
 
+const RECEIVING_NOTE_SUGGESTIONS = [
+  'Received full invoice quantity in good condition.',
+  'Partial delivery – some items missing or short-dated.',
+  'Goods received with damaged packaging.',
+  'Received and verified against invoice; all items correct.',
+  'Payment pending awaiting stock verification.',
+  'Received with delivery note attached.',
+  'Paid partial amount, balance pending.',
+  'All items received and shelved.',
+  'Stock received for branch use.',
+  'Temperature-sensitive items received in cold chain.'
+];
+
 export default function InventoryPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -67,6 +81,7 @@ export default function InventoryPage() {
     stockMovements,
     loadingProducts, 
     refetchProducts, 
+    refetchSuppliers,
     refetchPurchases,
     refetchInvoices,
     updateProductPrices,
@@ -88,6 +103,21 @@ export default function InventoryPage() {
   
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
   const [activeTab, setActiveTab] = useState<'products' | 'movements' | 'orders' | 'valuation' | 'suppliers'>('products');
+
+  const [productPageSize, setProductPageSize] = useState(10);
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [productSort, setProductSort] = useState('name');
+
+  const [movementSearch, setMovementSearch] = useState('');
+  const [movementTypeFilter, setMovementTypeFilter] = useState('All');
+  const [movementSort, setMovementSort] = useState('newest');
+
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderStatusFilter, setOrderStatusFilter] = useState('All');
+  const [orderSort, setOrderSort] = useState('newest');
+
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [supplierSort, setSupplierSort] = useState('name');
 
   // Add Product Modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -187,6 +217,7 @@ export default function InventoryPage() {
   const [invoiceDate, setInvoiceDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [invoiceDueDate, setInvoiceDueDate] = useState<string>('');
   const [invoiceNotes, setInvoiceNotes] = useState<string>('');
+  const [showNoteSuggestions, setShowNoteSuggestions] = useState(false);
   const [invoiceSearchQuery, setInvoiceSearchQuery] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [openSuggestionItemId, setOpenSuggestionItemId] = useState<string | null>(null);
@@ -246,7 +277,15 @@ export default function InventoryPage() {
 
   const branchFilter = useBranchFilter();
   const branchProducts = branchFilter(storeProducts);
-  const { branches, canSwitchBranch } = useBranch();
+  const { branches, canSwitchBranch, activeBranchId, activeBranchName } = useBranch();
+
+  const branchPurchases = useMemo(() => branchFilter(purchases || []), [branchFilter, purchases]);
+  const branchMovements = useMemo(() => branchFilter(stockMovements || []), [branchFilter, stockMovements]);
+
+  useEffect(() => {
+    const defaultBranch = activeBranchId || me?.branchId || '';
+    setNewProduct(prev => prev.branchId ? prev : { ...prev, branchId: defaultBranch });
+  }, [activeBranchId, me?.branchId]);
 
   const products = branchProducts.map((p: any) => {
     const isPOM = ['ANTIBIOTICS', 'CARDIOVASCULAR', 'ANTIMALARIALS'].includes(p.category);
@@ -315,13 +354,23 @@ export default function InventoryPage() {
   }, [getProductSuggestions, invoiceSearchQuery]);
 
   const categories = ['All', ...Array.from(new Set(products.map((p: any) => p.cat)))].sort();
-  const filteredProducts = products.filter((p: any) => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
-      p.generic.toLowerCase().includes(search.toLowerCase()) ||
-      p.brand.toLowerCase().includes(search.toLowerCase());
-    const matchCat = catFilter === 'All' || p.cat === catFilter;
-    return matchSearch && matchCat;
-  });
+  const filteredProducts = useMemo(() => {
+    const list = products.filter((p: any) => {
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.generic.toLowerCase().includes(search.toLowerCase()) ||
+        p.brand.toLowerCase().includes(search.toLowerCase());
+      const matchCat = catFilter === 'All' || p.cat === catFilter;
+      const matchStatus = statusFilter === 'All' || p.status === statusFilter;
+      return matchSearch && matchCat && matchStatus;
+    });
+    list.sort((a: any, b: any) => {
+      if (productSort === 'name') return a.name.localeCompare(b.name);
+      if (productSort === 'stock') return b.stock - a.stock;
+      if (productSort === 'price') return b.price - a.price;
+      return 0;
+    });
+    return list;
+  }, [products, search, catFilter, statusFilter, productSort]);
 
   const {
     currentPage,
@@ -335,18 +384,102 @@ export default function InventoryPage() {
     totalItems
   } = usePagination({
     data: filteredProducts,
-    itemsPerPage: 5,
+    itemsPerPage: productPageSize,
   });
 
   useEffect(() => {
     goToPage(1);
-  }, [search, catFilter, goToPage]);
+  }, [search, catFilter, statusFilter, productSort, productPageSize, goToPage]);
 
   const totalValue = products.reduce((acc: number, p: any) => acc + p.stock * p.cost, 0);
   const retailValue = products.reduce((acc: number, p: any) => acc + p.stock * p.price, 0);
   const lowCount = products.filter((p: any) => p.status === 'LOW').length;
   const outCount = products.filter((p: any) => p.status === 'OUT').length;
   const potentialProfit = retailValue - totalValue;
+
+  // Real data sync on mount and whenever the active branch changes
+  useEffect(() => {
+    Promise.all([
+      refetchProducts(),
+      refetchSuppliers(),
+      refetchPurchases(),
+      refetchInvoices(),
+    ]);
+  }, [activeBranchId, refetchProducts, refetchSuppliers, refetchPurchases, refetchInvoices]);
+
+  // Movement filters / pagination
+  const filteredMovements = useMemo(() => {
+    const list = branchMovements.filter((mv: any) => {
+      const term = movementSearch.toLowerCase();
+      const match = !term ||
+        (mv.productName || '').toLowerCase().includes(term) ||
+        (mv.reason || '').toLowerCase().includes(term) ||
+        (mv.reference || '').toLowerCase().includes(term);
+      const matchType = movementTypeFilter === 'All' || mv.type === movementTypeFilter;
+      return match && matchType;
+    });
+    list.sort((a: any, b: any) => {
+      const da = new Date(a.date || a.timestamp || a.createdAt || Date.now()).getTime();
+      const db = new Date(b.date || b.timestamp || b.createdAt || Date.now()).getTime();
+      return movementSort === 'newest' ? db - da : da - db;
+    });
+    return list;
+  }, [branchMovements, movementSearch, movementTypeFilter, movementSort]);
+
+  const movementPagination = usePagination({ data: filteredMovements, itemsPerPage: 10 });
+
+  useEffect(() => {
+    movementPagination.goToPage(1);
+  }, [movementSearch, movementTypeFilter, movementSort, movementPagination.goToPage]);
+
+  // Order filters / pagination
+  const filteredOrders = useMemo(() => {
+    const list = branchPurchases.filter((po: any) => {
+      const term = orderSearch.toLowerCase();
+      const match = !term ||
+        (po.supplier?.name || '').toLowerCase().includes(term) ||
+        (po.invoiceNo || '').toLowerCase().includes(term) ||
+        (po.id || '').toLowerCase().includes(term);
+      const matchStatus = orderStatusFilter === 'All' || po.status === orderStatusFilter;
+      return match && matchStatus;
+    });
+    list.sort((a: any, b: any) => {
+      const da = new Date(a.invoiceDate || a.createdAt || Date.now()).getTime();
+      const db = new Date(b.invoiceDate || b.createdAt || Date.now()).getTime();
+      return orderSort === 'newest' ? db - da : da - db;
+    });
+    return list;
+  }, [branchPurchases, orderSearch, orderStatusFilter, orderSort]);
+
+  const orderPagination = usePagination({ data: filteredOrders, itemsPerPage: 10 });
+
+  useEffect(() => {
+    orderPagination.goToPage(1);
+  }, [orderSearch, orderStatusFilter, orderSort, orderPagination.goToPage]);
+
+  // Supplier filters / pagination
+  const filteredSuppliers = useMemo(() => {
+    const list = (suppliers || []).filter((s: any) => {
+      const term = supplierSearch.toLowerCase();
+      return !term ||
+        (s.name || '').toLowerCase().includes(term) ||
+        (s.phone || '').toLowerCase().includes(term) ||
+        (s.email || '').toLowerCase().includes(term) ||
+        (s.address || '').toLowerCase().includes(term);
+    });
+    list.sort((a: any, b: any) => {
+      if (supplierSort === 'name') return (a.name || '').localeCompare(b.name || '');
+      if (supplierSort === 'products') return (products.filter((p: any) => p.supplierId === b.id).length - products.filter((p: any) => p.supplierId === a.id).length);
+      return 0;
+    });
+    return list;
+  }, [suppliers, supplierSearch, supplierSort, products]);
+
+  const supplierPagination = usePagination({ data: filteredSuppliers, itemsPerPage: 12 });
+
+  useEffect(() => {
+    supplierPagination.goToPage(1);
+  }, [supplierSearch, supplierSort, supplierPagination.goToPage]);
 
   const handleGenerateImage = async () => {
     if (!newProduct.name) return;
@@ -1282,10 +1415,10 @@ export default function InventoryPage() {
             <FileText size={16} />
             Export
           </button>
-          <button 
+          <button
             onClick={async () => {
               addToast?.({ type: 'info', title: 'Syncing...', message: 'Refreshing inventory data' });
-              await refetchProducts();
+              await Promise.all([refetchProducts(), refetchSuppliers(), refetchPurchases(), refetchInvoices()]);
               addToast?.({ type: 'success', title: 'Sync Complete', message: 'Inventory data is up to date' });
             }}
             disabled={loadingProducts}
@@ -1331,6 +1464,8 @@ export default function InventoryPage() {
         </div>
       </div>
 
+      <BranchBanner />
+
       {storeError && (
         <div className="p-4 rounded-xl border flex items-center justify-between gap-3"
           style={{ background: 'rgba(239,68,68,0.1)', borderColor: 'rgba(239,68,68,0.2)', color: '#EF4444' }}>
@@ -1353,7 +1488,7 @@ export default function InventoryPage() {
           { label: 'Total Products', value: products.length, sub: `${lowCount + outCount} need attention`, icon: Package, color: '#0EA5E9' },
           { label: 'Stock Value (Cost)', value: `GH₵ ${(totalValue/1000).toFixed(1)}k`, sub: 'Inventory investment', icon: DollarSign, color: '#10B981' },
           { label: 'Retail Value', value: `GH₵ ${(retailValue/1000).toFixed(1)}k`, sub: `Profit: GH₵ ${(potentialProfit/1000).toFixed(1)}k`, icon: TrendingUp, color: '#8B5CF6' },
-          { label: 'Pending Orders', value: (purchases || []).filter(o => o.status !== 'received').length, sub: 'Awaiting delivery', icon: Truck, color: '#F59E0B' },
+          { label: 'Pending Orders', value: branchPurchases.filter(o => o.status !== 'RECEIVED').length, sub: 'Awaiting delivery', icon: Truck, color: '#F59E0B' },
         ].map(s => {
           const Icon = s.icon;
           return (
@@ -1371,47 +1506,81 @@ export default function InventoryPage() {
         })}
       </div>
 
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
+      <div className="flex flex-wrap md:flex-nowrap gap-1 p-1 rounded-xl" style={{ background: isDark ? 'rgba(15,23,42,0.4)' : '#F1F5F9' }}>
         {[
           { id: 'products', label: 'Products', icon: Package, count: products.length },
           { id: 'suppliers', label: 'Supplier Directory', icon: Truck, count: suppliers.length },
-          { id: 'movements', label: 'Stock Movements', icon: History, count: (stockMovements || []).length },
-          { id: 'orders', label: 'Purchase Orders', icon: Receipt, count: (purchases || []).length },
+          { id: 'movements', label: 'Stock Movements', icon: History, count: branchMovements.length },
+          { id: 'orders', label: 'Purchase Orders', icon: Receipt, count: branchPurchases.length },
           { id: 'valuation', label: 'Financial Valuation', icon: BarChart3 },
         ].map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-medium transition-all"
+          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className="flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 px-2 md:px-4 rounded-lg text-xs md:text-sm font-medium transition-all whitespace-nowrap"
             style={{ background: activeTab === tab.id ? (isDark ? 'rgba(0,217,255,0.1)' : '#fff') : 'transparent', color: activeTab === tab.id ? card.primary : card.muted }}>
             <tab.icon size={16} />
-            {tab.label}
-            {tab.count !== undefined && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: activeTab === tab.id ? card.primary : 'rgba(148,163,184,0.2)', color: activeTab === tab.id ? (isDark ? '#060B14' : '#fff') : card.muted }}>{tab.count}</span>}
+            <span className="truncate">{tab.label}</span>
+            {tab.count !== undefined && <span className="hidden sm:inline px-1.5 py-0.5 rounded-full text-[10px] font-bold" style={{ background: activeTab === tab.id ? card.primary : 'rgba(148,163,184,0.2)', color: activeTab === tab.id ? (isDark ? '#060B14' : '#fff') : card.muted }}>{tab.count}</span>}
           </button>
         ))}
       </div>
 
       {activeTab === 'products' && (
         <div className="rounded-2xl border backdrop-blur-xl overflow-hidden" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
-          <div className="p-4 border-b flex flex-col md:flex-row gap-3 items-start md:items-center justify-between" style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(248,250,252,0.8)' }}>
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={15} style={{ color: card.subtle }} />
-              <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products..." className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm focus:outline-none"
-                style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#fff', border: `1px solid ${card.border}`, color: card.text }} />
+          <div className="p-4 border-b space-y-3" style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.4)' : 'rgba(248,250,252,0.8)' }}>
+            <div className="flex flex-col md:flex-row gap-3 items-start md:items-center justify-between">
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={15} style={{ color: card.subtle }} />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products..." className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm focus:outline-none"
+                  style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#fff', border: `1px solid ${card.border}`, color: card.text }} />
+              </div>
+              <div className="flex-1 flex overflow-hidden">
+                <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar scroll-smooth">
+                  {categories.map(cat => (
+                    <button key={cat} onClick={() => setCatFilter(cat)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border-2 ${
+                      catFilter === cat
+                        ? 'shadow-md shadow-primary/20 scale-105'
+                        : 'hover:border-primary/30'
+                    }`}
+                    style={{
+                      background: catFilter === cat ? card.primary : (isDark ? 'rgba(255,255,255,0.03)' : '#fff'),
+                      borderColor: catFilter === cat ? card.primary : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
+                      color: catFilter === cat ? '#fff' : card.muted
+                    }}>
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="flex-1 flex overflow-hidden">
-              <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar scroll-smooth">
-                {categories.map(cat => (
-                  <button key={cat} onClick={() => setCatFilter(cat)} className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border-2 ${
-                    catFilter === cat 
-                      ? 'shadow-md shadow-primary/20 scale-105' 
-                      : 'hover:border-primary/30'
-                  }`}
-                  style={{ 
-                    background: catFilter === cat ? card.primary : (isDark ? 'rgba(255,255,255,0.03)' : '#fff'),
-                    borderColor: catFilter === cat ? card.primary : (isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)'),
-                    color: catFilter === cat ? '#fff' : card.muted 
-                  }}>
-                    {cat}
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium" style={{ color: card.subtle }}>Status</span>
+                {['All', 'OK', 'LOW', 'OUT'].map(status => (
+                  <button key={status} onClick={() => setStatusFilter(status as any)} className="px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border"
+                    style={{
+                      background: statusFilter === status ? (status === 'OK' ? 'rgba(16,185,129,0.15)' : status === 'LOW' ? 'rgba(245,158,11,0.15)' : status === 'OUT' ? 'rgba(239,68,68,0.15)' : card.primaryBg) : 'transparent',
+                      borderColor: statusFilter === status ? (status === 'OK' ? 'rgba(16,185,129,0.4)' : status === 'LOW' ? 'rgba(245,158,11,0.4)' : status === 'OUT' ? 'rgba(239,68,68,0.4)' : card.primaryBorder) : card.border,
+                      color: statusFilter === status ? (status === 'OK' ? '#10B981' : status === 'LOW' ? '#F59E0B' : status === 'OUT' ? '#EF4444' : card.primary) : card.muted
+                    }}>
+                    {status}
                   </button>
                 ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-medium" style={{ color: card.subtle }}>Sort</label>
+                <select value={productSort} onChange={e => setProductSort(e.target.value as any)} className="px-3 py-1.5 rounded-lg text-xs font-medium outline-none border"
+                  style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#fff', borderColor: card.border, color: card.text }}>
+                  <option value="name">Name</option>
+                  <option value="stock">Stock</option>
+                  <option value="price">Price</option>
+                </select>
+                <label className="text-xs font-medium ml-2" style={{ color: card.subtle }}>Show</label>
+                <select value={productPageSize} onChange={e => setProductPageSize(Number(e.target.value))} className="px-3 py-1.5 rounded-lg text-xs font-medium outline-none border"
+                  style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#fff', borderColor: card.border, color: card.text }}>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
               </div>
             </div>
           </div>
@@ -1554,10 +1723,12 @@ export default function InventoryPage() {
                     {s.name[0]}
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg" style={{ background: '#10B98118', color: '#10B981' }}>
-                      Active
-                    </span>
-                    <p className="text-[10px] mt-1" style={{ color: card.subtle }}>Score: {s.aiScore || 0}/100</p>
+                    <p className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-lg" style={{ background: '#10B98118', color: '#10B981' }}>
+                      {products.filter(p => p.supplierId === s.id).length} Products
+                    </p>
+                    <p className="text-[10px] mt-1" style={{ color: card.muted }}>
+                      {branchPurchases.filter(po => po.supplier?.id === s.id).length} Orders · GH₵ {branchPurchases.filter(po => po.supplier?.id === s.id).reduce((sum, po) => sum + (po.total || 0), 0).toFixed(2)}
+                    </p>
                   </div>
                 </div>
                 <h3 className="font-display font-bold text-base mb-1" style={{ color: card.text }}>{s.name}</h3>
@@ -1588,10 +1759,10 @@ export default function InventoryPage() {
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-lg" style={{ color: card.text }}>Stock Movement History</h3>
             <span className="text-xs px-3 py-1 rounded-full" style={{ background: card.primaryBg, color: card.primary }}>
-              {stockMovements?.length || 0} Records
+              {filteredMovements.length} Records
             </span>
           </div>
-          {(!stockMovements || stockMovements.length === 0) ? (
+          {filteredMovements.length === 0 ? (
             <div className="py-12 text-center rounded-2xl border-2 border-dashed" style={{ borderColor: card.border }}>
               <History size={48} className="mx-auto mb-4 opacity-20" style={{ color: card.muted }} />
               <p className="text-lg font-bold" style={{ color: card.muted }}>No Stock Movements</p>
@@ -1612,43 +1783,45 @@ export default function InventoryPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(stockMovements || []).slice(0, 50).map((mv: any, idx: number) => (
-                      <tr key={mv.id || idx} className="border-t" style={{ borderColor: card.border }}>
-                        <td className="px-4 py-3 text-xs font-mono" style={{ color: card.text }}>
-                          {new Date(mv.timestamp || mv.createdAt || Date.now()).toLocaleString('en-GB', { 
-                            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
-                          })}
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="text-sm font-medium" style={{ color: card.text }}>{mv.productName || 'Unknown'}</p>
-                          <p className="text-[10px]" style={{ color: card.subtle }}>{mv.productId?.slice(0, 8)}...</p>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <span className="text-xs font-bold px-2 py-1 rounded" 
-                            style={{ 
-                              background: mv.type === 'IN' ? 'rgba(16,185,129,0.1)' : mv.type === 'SALE' ? 'rgba(14,165,233,0.1)' : 'rgba(245,158,11,0.1)',
-                              color: mv.type === 'IN' ? '#10B981' : mv.type === 'SALE' ? '#0EA5E9' : '#F59E0B'
-                            }}>
-                            {mv.type || 'ADJUST'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center font-mono font-bold" style={{ color: mv.quantity < 0 ? '#EF4444' : '#10B981' }}>
-                          {mv.quantity > 0 ? '+' : ''}{mv.quantity}
-                        </td>
-                        <td className="px-4 py-3 text-xs" style={{ color: card.muted }}>
-                          {mv.branchName && (
-                            <p className="font-medium" style={{ color: card.text }}>{mv.branchName}</p>
-                          )}
-                          {mv.supplierName && (
-                            <p className="text-[10px]" style={{ color: card.subtle }}>Supplier: {mv.supplierName}</p>
-                          )}
-                          {!mv.branchName && !mv.supplierName && '-'}
-                        </td>
-                        <td className="px-4 py-3 text-xs" style={{ color: card.muted }}>
-                          {mv.reason || mv.reference || '-'}
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredMovements.slice(0, 50).map((mv: any, idx: number) => {
+                      const mvType = (mv.type || 'adjustment').toUpperCase();
+                      const typeColor = mvType === 'IN' ? '#10B981' : mvType === 'OUT' ? '#0EA5E9' : '#F59E0B';
+                      const typeBg = mvType === 'IN' ? 'rgba(16,185,129,0.1)' : mvType === 'OUT' ? 'rgba(14,165,233,0.1)' : 'rgba(245,158,11,0.1)';
+                      return (
+                        <tr key={mv.id || idx} className="border-t" style={{ borderColor: card.border }}>
+                          <td className="px-4 py-3 text-xs font-mono" style={{ color: card.text }}>
+                            {new Date(mv.timestamp || mv.createdAt || Date.now()).toLocaleString('en-GB', { 
+                              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' 
+                            })}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-medium" style={{ color: card.text }}>{mv.productName || 'Unknown'}</p>
+                            <p className="text-[10px]" style={{ color: card.subtle }}>{mv.productId?.slice(0, 8)}...</p>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="text-xs font-bold px-2 py-1 rounded" 
+                              style={{ background: typeBg, color: typeColor }}>
+                              {mvType}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center font-mono font-bold" style={{ color: mv.quantity < 0 ? '#EF4444' : '#10B981' }}>
+                            {mv.quantity > 0 ? '+' : ''}{mv.quantity}
+                          </td>
+                          <td className="px-4 py-3 text-xs" style={{ color: card.muted }}>
+                            {mv.branchName && (
+                              <p className="font-medium" style={{ color: card.text }}>{mv.branchName}</p>
+                            )}
+                            {mv.supplierName && (
+                              <p className="text-[10px]" style={{ color: card.subtle }}>Supplier: {mv.supplierName}</p>
+                            )}
+                            {!mv.branchName && !mv.supplierName && '-'}
+                          </td>
+                          <td className="px-4 py-3 text-xs" style={{ color: card.muted }}>
+                            {mv.reason || mv.reference || '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1663,10 +1836,10 @@ export default function InventoryPage() {
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-lg" style={{ color: card.text }}>Purchase Orders</h3>
             <span className="text-xs px-3 py-1 rounded-full" style={{ background: card.primaryBg, color: card.primary }}>
-              {(purchases || []).length} Orders
+              {filteredOrders.length} Orders
             </span>
           </div>
-          {(!purchases || purchases.length === 0) ? (
+          {filteredOrders.length === 0 ? (
             <div className="py-12 text-center rounded-2xl border-2 border-dashed" style={{ borderColor: card.border }}>
               <Receipt size={48} className="mx-auto mb-4 opacity-20" style={{ color: card.muted }} />
               <p className="text-lg font-bold" style={{ color: card.muted }}>No Purchase Orders</p>
@@ -1674,7 +1847,7 @@ export default function InventoryPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {(purchases || []).map((po: any) => {
+              {filteredOrders.map((po: any) => {
                 const statusColors: Record<string, { bg: string; color: string }> = {
                   'DRAFT': { bg: 'rgba(148,163,184,0.1)', color: '#64748B' },
                   'PENDING': { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B' },
@@ -1686,7 +1859,7 @@ export default function InventoryPage() {
                   <div key={po.id} className="rounded-2xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-mono px-2 py-1 rounded" style={{ background: card.inputBg, color: card.text }}>
-                        #{po.invoiceNumber || po.id?.slice(-6)}
+                        #{po.invoiceNo || po.id?.slice(-6)}
                       </span>
                       <span className="text-xs font-bold px-2 py-1 rounded" style={{ background: statusStyle.bg, color: statusStyle.color }}>
                         {po.status}
@@ -1714,7 +1887,7 @@ export default function InventoryPage() {
               { label: 'Total Investment', value: `GH₵ ${totalValue.toFixed(2)}`, sub: `${products.length} products`, icon: DollarSign, color: '#0EA5E9' },
               { label: 'Retail Value', value: `GH₵ ${retailValue.toFixed(2)}`, sub: `Potential: GH₵ ${potentialProfit.toFixed(2)}`, icon: TrendingUp, color: '#10B981' },
               { label: 'Avg Margin', value: `${totalValue > 0 ? ((potentialProfit / totalValue) * 100).toFixed(1) : '0'}%`, sub: 'Profit margin', icon: BarChart3, color: '#8B5CF6' },
-              { label: 'Pending PO Value', value: `GH₵ ${(purchases || []).filter((p: any) => p.status !== 'RECEIVED').reduce((sum: number, p: any) => sum + (p.total || 0), 0).toFixed(2)}`, sub: 'On order', icon: Receipt, color: '#F59E0B' },
+              { label: 'Pending PO Value', value: `GH₵ ${branchPurchases.filter((p: any) => p.status !== 'RECEIVED').reduce((sum: number, p: any) => sum + (p.total || 0), 0).toFixed(2)}`, sub: 'On order', icon: Receipt, color: '#F59E0B' },
             ].map((s, i) => {
               const Icon = s.icon;
               return (
@@ -1805,27 +1978,7 @@ export default function InventoryPage() {
               <button onClick={() => setShowAddModal(false)} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl transition-colors"><X size={20} /></button>
             </div>
 
-            {/* Tabs Navigation */}
-            <div className="flex px-6 pt-4 border-b gap-6" style={{ borderColor: card.border }}>
-              {[
-                { id: 'basic', label: 'Basic Info', icon: FileText },
-                { id: 'pricing', label: 'Pricing & Stock', icon: DollarSign },
-                { id: 'supplier', label: 'Supplier & Media', icon: Truck }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setAddModalTab(tab.id as any)}
-                  className="flex items-center gap-2 pb-3 text-sm font-bold transition-colors relative"
-                  style={{ color: addModalTab === tab.id ? card.primary : card.muted }}
-                >
-                  <tab.icon size={16} />
-                  {tab.label}
-                  {addModalTab === tab.id && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full" style={{ background: card.primary }} />
-                  )}
-                </button>
-              ))}
-            </div>
+            <ProductModalTabs active={addModalTab} onSelect={setAddModalTab} primary={card.primary} muted={card.muted} />
 
             {/* Tab Content */}
             <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
@@ -2168,27 +2321,7 @@ export default function InventoryPage() {
               <button onClick={() => { setShowEditModal(false); setEditingProduct(null); }} className="text-red-500 hover:bg-red-500/10 p-2 rounded-xl transition-colors"><X size={20} /></button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex px-6 pt-4 border-b gap-6" style={{ borderColor: card.border }}>
-              {[
-                { id: 'basic', label: 'Basic Info', icon: FileText },
-                { id: 'pricing', label: 'Pricing & Stock', icon: DollarSign },
-                { id: 'supplier', label: 'Supplier & Media', icon: Truck }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setEditModalTab(tab.id as any)}
-                  className="flex items-center gap-2 pb-3 text-sm font-bold transition-colors relative"
-                  style={{ color: editModalTab === tab.id ? card.primary : card.muted }}
-                >
-                  <tab.icon size={16} />
-                  {tab.label}
-                  {editModalTab === tab.id && (
-                    <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-t-full" style={{ background: card.primary }} />
-                  )}
-                </button>
-              ))}
-            </div>
+            <ProductModalTabs active={editModalTab} onSelect={setEditModalTab} primary={card.primary} muted={card.muted} />
 
             {/* Tab Body */}
             <div className="p-6 flex-1 overflow-y-auto custom-scrollbar">
@@ -2898,7 +3031,18 @@ export default function InventoryPage() {
                   <div className="space-y-6">
                     <div>
                       <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Receiving Notes (Narration)</label>
-                      <textarea rows={4} value={invoiceNotes} onChange={e => setInvoiceNotes(e.target.value)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} placeholder="e.g. Paid 500 GHS in cash, balance 200 via Momo. Handled by Kwame." />
+                      <div className="relative">
+                        <textarea rows={4} value={invoiceNotes} onChange={e => setInvoiceNotes(e.target.value)} onFocus={() => setShowNoteSuggestions(true)} onBlur={() => setShowNoteSuggestions(false)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} placeholder="e.g. Paid 500 GHS in cash, balance 200 via Momo. Handled by Kwame." />
+                        {showNoteSuggestions && (
+                          <div className="absolute z-10 mt-2 left-0 right-0 max-h-48 overflow-y-auto rounded-2xl border p-2 shadow-lg space-y-1" style={{ background: card.bg, borderColor: card.border }}>
+                            {RECEIVING_NOTE_SUGGESTIONS.map(note => (
+                              <button key={note} type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setInvoiceNotes(note); setShowNoteSuggestions(false); }} className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-primary/10" style={{ color: card.text }}>
+                                {note}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="p-6 rounded-[32px] border-2 border-dashed flex flex-col items-center justify-center gap-3 text-center" style={{ borderColor: card.border, background: card.inputBg }}>

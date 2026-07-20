@@ -4,24 +4,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import { 
   ArrowLeft, Download, Store, Phone, Mail, Package,
   Search, ChevronLeft, ChevronRight, TrendingUp, Award,
   Calendar, Star
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function SupplierPerformanceReportPage() {
   const router = useRouter();
@@ -30,7 +19,9 @@ export default function SupplierPerformanceReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { suppliers, purchases } = useStore();
+  const { suppliers, purchases: allPurchases } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const purchases = useMemo(() => activeBranchId ? allPurchases.filter(p => p.branchId === activeBranchId) : allPurchases, [allPurchases, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -108,18 +99,31 @@ export default function SupplierPerformanceReportPage() {
   }, [suppliers, purchases, supplierAnalysis]);
 
   const handleExport = () => {
-    const rows = [
-      ['Supplier', 'Phone', 'Email', 'Categories', 'Total Orders', 'Total Value', 'Avg Order', 'Last Order'],
-      ...filteredSuppliers.map(s => [
-        s.name, s.phone, s.email,
-        s.categories.join(', '),
-        String(s.totalOrders),
-        s.totalValue.toFixed(2),
-        s.totalOrders > 0 ? (s.totalValue / s.totalOrders).toFixed(2) : '0.00',
-        s.lastOrderDate ? new Date(s.lastOrderDate).toLocaleDateString('en-GB') : 'Never',
-      ]),
-    ];
-    downloadCSV(`supplier-performance-${new Date().toISOString().split('T')[0]}.csv`, rows);
+    const rows = filteredSuppliers.map(s => [
+      s.name, s.phone, s.email,
+      s.categories.join(', '),
+      s.totalOrders,
+      s.totalValue,
+      s.totalOrders > 0 ? s.totalValue / s.totalOrders : 0,
+      s.lastOrderDate ? new Date(s.lastOrderDate).toLocaleDateString('en-GB') : 'Never',
+    ]);
+    exportToExcel({
+      filename: `supplier-performance-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Supplier Performance',
+      subtitle: 'Azzay Pharmacy — Purchase history and supplier analytics',
+      meta: [{ label: 'Branch', value: activeBranchName }],
+      summary: [
+        { label: 'Total Suppliers', value: metrics.totalSuppliers },
+        { label: 'Total Orders', value: metrics.totalOrders },
+        { label: 'Total Value', value: `GH₵ ${metrics.totalValue.toFixed(2)}` },
+        { label: 'Avg Order', value: `GH₵ ${metrics.avgOrderValue.toFixed(2)}` },
+      ],
+      headers: ['Supplier', 'Phone', 'Email', 'Categories', 'Total Orders', 'Total Value', 'Avg Order', 'Last Order'],
+      rows,
+      currencyColumns: [5, 6],
+      numberColumns: [4],
+      sheetName: 'Supplier Performance',
+    });
   };
 
   const card = {
@@ -148,7 +152,7 @@ export default function SupplierPerformanceReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Supplier Performance</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Purchase history and supplier analytics</p>
+            <p className="text-sm" style={{ color: card.muted }}>Purchase history and supplier analytics · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
           </div>
         </div>
         <button 
@@ -156,7 +160,7 @@ export default function SupplierPerformanceReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 

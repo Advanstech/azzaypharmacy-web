@@ -4,23 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
+import { exportToExcel } from '@/lib/export-excel';
 import {
   ArrowLeft, Download, Receipt, Search, ChevronLeft, ChevronRight,
   CheckCircle, Clock, XCircle, TrendingDown, Tag, Calendar,
 } from 'lucide-react';
-
-function downloadCSV(filename: string, rows: (string | number | boolean | null | undefined)[][]) {
-  const csv = rows.map(r => r.map(c => {
-    if (c == null) return '""';
-    const str = String(c).replace(/"/g, '""');
-    return `"${str}"`;
-  }).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
 
 const STATUS_META: Record<string, { color: string; icon: typeof CheckCircle }> = {
   APPROVED: { color: '#10B981', icon: CheckCircle },
@@ -35,10 +24,12 @@ export default function ExpenseReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { expenses, refetchExpenses } = useStore();
+  const { expenses: allExpenses, refetchExpenses } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const expenses = useMemo(() => activeBranchId ? allExpenses.filter(e => e.branchId === activeBranchId) : allExpenses, [allExpenses, activeBranchId]);
 
   useEffect(() => {
-    if (expenses.length === 0) refetchExpenses();
+    if (allExpenses.length === 0) refetchExpenses();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -55,7 +46,7 @@ export default function ExpenseReportPage() {
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(15);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -135,24 +126,31 @@ export default function ExpenseReportPage() {
   }, [totalPages, safeCurrentPage]);
 
   const handleExport = () => {
-    const rows: (string | number | boolean | null | undefined)[][] = [
-      ['EXPENSE REPORT'],
-      ['Period:', `${dateFrom} to ${dateTo}`],
-      ['Generated:', new Date().toLocaleString('en-GB')],
-      [''],
-      ['Date', 'Category', 'Description', 'Amount (GH₵)', 'Status'],
-      ...filtered.map(e => [
-        new Date(e.date || e.createdAt).toLocaleDateString('en-GB'),
-        e.category?.name || 'Uncategorized',
-        e.description || '',
-        Number(e.amount).toFixed(2),
-        e.status,
-      ]),
-      [''],
-      ['APPROVED TOTAL', kpis.total.toFixed(2)],
-      ['PENDING TOTAL', kpis.pending.toFixed(2)],
-    ];
-    downloadCSV(`expense-report-${dateFrom}-to-${dateTo}.csv`, rows);
+    const rows = filtered.map(e => [
+      new Date(e.date || e.createdAt).toLocaleDateString('en-GB'),
+      e.category?.name || 'Uncategorized',
+      e.description || '',
+      Number(e.amount),
+      e.status,
+    ]);
+    exportToExcel({
+      filename: `expense-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${dateFrom}-to-${dateTo}`,
+      title: 'Expense Report',
+      subtitle: 'Azzay Pharmacy — Approved and Pending Operating Expenses',
+      meta: [
+        { label: 'Branch', value: activeBranchName },
+        { label: 'Period', value: `${dateFrom} to ${dateTo}` },
+      ],
+      summary: [
+        { label: 'Approved Total', value: `GH₵ ${kpis.total.toFixed(2)}` },
+        { label: 'Pending Total', value: `GH₵ ${kpis.pending.toFixed(2)}` },
+        { label: 'Total Entries', value: kpis.count },
+      ],
+      headers: ['Date', 'Category', 'Description', 'Amount (GH₵)', 'Status'],
+      rows,
+      currencyColumns: [3],
+      sheetName: 'Expenses',
+    });
   };
 
   const card = {
@@ -199,7 +197,7 @@ export default function ExpenseReportPage() {
               Expense Report
             </h1>
             <p className="text-sm" style={{ color: card.muted }}>
-              {kpis.approvedCount} approved · GH₵ {kpis.total.toFixed(2)} total
+              {kpis.approvedCount} approved · GH₵ {kpis.total.toFixed(2)} total · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span>
             </p>
           </div>
         </div>
@@ -207,7 +205,7 @@ export default function ExpenseReportPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
-          Export CSV
+          Export Excel
         </button>
       </div>
 
