@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { usePagination } from '@/hooks/use-pagination';
 import { 
   ArrowLeft, Download, Package, AlertTriangle, CheckCircle,
   Search, Filter, ChevronLeft, ChevronRight, ArrowUpDown
@@ -26,8 +27,6 @@ export default function StockLevelReportPage() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortField, setSortField] = useState<'name' | 'stock' | 'value'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   // Get unique categories
   const categories = useMemo(() => {
@@ -73,9 +72,7 @@ export default function StockLevelReportPage() {
     return filtered;
   }, [products, searchTerm, categoryFilter, statusFilter, sortField, sortDirection]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-  const paginatedProducts = filteredProducts.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData: paginatedProducts, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredProducts });
 
   // Metrics
   const metrics = useMemo(() => {
@@ -211,21 +208,21 @@ export default function StockLevelReportPage() {
             type="text"
             placeholder="Search products..."
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
             style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
           />
         </div>
         <select 
           value={categoryFilter}
-          onChange={(e) => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => { setCategoryFilter(e.target.value); goToPage(1); }}
           className="px-4 py-2.5 rounded-xl text-sm"
           style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>
           {categories.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
         <select 
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => { setStatusFilter(e.target.value); goToPage(1); }}
           className="px-4 py-2.5 rounded-xl text-sm"
           style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>
           <option value="All">All Status</option>
@@ -297,11 +294,11 @@ export default function StockLevelReportPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: card.border }}>
             <span className="text-xs" style={{ color: card.muted }}>
-              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredProducts.length)} of {filteredProducts.length}
+              Showing {startIndex} - {endIndex} of {filteredProducts.length}
             </span>
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                onClick={prevPage}
                 disabled={currentPage === 1}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
@@ -311,7 +308,7 @@ export default function StockLevelReportPage() {
                 {currentPage} / {totalPages}
               </span>
               <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                onClick={nextPage}
                 disabled={currentPage === totalPages}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>

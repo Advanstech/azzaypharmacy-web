@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday } from '@/lib/effective-date';
+import { usePagination } from '@/hooks/use-pagination';
 import { 
   ArrowLeft, Download, Calendar, Filter, RefreshCw, 
   TrendingUp, Users, ShoppingBag, CreditCard, Search,
@@ -32,8 +33,6 @@ export default function DailySalesReportPage() {
   }, [sales.length, effectiveDay]);
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   // Filter sales by selected date
   const dailySales = useMemo(() => {
@@ -57,9 +56,7 @@ export default function DailySalesReportPage() {
     return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [dailySales, paymentFilter, searchTerm]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredSales.length / itemsPerPage);
-  const paginatedSales = filteredSales.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData: paginatedSales, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredSales });
 
   // Computed metrics
   const metrics = useMemo(() => {
@@ -159,7 +156,7 @@ export default function DailySalesReportPage() {
             <input 
               type="date" 
               value={selectedDate}
-              onChange={(e) => { setSelectedDate(e.target.value); setCurrentPage(1); }}
+              onChange={(e) => { setSelectedDate(e.target.value); goToPage(1); }}
               className="pr-4 py-2 rounded-xl text-sm font-bold bg-transparent focus:outline-none"
               style={{ color: card.text }}
             />
@@ -221,14 +218,14 @@ export default function DailySalesReportPage() {
             type="text"
             placeholder="Search customer, receipt, or product..."
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }}
             className="w-full pl-12 pr-4 py-3.5 rounded-2xl text-sm font-medium transition-all focus:ring-2 focus:outline-none backdrop-blur-xl shadow-sm"
             style={{ background: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)', border: `1px solid ${card.border}`, color: card.text, outlineColor: card.primary }}
           />
         </div>
         <select 
           value={paymentFilter}
-          onChange={(e) => { setPaymentFilter(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => { setPaymentFilter(e.target.value); goToPage(1); }}
           className="px-5 py-3.5 rounded-2xl text-sm font-bold transition-all focus:ring-2 focus:outline-none backdrop-blur-xl shadow-sm appearance-none cursor-pointer"
           style={{ background: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)', border: `1px solid ${card.border}`, color: card.text, outlineColor: card.primary, minWidth: '180px' }}>
           <option value="All">All Payments</option>
@@ -305,11 +302,11 @@ export default function DailySalesReportPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: card.border }}>
             <span className="text-xs" style={{ color: card.muted }}>
-              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredSales.length)} of {filteredSales.length}
+              Showing {startIndex} - {endIndex} of {filteredSales.length}
             </span>
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                onClick={prevPage}
                 disabled={currentPage === 1}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
@@ -319,7 +316,7 @@ export default function DailySalesReportPage() {
                 {currentPage} / {totalPages}
               </span>
               <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                onClick={nextPage}
                 disabled={currentPage === totalPages}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>

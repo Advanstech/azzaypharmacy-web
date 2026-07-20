@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { usePagination } from '@/hooks/use-pagination';
 import {
   ArrowLeft, Download, PackageCheck, Search, Filter,
   ChevronDown, ChevronUp, TrendingUp, Clock, CheckCircle,
@@ -43,8 +44,6 @@ export default function PurchaseOrdersReportPage() {
   const [sortField, setSortField] = useState<'date' | 'total' | 'items'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   const uniqueStatuses = useMemo(() => {
     const s = new Set(purchases.map(p => p.status));
@@ -78,9 +77,16 @@ export default function PurchaseOrdersReportPage() {
     return list;
   }, [purchases, statusFilter, supplierFilter, search, sortField, sortDir]);
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const safeCurrentPage = Math.min(currentPage, totalPages || 1);
-  const paginatedPurchases = filtered.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+  const {
+    currentPage,
+    totalPages,
+    paginatedData: paginatedPurchases,
+    nextPage,
+    prevPage,
+    goToPage,
+    startIndex,
+    endIndex,
+  } = usePagination({ data: filtered });
 
   // Summary KPIs
   const kpis = useMemo(() => {
@@ -136,7 +142,7 @@ export default function PurchaseOrdersReportPage() {
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
-    setCurrentPage(1);
+    goToPage(1);
   };
 
   const card = {
@@ -218,7 +224,7 @@ export default function PurchaseOrdersReportPage() {
           <input
             type="text"
             value={search}
-            onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+            onChange={e => { setSearch(e.target.value); goToPage(1); }}
             placeholder="Search invoice, supplier, product…"
             className="w-full pl-9 pr-4 py-2 rounded-lg text-sm border outline-none"
             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}
@@ -226,14 +232,14 @@ export default function PurchaseOrdersReportPage() {
         </div>
         <select
           value={statusFilter}
-          onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+          onChange={e => { setStatusFilter(e.target.value); goToPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueStatuses.map(s => <option key={s} value={s}>{s === 'All' ? 'All Statuses' : s}</option>)}
         </select>
         <select
           value={supplierFilter}
-          onChange={e => { setSupplierFilter(e.target.value); setCurrentPage(1); }}
+          onChange={e => { setSupplierFilter(e.target.value); goToPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueSuppliers.map(s => <option key={s} value={s}>{s === 'All' ? 'All Suppliers' : s}</option>)}
@@ -376,16 +382,16 @@ export default function PurchaseOrdersReportPage() {
           <div className="flex justify-between items-center px-4 py-3 border-t"
             style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC', borderColor: card.border }}>
             <span className="text-xs font-bold" style={{ color: card.muted }}>
-              Showing {(safeCurrentPage - 1) * itemsPerPage + 1}–{Math.min(safeCurrentPage * itemsPerPage, filtered.length)} of {filtered.length} orders
+              Showing {startIndex}–{endIndex} of {filtered.length} orders
             </span>
             <div className="flex items-center gap-3">
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safeCurrentPage === 1}
+                  <button onClick={prevPage} disabled={currentPage === 1}
                     className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
                     style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Previous</button>
-                  <span className="text-xs font-bold" style={{ color: card.primary }}>{safeCurrentPage} / {totalPages}</span>
-                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safeCurrentPage === totalPages}
+                  <span className="text-xs font-bold" style={{ color: card.primary }}>{currentPage} / {totalPages}</span>
+                  <button onClick={nextPage} disabled={currentPage === totalPages}
                     className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
                     style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Next</button>
                 </div>

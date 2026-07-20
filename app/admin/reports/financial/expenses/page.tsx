@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { usePagination } from '@/hooks/use-pagination';
 import {
   ArrowLeft, Download, Receipt, Search, ChevronLeft, ChevronRight,
   CheckCircle, Clock, XCircle, TrendingDown, Tag, Calendar,
@@ -45,13 +46,11 @@ export default function ExpenseReportPage() {
   const [dateTo, setDateTo] = useState(todayStr);
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
-    setCurrentPage(1);
+    goToPage(1);
   };
 
   const uniqueCategories = useMemo(() => {
@@ -108,22 +107,19 @@ export default function ExpenseReportPage() {
     return { total, pending, count: filtered.length, approvedCount: approved.length, topCategory };
   }, [filtered]);
 
-  // Pagination
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const safeCurrentPage = Math.min(currentPage, totalPages || 1);
-  const paginated = filtered.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData: paginated, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filtered });
 
   const pageNumbers = useMemo(() => {
     if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
     const pages: (number | '...')[] = [1];
-    const left = Math.max(2, safeCurrentPage - 1);
-    const right = Math.min(totalPages - 1, safeCurrentPage + 1);
+    const left = Math.max(2, currentPage - 1);
+    const right = Math.min(totalPages - 1, currentPage + 1);
     if (left > 2) pages.push('...');
     for (let i = left; i <= right; i++) pages.push(i);
     if (right < totalPages - 1) pages.push('...');
     pages.push(totalPages);
     return pages;
-  }, [totalPages, safeCurrentPage]);
+  }, [totalPages, currentPage]);
 
   const handleExport = () => {
     const rows = filtered.map(e => [
@@ -235,13 +231,13 @@ export default function ExpenseReportPage() {
         <div className="flex items-center gap-2">
           <Calendar size={14} style={{ color: card.primary }} />
           <label className="text-xs" style={{ color: card.muted }}>From</label>
-          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setCurrentPage(1); }}
+          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); goToPage(1); }}
             className="px-3 py-1.5 rounded-lg text-sm border outline-none"
             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }} />
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs" style={{ color: card.muted }}>To</label>
-          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setCurrentPage(1); }}
+          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); goToPage(1); }}
             className="px-3 py-1.5 rounded-lg text-sm border outline-none"
             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }} />
         </div>
@@ -250,7 +246,7 @@ export default function ExpenseReportPage() {
             { l: 'This Month', fn: () => { setDateFrom(firstOfMonth); setDateTo(todayStr); } },
             { l: 'All Time', fn: () => { setDateFrom(''); setDateTo(''); } },
           ].map(q => (
-            <button key={q.l} onClick={() => { q.fn(); setCurrentPage(1); }}
+            <button key={q.l} onClick={() => { q.fn(); goToPage(1); }}
               className="px-2.5 py-1.5 rounded-lg text-xs font-bold"
               style={{ background: card.primaryBg, color: card.primary }}>
               {q.l}
@@ -260,17 +256,17 @@ export default function ExpenseReportPage() {
         <div className="w-px self-stretch" style={{ background: card.border }} />
         <div className="relative flex-1 min-w-[180px]">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: card.muted }} />
-          <input type="text" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+          <input type="text" value={search} onChange={e => { setSearch(e.target.value); goToPage(1); }}
             placeholder="Search description or category…"
             className="w-full pl-8 pr-3 py-1.5 rounded-lg text-sm border outline-none"
             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }} />
         </div>
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); goToPage(1); }}
           className="px-3 py-1.5 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueStatuses.map(s => <option key={s} value={s}>{s === 'All' ? 'All Statuses' : s}</option>)}
         </select>
-        <select value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setCurrentPage(1); }}
+        <select value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); goToPage(1); }}
           className="px-3 py-1.5 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueCategories.map(c => <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>)}
@@ -363,24 +359,12 @@ export default function ExpenseReportPage() {
         {/* Pagination footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t"
           style={{ borderColor: card.border, background: isDark ? 'rgba(15,23,42,0.6)' : '#F8FAFC' }}>
-          <div className="flex items-center gap-3">
-            <span className="text-xs" style={{ color: card.muted }}>
-              {filtered.length === 0
-                ? 'No results'
-                : `Showing ${(safeCurrentPage - 1) * itemsPerPage + 1}–${Math.min(safeCurrentPage * itemsPerPage, filtered.length)} of ${filtered.length}`}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs" style={{ color: card.muted }}>Per page:</span>
-              <select value={itemsPerPage} onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                className="px-2 py-1 rounded-lg text-xs border outline-none"
-                style={{ background: card.bg, borderColor: card.border, color: card.text }}>
-                {[10, 15, 25, 50].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-          </div>
+          <span className="text-xs" style={{ color: card.muted }}>
+            {filtered.length === 0 ? 'No results' : `Showing ${startIndex}–${endIndex} of ${filtered.length}`}
+          </span>
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
-              <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safeCurrentPage === 1}
+              <button onClick={prevPage} disabled={currentPage === 1}
                 className="p-1.5 rounded-lg transition-all disabled:opacity-30"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
                 <ChevronLeft size={15} style={{ color: card.text }} />
@@ -388,17 +372,17 @@ export default function ExpenseReportPage() {
               {pageNumbers.map((pg, idx) =>
                 pg === '...'
                   ? <span key={`e${idx}`} className="px-1 text-sm" style={{ color: card.subtle }}>…</span>
-                  : <button key={pg} onClick={() => setCurrentPage(pg as number)}
+                  : <button key={pg} onClick={() => goToPage(pg as number)}
                       className="w-8 h-8 rounded-lg text-xs font-bold transition-all"
                       style={{
-                        background: safeCurrentPage === pg ? card.primary : card.bg,
-                        color: safeCurrentPage === pg ? (isDark ? '#060B14' : '#fff') : card.text,
-                        border: `1px solid ${safeCurrentPage === pg ? card.primary : card.border}`,
+                        background: currentPage === pg ? card.primary : card.bg,
+                        color: currentPage === pg ? (isDark ? '#060B14' : '#fff') : card.text,
+                        border: `1px solid ${currentPage === pg ? card.primary : card.border}`,
                       }}>
                       {pg}
                     </button>
               )}
-              <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safeCurrentPage === totalPages}
+              <button onClick={nextPage} disabled={currentPage === totalPages}
                 className="p-1.5 rounded-lg transition-all disabled:opacity-30"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
                 <ChevronRight size={15} style={{ color: card.text }} />

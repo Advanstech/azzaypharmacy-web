@@ -8,6 +8,7 @@ import { useBranch } from '@/lib/branch-context';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday } from '@/lib/effective-date';
+import { usePagination } from '@/hooks/use-pagination';
 import {
   ArrowLeft, Download, Users, Clock, CheckCircle, XCircle,
   Search, UserCircle, Wifi, WifiOff, Shield, Building2,
@@ -58,8 +59,6 @@ export default function StaffAttendancePage() {
   const [dutyFilter, setDutyFilter] = useState<'All' | 'OnDuty' | 'OffDuty'>('All');
   const [branchFilter, setBranchFilter] = useState('All');
   const [roleFilter, setRoleFilter] = useState('All');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   const uniqueBranches = useMemo(() => {
     const s = new Set(staff.map(m => m.branch?.name).filter(Boolean) as string[]);
@@ -106,9 +105,7 @@ export default function StaffAttendancePage() {
     });
   }, [staff, dutyFilter, branchFilter, roleFilter, search]);
 
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const safeCurrentPage = Math.min(currentPage, totalPages || 1);
-  const paginatedStaff = filtered.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData: paginatedStaff, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filtered });
 
   const kpis = useMemo(() => ({
     total: staff.length,
@@ -236,13 +233,13 @@ export default function StaffAttendancePage() {
         <div className="relative flex-1 min-w-[200px]">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: card.muted }} />
           <input
-            type="text" value={search} onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+            type="text" value={search} onChange={e => { setSearch(e.target.value); goToPage(1); }}
             placeholder="Search name, email, role…"
             className="w-full pl-9 pr-4 py-2 rounded-lg text-sm border outline-none"
             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }} />
         </div>
         {(['All', 'OnDuty', 'OffDuty'] as const).map(f => (
-          <button key={f} onClick={() => { setDutyFilter(f); setCurrentPage(1); }}
+          <button key={f} onClick={() => { setDutyFilter(f); goToPage(1); }}
             className="px-3 py-2 rounded-lg text-xs font-bold transition-all"
             style={{
               background: dutyFilter === f ? (f === 'OnDuty' ? `${card.success}20` : f === 'OffDuty' ? `${card.danger}15` : card.primaryBg) : card.bg,
@@ -252,12 +249,12 @@ export default function StaffAttendancePage() {
             {f === 'All' ? 'All Staff' : f === 'OnDuty' ? '● On Duty' : '○ Off Duty'}
           </button>
         ))}
-        <select value={branchFilter} onChange={e => { setBranchFilter(e.target.value); setCurrentPage(1); }}
+        <select value={branchFilter} onChange={e => { setBranchFilter(e.target.value); goToPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueBranches.map(b => <option key={b} value={b}>{b === 'All' ? 'All Branches' : b}</option>)}
         </select>
-        <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setCurrentPage(1); }}
+        <select value={roleFilter} onChange={e => { setRoleFilter(e.target.value); goToPage(1); }}
           className="px-3 py-2 rounded-lg text-sm border outline-none"
           style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', borderColor: card.border, color: card.text }}>
           {uniqueRoles.map(r => <option key={r} value={r}>{r === 'All' ? 'All Roles' : r}</option>)}
@@ -392,15 +389,15 @@ export default function StaffAttendancePage() {
         {filtered.length > 0 && (
           <div className="flex justify-between items-center px-4 py-3 border-t text-xs"
             style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC', borderColor: card.border, color: card.muted }}>
-            <span>Showing {(safeCurrentPage - 1) * itemsPerPage + 1}–{Math.min(safeCurrentPage * itemsPerPage, filtered.length)} of {filtered.length} staff</span>
+            <span>Showing {startIndex}–{endIndex} of {filtered.length} staff</span>
             <div className="flex items-center gap-3">
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={safeCurrentPage === 1}
+                  <button onClick={prevPage} disabled={currentPage === 1}
                     className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
                     style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Previous</button>
-                  <span className="font-bold" style={{ color: card.primary }}>{safeCurrentPage} / {totalPages}</span>
-                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={safeCurrentPage === totalPages}
+                  <span className="font-bold" style={{ color: card.primary }}>{currentPage} / {totalPages}</span>
+                  <button onClick={nextPage} disabled={currentPage === totalPages}
                     className="px-2.5 py-1 rounded-lg text-xs font-bold disabled:opacity-40"
                     style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>Next</button>
                 </div>

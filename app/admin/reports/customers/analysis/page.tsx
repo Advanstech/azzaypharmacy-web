@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { usePagination } from '@/hooks/use-pagination';
 import { 
   ArrowLeft, Download, Users, Search, Phone, ShoppingBag,
   ChevronLeft, ChevronRight, Crown, Star, TrendingUp
@@ -23,8 +24,6 @@ export default function CustomerAnalysisReportPage() {
   const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'spent' | 'visits' | 'name'>('spent');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   // Analyze customer data from sales
   const customerAnalysis = useMemo(() => {
@@ -93,9 +92,7 @@ export default function CustomerAnalysisReportPage() {
     return filtered;
   }, [customerAnalysis, searchTerm, sortBy]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage);
-  const paginatedCustomers = filteredCustomers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData: paginatedCustomers, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredCustomers });
 
   // Metrics
   const metrics = useMemo(() => {
@@ -219,14 +216,14 @@ export default function CustomerAnalysisReportPage() {
             type="text"
             placeholder="Search customers..."
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
             style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
           />
         </div>
         <select 
           value={sortBy}
-          onChange={(e) => { setSortBy(e.target.value as 'spent' | 'visits' | 'name'); setCurrentPage(1); }}
+          onChange={(e) => { setSortBy(e.target.value as 'spent' | 'visits' | 'name'); goToPage(1); }}
           className="px-4 py-2.5 rounded-xl text-sm"
           style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>
           <option value="spent">Sort by: Total Spent</option>
@@ -280,11 +277,11 @@ export default function CustomerAnalysisReportPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: card.border }}>
             <span className="text-xs" style={{ color: card.muted }}>
-              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredCustomers.length)} of {filteredCustomers.length}
+              Showing {startIndex} - {endIndex} of {filteredCustomers.length}
             </span>
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                onClick={prevPage}
                 disabled={currentPage === 1}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
@@ -294,7 +291,7 @@ export default function CustomerAnalysisReportPage() {
                 {currentPage} / {totalPages}
               </span>
               <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                onClick={nextPage}
                 disabled={currentPage === totalPages}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>

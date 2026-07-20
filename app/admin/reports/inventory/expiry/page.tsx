@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { usePagination } from '@/hooks/use-pagination';
 import { 
   ArrowLeft, Download, Calendar, AlertTriangle, Clock,
   Search, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2
@@ -23,8 +24,6 @@ export default function ExpiryTrackingReportPage() {
   const products = useMemo(() => activeBranchId ? allProducts.filter(p => p.branchId === activeBranchId) : allProducts, [allProducts, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
   const [daysFilter, setDaysFilter] = useState('90');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   // Get expiry data
   const expiryData = useMemo(() => {
@@ -78,9 +77,7 @@ export default function ExpiryTrackingReportPage() {
     return filtered;
   }, [expiryData, daysFilter, searchTerm]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
-  const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredData });
 
   // Metrics
   const metrics = useMemo(() => {
@@ -192,14 +189,14 @@ export default function ExpiryTrackingReportPage() {
             type="text"
             placeholder="Search products or batches..."
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
             style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
           />
         </div>
         <select 
           value={daysFilter}
-          onChange={(e) => { setDaysFilter(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => { setDaysFilter(e.target.value); goToPage(1); }}
           className="px-4 py-2.5 rounded-xl text-sm"
           style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>
           <option value="30">Next 30 days</option>
@@ -266,11 +263,11 @@ export default function ExpiryTrackingReportPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: card.border }}>
             <span className="text-xs" style={{ color: card.muted }}>
-              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredData.length)} of {filteredData.length}
+              Showing {startIndex} - {endIndex} of {filteredData.length}
             </span>
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                onClick={prevPage}
                 disabled={currentPage === 1}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
@@ -280,7 +277,7 @@ export default function ExpiryTrackingReportPage() {
                 {currentPage} / {totalPages}
               </span>
               <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                onClick={nextPage}
                 disabled={currentPage === totalPages}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>

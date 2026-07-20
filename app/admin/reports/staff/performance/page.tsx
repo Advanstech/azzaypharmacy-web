@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { usePagination } from '@/hooks/use-pagination';
 import { 
   ArrowLeft, Download, Users, TrendingUp, ShoppingBag,
   Search, ChevronLeft, ChevronRight, Award, Clock, Store
@@ -24,8 +25,6 @@ export default function StaffPerformanceReportPage() {
   const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const staff = useMemo(() => activeBranchId ? allStaff.filter(s => s.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [sortField, setSortField] = useState<'revenue' | 'sales' | 'items' | 'name'>('revenue');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -76,7 +75,7 @@ export default function StaffPerformanceReportPage() {
   const toggleSort = (field: typeof sortField) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('desc'); }
-    setCurrentPage(1);
+    goToPage(1);
   };
 
   // Filter + sort staff
@@ -102,23 +101,20 @@ export default function StaffPerformanceReportPage() {
     return list;
   }, [staffPerformance, searchTerm, sortField, sortDir]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredStaff.length / itemsPerPage);
-  const safeCurrentPage = Math.min(currentPage, totalPages || 1);
-  const paginatedStaff = filteredStaff.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData: paginatedStaff, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredStaff });
 
   // Page number buttons (show up to 7: first, last, and surrounding current)
   const pageNumbers = useMemo(() => {
     if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
     const pages: (number | '...')[] = [1];
-    const left = Math.max(2, safeCurrentPage - 1);
-    const right = Math.min(totalPages - 1, safeCurrentPage + 1);
+    const left = Math.max(2, currentPage - 1);
+    const right = Math.min(totalPages - 1, currentPage + 1);
     if (left > 2) pages.push('...');
     for (let i = left; i <= right; i++) pages.push(i);
     if (right < totalPages - 1) pages.push('...');
     pages.push(totalPages);
     return pages;
-  }, [totalPages, safeCurrentPage]);
+  }, [totalPages, currentPage]);
 
   // Top performers for chart
   const topPerformers = useMemo(() => {
@@ -277,20 +273,10 @@ export default function StaffPerformanceReportPage() {
             type="text"
             placeholder="Search staff by name, email, role or branch..."
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
             style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
           />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs" style={{ color: card.muted }}>Per page:</span>
-          <select
-            value={itemsPerPage}
-            onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-            className="px-2 py-1.5 rounded-lg text-sm border outline-none"
-            style={{ background: card.bg, borderColor: card.border, color: card.text }}>
-            {[5, 10, 20, 50].map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
         </div>
         <span className="text-xs font-bold px-3 py-1.5 rounded-lg"
           style={{ background: card.primaryBg, color: card.primary }}>
@@ -371,14 +357,14 @@ export default function StaffPerformanceReportPage() {
           <span className="text-xs" style={{ color: card.muted }}>
             {filteredStaff.length === 0
               ? 'No results'
-              : `Showing ${(safeCurrentPage - 1) * itemsPerPage + 1}–${Math.min(safeCurrentPage * itemsPerPage, filteredStaff.length)} of ${filteredStaff.length}`
+              : `Showing ${startIndex}–${endIndex} of ${filteredStaff.length}`
             }
           </span>
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={safeCurrentPage === 1}
+                onClick={prevPage}
+                disabled={currentPage === 1}
                 className="p-1.5 rounded-lg transition-all disabled:opacity-30"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
                 <ChevronLeft size={15} style={{ color: card.text }} />
@@ -388,19 +374,19 @@ export default function StaffPerformanceReportPage() {
                   ? <span key={`ellipsis-${idx}`} className="px-1 text-sm" style={{ color: card.subtle }}>…</span>
                   : <button
                       key={pg}
-                      onClick={() => setCurrentPage(pg as number)}
+                      onClick={() => goToPage(pg as number)}
                       className="w-8 h-8 rounded-lg text-xs font-bold transition-all"
                       style={{
-                        background: safeCurrentPage === pg ? card.primary : card.bg,
-                        color: safeCurrentPage === pg ? (isDark ? '#060B14' : '#fff') : card.text,
-                        border: `1px solid ${safeCurrentPage === pg ? card.primary : card.border}`,
+                        background: currentPage === pg ? card.primary : card.bg,
+                        color: currentPage === pg ? (isDark ? '#060B14' : '#fff') : card.text,
+                        border: `1px solid ${currentPage === pg ? card.primary : card.border}`, 
                       }}>
                       {pg}
                     </button>
               )}
               <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={safeCurrentPage === totalPages}
+                onClick={nextPage}
+                disabled={currentPage === totalPages}
                 className="p-1.5 rounded-lg transition-all disabled:opacity-30"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
                 <ChevronRight size={15} style={{ color: card.text }} />

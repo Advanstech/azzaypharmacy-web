@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { usePagination } from '@/hooks/use-pagination';
 import { 
   ArrowLeft, Download, Store, Phone, Mail, Package,
   Search, ChevronLeft, ChevronRight, TrendingUp, Award,
@@ -23,8 +24,6 @@ export default function SupplierPerformanceReportPage() {
   const { activeBranchId, activeBranchName } = useBranch();
   const purchases = useMemo(() => activeBranchId ? allPurchases.filter(p => p.branchId === activeBranchId) : allPurchases, [allPurchases, activeBranchId]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
 
   // Analyze supplier performance
   const supplierAnalysis = useMemo(() => {
@@ -83,9 +82,7 @@ export default function SupplierPerformanceReportPage() {
     );
   }, [supplierAnalysis, searchTerm]);
 
-  // Pagination
-  const totalPages = Math.ceil(filteredSuppliers.length / itemsPerPage);
-  const paginatedSuppliers = filteredSuppliers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const { currentPage, totalPages, paginatedData: paginatedSuppliers, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredSuppliers });
 
   // Metrics
   const metrics = useMemo(() => {
@@ -217,7 +214,7 @@ export default function SupplierPerformanceReportPage() {
           type="text"
           placeholder="Search suppliers by name, contact, or category..."
           value={searchTerm}
-          onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+          onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }}
           className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
           style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
         />
@@ -295,11 +292,11 @@ export default function SupplierPerformanceReportPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: card.border }}>
             <span className="text-xs" style={{ color: card.muted }}>
-              Showing {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredSuppliers.length)} of {filteredSuppliers.length}
+              Showing {startIndex} - {endIndex} of {filteredSuppliers.length}
             </span>
             <div className="flex items-center gap-2">
               <button 
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                onClick={prevPage}
                 disabled={currentPage === 1}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
@@ -309,7 +306,7 @@ export default function SupplierPerformanceReportPage() {
                 {currentPage} / {totalPages}
               </span>
               <button 
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                onClick={nextPage}
                 disabled={currentPage === totalPages}
                 className="p-2 rounded-lg transition-all disabled:opacity-50"
                 style={{ background: card.bg, border: `1px solid ${card.border}` }}>
