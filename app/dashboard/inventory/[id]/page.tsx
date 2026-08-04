@@ -1050,22 +1050,34 @@ export default function ProductDetailedPaper() {
               <Package size={18} style={{ color: card.primary }} />
               Detailed Paper
             </h2>
-            
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-              <div>
+
+            <div className="flex flex-wrap gap-4 md:gap-6">
+              <div className="min-w-[140px] flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Category</p>
-                <p className="text-sm font-semibold px-3 py-1.5 rounded-lg inline-block" style={{ background: 'rgba(0,0,0,0.05)', color: card.text }}>{product.category || 'Uncategorized'}</p>
+                <span className="text-xs font-semibold px-3 py-1.5 rounded-lg inline-block max-w-full break-words leading-snug" style={{ background: card.inputBg, color: card.text }}>
+                  {product.category || 'Uncategorized'}
+                </span>
               </div>
-              <div>
+              <div className="min-w-[140px] flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Stock Level</p>
                 <div className="flex items-center gap-2">
-                  <p className="text-2xl font-display font-bold" style={{ color: card.text }}>{product.stockQuantity}</p>
-                  {status === 'OK' && <CheckCircle size={16} color="#10B981" />}
-                  {status === 'LOW' && <AlertCircle size={16} color="#F59E0B" />}
-                  {status === 'OUT' && <AlertCircle size={16} color="#EF4444" />}
+                  {typeof product.stockQuantity === 'number' ? (
+                    <>
+                      <p className="text-2xl font-display font-bold" style={{ color: status === 'OUT' ? '#EF4444' : status === 'LOW' ? '#F59E0B' : card.text }}>
+                        {product.stockQuantity}
+                      </p>
+                      {status === 'OK' && <CheckCircle size={16} color="#10B981" />}
+                      {status === 'LOW' && <AlertCircle size={16} color="#F59E0B" />}
+                      {status === 'OUT' && <AlertCircle size={16} color="#EF4444" />}
+                    </>
+                  ) : (
+                    <span className="text-xs font-bold px-2.5 py-1 rounded-md" style={{ background: card.inputBg, color: card.muted }}>
+                      {product.stockQuantity || 'N/A'}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div>
+              <div className="min-w-[140px] flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Expiry Date</p>
                 {earliestExpiry ? (
                   <div className="flex items-center gap-2">
@@ -1079,11 +1091,11 @@ export default function ProductDetailedPaper() {
                   <p className="text-sm font-bold" style={{ color: card.muted }}>N/A</p>
                 )}
               </div>
-              <div>
+              <div className="min-w-[140px] flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Cost Price</p>
                 <p className="text-lg font-mono font-bold" style={{ color: card.text }}>GH₵ {product.costPrice.toFixed(2)}</p>
               </div>
-              <div>
+              <div className="min-w-[140px] flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Selling Price</p>
                 <p className="text-lg font-mono font-bold" style={{ color: card.primary }}>GH₵ {product.sellingPrice.toFixed(2)}</p>
               </div>

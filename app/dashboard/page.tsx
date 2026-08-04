@@ -8,7 +8,7 @@ import { useStore } from '@/lib/store';
 import { getEffectiveToday } from '@/lib/effective-date';
 import { gql, Q_DASHBOARD_STATS } from '@/lib/gql';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
-import { useBranchFilter } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 import {
   TrendingUp, TrendingDown, ShoppingCart, Package,
@@ -153,16 +153,14 @@ function useCardStyles(isDark: boolean) {
 //  MANAGEMENT VIEW — God's Eye Executive Overview
 // ═══════════════════════════════════════════════════════════════
 function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
-  const { me, branchId: selectedBranchId } = useStore() as any;
+  const { me, sales, loadingSales } = useStore();
   const { session } = useCustomAuth();
+  const { activeBranchId } = useBranch();
   const branchFilter = useBranchFilter();
   const [stats, setStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
-  const { sales, loadingSales } = useStore();
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
-
-  const isManagement = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role);
 
   useEffect(() => {
     // Fire as soon as the auth token is available — don't wait for the store's
@@ -172,10 +170,10 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
     async function loadStats() {
       setLoadingStats(true);
       try {
-        // Use branchId from me if available; for ROOT/SE_ADMIN with no selection,
-        // send no branchId so the backend aggregates all branches.
-        const branchIdToUse = selectedBranchId || (isManagement ? undefined : me?.branchId) || undefined;
-        const variables = branchIdToUse ? { branchId: branchIdToUse } : {};
+        // For managers, activeBranchId comes from the global branch switcher
+        // (null means "All Branches"). Non-managers are locked to their assigned
+        // branch by BranchProvider, so activeBranchId is always the correct scope.
+        const variables = activeBranchId ? { branchId: activeBranchId } : {};
         const res = await gql<{ dashboardStats: any }>(Q_DASHBOARD_STATS, variables);
         setStats(res.dashboardStats);
       } catch (err) {
@@ -185,7 +183,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       }
     }
     loadStats();
-  }, [session?.access_token, selectedBranchId, me?.branchId]);
+  }, [session?.access_token, activeBranchId]);
 
   const weekRevenue = stats?.weekRevenue || 0;
   const weekTxns = stats?.weekTransactions || 0;
