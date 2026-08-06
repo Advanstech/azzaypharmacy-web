@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
@@ -25,6 +25,7 @@ export default function ExpenseReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
+  const searchParams = useSearchParams();
   const { expenses: allExpenses, refetchExpenses } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const expenses = useMemo(() => activeBranchId ? allExpenses.filter(e => e.branchId === activeBranchId) : allExpenses, [allExpenses, activeBranchId]);
@@ -42,8 +43,17 @@ export default function ExpenseReportPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [categoryFilter, setCategoryFilter] = useState('All');
-  const [dateFrom, setDateFrom] = useState(firstOfMonth);
-  const [dateTo, setDateTo] = useState(todayStr);
+  const [dateFrom, setDateFrom] = useState(searchParams?.get('from') || firstOfMonth);
+  const [dateTo, setDateTo] = useState(searchParams?.get('to') || todayStr);
+
+  // Persist user date changes to the URL for cross-report sync
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    let changed = false;
+    if (dateFrom !== params.get('from')) { params.set('from', dateFrom); changed = true; }
+    if (dateTo !== params.get('to')) { params.set('to', dateTo); changed = true; }
+    if (changed) router.replace(`?${params.toString()}`, { scroll: false });
+  }, [dateFrom, dateTo, router, searchParams]);
   const [sortField, setSortField] = useState<'date' | 'amount' | 'category'>('date');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 

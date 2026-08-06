@@ -58,7 +58,7 @@ export default function ProductDetailedPaper() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const isAdmin = ['SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
   const canEdit = isAdmin;
-  const { branches, canSwitchBranch } = useBranch();
+  const { branches, activeBranchId, canSwitchBranch } = useBranch();
 
   // Ensure products are loaded
   useEffect(() => {
@@ -70,9 +70,15 @@ export default function ProductDetailedPaper() {
 
   useEffect(() => {
     if (!products.length && !loadingProducts) {
-      refetchProducts();
+      refetchProducts(activeBranchId ?? undefined);
     }
-  }, [products.length, loadingProducts, refetchProducts]);
+  }, [products.length, loadingProducts, refetchProducts, activeBranchId]);
+
+  useEffect(() => {
+    if (products.length && !loadingProducts && activeBranchId !== undefined) {
+      refetchProducts(activeBranchId ?? undefined);
+    }
+  }, [activeBranchId, refetchProducts]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

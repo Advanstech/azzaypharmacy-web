@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
@@ -21,16 +21,28 @@ export default function DailySalesReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
+  const searchParams = useSearchParams();
   const { sales: allSales, products } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  // Update to effective date once data loads
+  const [selectedDate, setSelectedDate] = useState(searchParams?.get('to') || searchParams?.get('from') || new Date().toISOString().split('T')[0]);
+  // Apply effective date once data loads, but only if the URL did not already specify one
   useEffect(() => {
-    if (sales.length > 0) setSelectedDate(effectiveDay);
+    if (sales.length > 0 && !searchParams?.get('to') && !searchParams?.get('from')) {
+      setSelectedDate(effectiveDay);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sales.length, effectiveDay]);
+  // Persist user date changes to the URL for cross-report sync
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    if (selectedDate !== params.get('from') || selectedDate !== params.get('to')) {
+      params.set('from', selectedDate);
+      params.set('to', selectedDate);
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [selectedDate, router, searchParams]);
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('All');
 
@@ -67,7 +79,12 @@ export default function DailySalesReportPage() {
     
     const byPayment: Record<string, number> = {};
     dailySales.forEach(s => {
-      byPayment[s.paymentMethod] = (byPayment[s.paymentMethod] || 0) + s.totalAmount;
+      if (s.paymentMethod === 'SPLIT') {
+        byPayment['CASH'] = (byPayment['CASH'] || 0) + (s.cashAmount || 0);
+        byPayment['MOMO'] = (byPayment['MOMO'] || 0) + (s.momoAmount || 0);
+      } else {
+        byPayment[s.paymentMethod] = (byPayment[s.paymentMethod] || 0) + s.totalAmount;
+      }
     });
 
     const totalProfit = dailySales.reduce((sum, s) => {
@@ -273,10 +290,21 @@ export default function DailySalesReportPage() {
                       {sale.items.reduce((sum, i) => sum + i.quantity, 0)} units
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md"
-                        style={{ background: card.primaryBg, color: card.primary }}>
-                        {sale.paymentMethod}
-                      </span>
+                      {sale.paymentMethod === 'SPLIT' ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md" style={{ background: card.primaryBg, color: card.primary }}>
+                            SPLIT
+                          </span>
+                          <span className="text-[10px] font-mono" style={{ color: card.muted }}>
+                            CASH GH₵ {(sale.cashAmount || 0).toFixed(2)} · MOMO GH₵ {(sale.momoAmount || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md"
+                          style={{ background: card.primaryBg, color: card.primary }}>
+                          {sale.paymentMethod}
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-4 text-right font-mono text-sm font-black" style={{ color: card.text }}>
                       GH₵ {sale.totalAmount.toFixed(2)}

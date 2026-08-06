@@ -9,7 +9,8 @@ import {
   Monitor, LayoutGrid, LayoutList, Wifi, AlertCircle, ChevronLeft, ChevronRight,
   Receipt, Trash2, UserPlus, BarChart2, RefreshCw, FlaskConical,
   ArrowRight, BadgeCheck, Pill, Home, ShoppingCart, Store,
-  BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe
+  BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe,
+  Pause, Inbox
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { manualSync } from '@/lib/tauri-sync';
@@ -60,6 +61,8 @@ function POSInner() {
     sales, 
     customers,
     createSale, 
+    createPendingSale,
+    completePendingSale,
     createCustomer,
     me,
     loadingProducts,
@@ -126,6 +129,8 @@ function POSInner() {
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // Toggle layout mode
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing'>('synced');
+  const [showPendingPanel, setShowPendingPanel] = useState(false);
+  const [resumedPendingId, setResumedPendingId] = useState<string | null>(null);
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
   // Thermal Receipt Print Function
@@ -571,19 +576,31 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     setSubmitting(true);
     
     try {
-      const sale = await createSale({
-        items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
-        paymentMethod: paymentMethod === 'SPLIT' ? 'SPLIT' : paymentMethod.toUpperCase(),
-        amountPaid: paymentMethod === 'Cash' ? tenderedNum || total : total,
-        cashAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitCash) || 0) : undefined,
-        momoAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitMomo) || 0) : undefined,
-        customerId: selectedCustomer?.id,
-        customerName: (!selectedCustomer || selectedCustomer.name === 'Walk-in Customer') 
-          ? `Walk-in Customer (G-${Math.floor(1000 + Math.random() * 9000)})` 
-          : selectedCustomer.name,
-        customerPhone: selectedCustomer?.phone,
-        customerEmail: selectedCustomer?.email,
-      });
+      let sale;
+      if (resumedPendingId) {
+        // Completing a previously held pending sale (no duplicate)
+        sale = await completePendingSale({
+          saleId: resumedPendingId,
+          paymentMethod: paymentMethod === 'SPLIT' ? 'SPLIT' : paymentMethod.toUpperCase(),
+          amountPaid: paymentMethod === 'Cash' ? tenderedNum || total : total,
+          cashAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitCash) || 0) : undefined,
+          momoAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitMomo) || 0) : undefined,
+        });
+      } else {
+        sale = await createSale({
+          items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
+          paymentMethod: paymentMethod === 'SPLIT' ? 'SPLIT' : paymentMethod.toUpperCase(),
+          amountPaid: paymentMethod === 'Cash' ? tenderedNum || total : total,
+          cashAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitCash) || 0) : undefined,
+          momoAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitMomo) || 0) : undefined,
+          customerId: selectedCustomer?.id,
+          customerName: (!selectedCustomer || selectedCustomer.name === 'Walk-in Customer') 
+            ? `Walk-in Customer (G-${Math.floor(1000 + Math.random() * 9000)})` 
+            : selectedCustomer.name,
+          customerPhone: selectedCustomer?.phone,
+          customerEmail: selectedCustomer?.email,
+        });
+      }
       
       // Check if sale was synced or is pending
       const isSynced = (sale as any)._isSynced ?? true;
@@ -605,6 +622,8 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       setShowReceipt(true);
       setCart([]);
       setTendered('');
+      setResumedPendingId(null);
+      setSelectedCustomer(null);
     } catch (err: any) {
       console.error('❌ Sale creation failed:', err);
       alert(`❌ SALE FAILED\n\n${err?.message || 'Unknown error. Check your connection and try again.'}\n\nPlease try again or contact support.`);
@@ -616,6 +635,52 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       }, 500);
     }
   };
+
+  const handleHold = async () => {
+    if (cart.length === 0 || submitting) return;
+    setSubmitting(true);
+    try {
+      const sale = await createPendingSale({
+        items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
+        customerId: selectedCustomer?.id,
+        customerName: selectedCustomer?.name && selectedCustomer.name !== 'Walk-in Customer'
+          ? selectedCustomer.name
+          : `Walk-in Customer (G-${Math.floor(1000 + Math.random() * 9000)})`,
+        customerPhone: selectedCustomer?.phone,
+        customerEmail: selectedCustomer?.email,
+      });
+      setCart([]);
+      setTendered('');
+      setSelectedCustomer(null);
+      alert(`✅ Sale held successfully\n\nReceipt: ${sale.receiptNo}\nTotal: GH₵ ${Number(sale.totalAmount).toFixed(2)}\n\nYou can resume this sale from the Pending Sales panel.`);
+    } catch (err: any) {
+      console.error('❌ Hold sale failed:', err);
+      alert(`❌ HOLD SALE FAILED\n\n${err?.message || 'Unknown error. Please try again.'}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const resumePendingSale = (sale: any) => {
+    if (!sale?.items || sale.items.length === 0) return;
+    // Resume cart from sale items
+    const resumedCart = sale.items.map((item: any) => ({
+      product: item.product || liveProducts.find((p: any) => p.id === item.productId) || { id: item.productId, name: 'Unknown Product', sellingPrice: Number(item.unitPrice), category: 'Unknown', dosageForm: '', stockQuantity: 0, costPrice: 0 },
+      quantity: item.quantity,
+    }));
+    setCart(resumedCart);
+    if (sale.customerName) {
+      setSelectedCustomer({ id: sale.customerId, name: sale.customerName, phone: sale.customerPhone, email: sale.customerEmail });
+    }
+    setResumedPendingId(sale.id);
+    setShowPendingPanel(false);
+    setTendered('');
+  };
+
+  const pendingSales = useMemo(() => {
+    const branchId = me?.branchId;
+    return sales.filter((s: any) => s.status === 'PENDING' && (!branchId || s.branchId === branchId));
+  }, [sales, me?.branchId]);
 
   const formatTime = (d: Date) => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
@@ -727,6 +792,19 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
           >
             <RefreshCw size={14} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
             <span className="hidden sm:inline">{syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}</span>
+          </button>
+
+          <button 
+            onClick={() => setShowPendingPanel(true)}
+            className="relative flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-white/30 hover:bg-white/10 transition-colors text-[10px] sm:text-xs font-medium"
+          >
+            <Inbox size={14} />
+            <span className="hidden sm:inline">Pending</span>
+            {pendingSales.length > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                {pendingSales.length}
+              </span>
+            )}
           </button>
           <div className="text-right flex flex-col items-end">
             <p className="font-mono font-bold text-xs sm:text-sm leading-none">{formatTime(now)}</p>
@@ -1239,15 +1317,26 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </div>
             )}
 
-            <button 
-              onClick={handleComplete}
-              disabled={cart.length === 0 || submitting || (paymentMethod === 'SPLIT' && (parseFloat(splitCash) || 0) + (parseFloat(splitMomo) || 0) !== total)}
-              className="w-full py-4 rounded-2xl bg-primary text-white font-display font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
-              style={{ background: submitting ? c.muted : c.primary }}
-            >
-              {submitting ? <div className="w-5 h-5 border-2 border-white/30 border-t-white animate-spin rounded-full"></div> : <CheckCircle2 size={24} />}
-              COMPLETE SALE
-            </button>
+            <div className="flex gap-3">
+              <button 
+                onClick={handleHold}
+                disabled={cart.length === 0 || submitting}
+                className="flex-1 py-4 rounded-2xl border-2 font-display font-bold text-sm flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
+                style={{ borderColor: c.primary, color: c.primary, background: 'transparent' }}
+              >
+                {submitting ? <div className="w-4 h-4 border-2 border-primary/30 border-t-primary animate-spin rounded-full"></div> : <Pause size={20} />}
+                HOLD
+              </button>
+              <button 
+                onClick={handleComplete}
+                disabled={cart.length === 0 || submitting || (paymentMethod === 'SPLIT' && (parseFloat(splitCash) || 0) + (parseFloat(splitMomo) || 0) !== total)}
+                className="flex-[2] py-4 rounded-2xl bg-primary text-white font-display font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
+                style={{ background: submitting ? c.muted : c.primary }}
+              >
+                {submitting ? <div className="w-5 h-5 border-2 border-white/30 border-t-white animate-spin rounded-full"></div> : <CheckCircle2 size={24} />}
+                COMPLETE SALE
+              </button>
+            </div>
           </div>
 
           {/* AI PRODUCT INTELLIGENCE PANEL (Slide-over) */}
@@ -2026,6 +2115,74 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
           }
         }
       `}</style>
+
+      {/* Pending Sales Panel */}
+      <div 
+        className={`fixed inset-y-0 right-0 w-full sm:w-96 z-50 flex flex-col transition-transform duration-300 ${showPendingPanel ? 'translate-x-0' : 'translate-x-full'}`}
+        style={{ background: c.card, borderLeft: `1px solid ${c.border}`, boxShadow: '-8px 0 32px rgba(0,0,0,0.2)' }}
+      >
+        <div className="p-4 flex items-center justify-between border-b" style={{ borderColor: c.border }}>
+          <div className="flex items-center gap-2">
+            <Inbox size={18} style={{ color: c.primary }} />
+            <h2 className="font-display font-bold" style={{ color: c.text }}>Pending Sales</h2>
+            {pendingSales.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ background: c.primary }}>{pendingSales.length}</span>
+            )}
+          </div>
+          <button 
+            onClick={() => setShowPendingPanel(false)}
+            className="p-2 rounded-xl hover:bg-black/5 transition-colors"
+            style={{ color: c.muted }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {pendingSales.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-center opacity-60">
+              <Inbox size={48} style={{ color: c.muted }} />
+              <p className="text-sm font-medium mt-4" style={{ color: c.muted }}>No pending sales</p>
+              <p className="text-xs" style={{ color: c.muted }}>Use the HOLD button when payment is still processing.</p>
+            </div>
+          ) : (
+            pendingSales.map((sale: any) => (
+              <div 
+                key={sale.id} 
+                className="p-3 rounded-2xl border transition-all hover:shadow-md"
+                style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', borderColor: c.border }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-mono font-bold" style={{ color: c.text }}>{sale.receiptNo}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-500">PENDING</span>
+                </div>
+                <p className="text-xs font-medium mb-1" style={{ color: c.text }}>
+                  {sale.customerName || 'Walk-in'} • {sale.items?.length || 0} items
+                </p>
+                <p className="text-sm font-display font-bold mb-3" style={{ color: c.primary }}>
+                  GH₵ {Number(sale.totalAmount).toFixed(2)}
+                </p>
+                <div className="flex items-center gap-2 text-[10px]" style={{ color: c.muted }}>
+                  <span>{new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                </div>
+                <button
+                  onClick={() => resumePendingSale(sale)}
+                  className="w-full mt-3 py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-2"
+                  style={{ background: c.primary }}
+                >
+                  <ShoppingCart size={14} /> Resume Sale
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {showPendingPanel && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/40" 
+          onClick={() => setShowPendingPanel(false)}
+        />
+      )}
     </div>
   );
 }

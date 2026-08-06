@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
@@ -11,10 +11,10 @@ import {
   FileText, Download, BarChart3, Package, DollarSign, Users, Calendar, 
   ChevronRight, TrendingUp, AlertTriangle, Eye, ArrowRight, Activity,
   ShoppingCart, Boxes, CreditCard, Receipt, PiggyBank, Clock, CalendarDays,
-  TrendingDown, PackageCheck, UserCircle, Store, Percent
+  TrendingDown, PackageCheck, UserCircle, Store, Percent, Shield
 } from 'lucide-react';
 
-const CATEGORIES = ['All', 'Sales', 'Inventory', 'Staff', 'Financial', 'Customers', 'Suppliers'];
+const CATEGORIES = ['All', 'Sales', 'Inventory', 'Staff', 'Financial', 'Customers', 'Suppliers', 'Authorizations'];
 
 export default function ReportsPage() {
   const router = useRouter();
@@ -25,6 +25,10 @@ export default function ReportsPage() {
 
   const { sales: allSales, products: allProducts, staff: allStaff, customers, suppliers, expenses: allExpenses, purchases, prescriptions } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
+  const isAdmin = true; // simplified
+  const searchParams = useSearchParams();
+  const [dateFrom, setDateFrom] = useState(searchParams?.get('from') ?? '');
+  const [dateTo, setDateTo] = useState(searchParams?.get('to') ?? '');
   const [activeCategory, setActiveCategory] = useState('All');
   const [generating, setGenerating] = useState<string | null>(null);
 
@@ -37,15 +41,23 @@ export default function ReportsPage() {
   // Date range filter — use effective date (most recent day with data)
   const effectiveRange = useMemo(() => getEffectiveDateRange(sales), [sales]);
   const today = useMemo(() => getEffectiveToday(sales), [sales]);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  // Initialise once data arrives
+  // Initialise once data arrives if no query params are set
   useEffect(() => {
-    if (sales.length > 0 && !dateFrom) {
+    if (sales.length > 0 && !dateFrom && !dateTo) {
       setDateFrom(effectiveRange.from);
       setDateTo(effectiveRange.to);
     }
-  }, [sales.length, effectiveRange, dateFrom]);
+  }, [sales.length, effectiveRange, dateFrom, dateTo]);
+
+  // Sync selected date range to the URL so it persists across report navigation
+  useEffect(() => {
+    if (!dateFrom || !dateTo) return;
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    let changed = false;
+    if (dateFrom !== params.get('from')) { params.set('from', dateFrom); changed = true; }
+    if (dateTo !== params.get('to')) { params.set('to', dateTo); changed = true; }
+    if (changed) router.replace(`?${params.toString()}`, { scroll: false });
+  }, [dateFrom, dateTo, router, searchParams]);
 
   const rangeStart = useMemo(() => new Date(dateFrom + 'T00:00:00'), [dateFrom]);
   const rangeEnd = useMemo(() => new Date(dateTo + 'T23:59:59'), [dateTo]);
@@ -634,6 +646,16 @@ export default function ReportsPage() {
         });
       },
     },
+    // AUTHORIZATIONS
+    {
+      id: 'authorizations',
+      title: 'Authorizations Report',
+      desc: 'Combined expenses, refund requests, and end-of-day reconciliations pending approval.',
+      icon: Shield, color: '#8B5CF6', category: 'Authorizations',
+      lastGenerated: today,
+      detailPath: '/admin/reports/authorizations',
+      onExport: () => { router.push('/admin/reports/authorizations'); },
+    },
     {
       id: 'purchase-orders',
       title: 'Purchase Orders Report',
@@ -798,7 +820,13 @@ export default function ReportsPage() {
               {/* Action Buttons */}
               <div className="flex items-center gap-3 mt-auto relative z-10">
                 <button
-                  onClick={() => router.push(report.detailPath)}
+                  onClick={() => {
+                    const params = new URLSearchParams();
+                    if (dateFrom) params.set('from', dateFrom);
+                    if (dateTo) params.set('to', dateTo);
+                    const query = params.toString();
+                    router.push(`${report.detailPath}${query ? `?${query}` : ''}`);
+                  }}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all hover:scale-[1.03] active:scale-95"
                   style={{
                     background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',

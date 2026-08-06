@@ -199,7 +199,14 @@ export default function AnalyticsPage() {
   // Payment breakdown
   const paymentBreakdown = useMemo(() => {
     const counts: Record<string, number> = {};
-    periodSales.forEach(s => { counts[s.paymentMethod] = (counts[s.paymentMethod] || 0) + s.totalAmount; });
+    periodSales.forEach(s => {
+      if (s.paymentMethod === 'SPLIT') {
+        counts['CASH'] = (counts['CASH'] || 0) + (s.cashAmount || 0);
+        counts['MOMO'] = (counts['MOMO'] || 0) + (s.momoAmount || 0);
+      } else {
+        counts[s.paymentMethod] = (counts[s.paymentMethod] || 0) + s.totalAmount;
+      }
+    });
     const total = totalRevenue || 1;
     return [
       { method: 'Cash', amount: counts['CASH'] || 0, pct: Math.round(((counts['CASH'] || 0) / total) * 100), color: '#0EA5E9', icon: Banknote },

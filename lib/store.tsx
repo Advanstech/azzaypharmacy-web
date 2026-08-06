@@ -12,8 +12,8 @@ import {
 import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_STAFF, Q_ME, Q_CUSTOMERS,
-  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_FINANCIAL_SUMMARY, Q_BUDGETS, Q_BUDGET_VS_ACTUAL, Q_INVOICES, Q_REFUND_REQUESTS,
-  M_CREATE_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
+  Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_FINANCIAL_SUMMARY, Q_BUDGETS, Q_BUDGET_VS_ACTUAL, Q_INVOICES, Q_REFUND_REQUESTS, Q_ALL_SHIFT_RECONCILIATIONS,
+  M_CREATE_SALE, M_CREATE_PENDING_SALE, M_COMPLETE_PENDING_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
   M_CREATE_BUDGET, M_UPDATE_BUDGET, M_DELETE_BUDGET,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD, M_DELETE_STAFF,
   M_UPDATE_PRODUCT_PRICES, M_BULK_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
@@ -86,6 +86,8 @@ export interface Sale {
   amountPaid: number;
   change: number;
   paymentMethod: string;
+  cashAmount?: number;
+  momoAmount?: number;
   customerName?: string;
   customerPhone?: string;
   receiptNo?: string;
@@ -224,6 +226,21 @@ export interface Expense {
   category?: ExpenseCategory;
   status: string;
   branchId?: string;
+  createdAt: string;
+}
+
+export interface ShiftReconciliation {
+  id: string;
+  totalRevenue: number;
+  physicalCash: number;
+  digitalPayments: number;
+  discrepancy: number;
+  notes?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  branchId?: string;
+  branch?: { id: string; name: string };
+  pharmacist?: { id: string; name: string };
+  approvedBy?: { id: string; name: string };
   createdAt: string;
 }
 
@@ -422,12 +439,14 @@ interface StoreState {
   purchases: Purchase[];
   invoices: Invoice[];
   expenses: Expense[];
+  shiftReconciliations: ShiftReconciliation[];
   ledger: LedgerEntry[];
   stockTransfers: StockTransfer[];
   loadingPrescriptions: boolean;
   loadingPurchases: boolean;
   loadingInvoices: boolean;
   loadingExpenses: boolean;
+  loadingShiftReconciliations: boolean;
   loadingLedger: boolean;
   loadingTransfers: boolean;
   expenseCategories: ExpenseCategory[];
@@ -450,7 +469,7 @@ interface StoreState {
   todayTransactions: number;
 
   // Refetch helpers
-  refetchProducts: () => Promise<void>;
+  refetchProducts: (branchId?: string) => Promise<void>;
   refetchSuppliers: () => Promise<void>;
   refetchSales: (branchId?: string, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchStaff: () => Promise<void>;
@@ -459,6 +478,7 @@ interface StoreState {
   refetchPurchases: () => Promise<void>;
   refetchInvoices: () => Promise<void>;
   refetchExpenses: () => Promise<void>;
+  refetchShiftReconciliations: (branchId?: string | null) => Promise<void>;
   refetchLedger: () => Promise<void>;
   refetchExpenseCategories: () => Promise<void>;
   refetchTransfers: () => Promise<void>;
@@ -478,6 +498,22 @@ interface StoreState {
     customerName?: string;
     customerPhone?: string;
     customerEmail?: string;
+  }) => Promise<Sale>;
+
+  createPendingSale: (args: {
+    items: CartItem[];
+    customerId?: string;
+    customerName?: string;
+    customerPhone?: string;
+    customerEmail?: string;
+  }) => Promise<Sale>;
+
+  completePendingSale: (args: {
+    saleId: string;
+    paymentMethod: string;
+    amountPaid: number;
+    cashAmount?: number;
+    momoAmount?: number;
   }) => Promise<Sale>;
 
   closeTerminal: (physicalCash?: number, digitalPayments?: number, notes?: string) => Promise<TerminalReport>;
@@ -655,12 +691,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [shiftReconciliations, setShiftReconciliations] = useState<ShiftReconciliation[]>([]);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
   const [loadingPrescriptions, setLoadingPrescriptions] = useState(false);
   const [loadingPurchases, setLoadingPurchases] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [loadingExpenses, setLoadingExpenses] = useState(false);
+  const [loadingShiftReconciliations, setLoadingShiftReconciliations] = useState(false);
   const [loadingLedger, setLoadingLedger] = useState(false);
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [loadingExpenseCategories, setLoadingExpenseCategories] = useState(false);
@@ -691,14 +729,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
-  const refetchProducts = useCallback(async () => {
+  const refetchProducts = useCallback(async (branchId?: string) => {
     setLoadingProducts(true);
     try {
       // Try cache first
       const cached = await getFromCache('products_cache');
       if (cached?.length) setProducts(cached);
 
-      const data = await gql<{ products: Product[] }>(Q_PRODUCTS);
+      const data = await gql<{ products: Product[] }>(Q_PRODUCTS, { branchId: branchId || undefined });
       if (data.products) {
         setProducts(data.products);
         await saveToCache('products_cache', data.products);
@@ -857,6 +895,18 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
+  const refetchShiftReconciliations = useCallback(async (branchId?: string | null) => {
+    setLoadingShiftReconciliations(true);
+    try {
+      const data = await gql<{ allShiftReconciliations: ShiftReconciliation[] }>(Q_ALL_SHIFT_RECONCILIATIONS, { branchId: branchId ?? undefined });
+      setShiftReconciliations(data.allShiftReconciliations ?? []);
+    } catch (e: any) {
+      console.warn('[store] shift reconciliations fetch failed:', e.message);
+    } finally {
+      setLoadingShiftReconciliations(false);
+    }
+  }, []);
+
   const refetchExpenseCategories = useCallback(async () => {
     setLoadingExpenseCategories(true);
     try {
@@ -954,6 +1004,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         ]).then(() =>
           Promise.all([
             refetchExpenses(),
+            refetchShiftReconciliations(),
             refetchExpenseCategories(),
             refetchLedger(),
             refetchRefundRequests(),
@@ -964,7 +1015,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       console.error('[store] Sync failed:', err);
       setSyncStatus('error');
     }
-  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchRefundRequests]);
+  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchRefundRequests]);
 
   // Track previous token to only fetch on null→token transitions, not on every refresh
   const prevTokenRef = useRef<string | null | undefined>(undefined);
@@ -1192,6 +1243,80 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
     return newSale;
   }, [me, products, refetchSales, refetchProducts]);
+
+  const createPendingSale = useCallback(async (args: {
+    items: CartItem[];
+    customerId?: string;
+    customerName?: string;
+    customerPhone?: string;
+    customerEmail?: string;
+  }): Promise<Sale> => {
+    if (!me) throw new Error('Not authenticated');
+    if (args.items.length === 0) throw new Error('Cannot hold an empty cart');
+
+    const variables = {
+      userId: me.id,
+      branchId: me.branchId || '',
+      items: args.items.map(i => ({ productId: i.product.id, quantity: i.quantity })),
+      customerId: args.customerId,
+      customerName: args.customerName,
+      customerPhone: args.customerPhone,
+      customerEmail: args.customerEmail,
+    };
+
+    console.log('[store] 📤 Sending createPendingSale mutation...', variables);
+    const data = await gql<{ createPendingSale: Sale }>(M_CREATE_PENDING_SALE, variables);
+    const newSale = data.createPendingSale;
+    console.log('[store] ✅ Pending sale created!', { id: newSale.id, total: newSale.totalAmount });
+
+    (newSale as any)._isSynced = true;
+    (newSale as any)._syncStatus = 'PENDING';
+
+    setSales(prev => [newSale, ...prev]);
+
+    setTimeout(() => {
+      refetchSales().catch(() => { });
+    }, 500);
+
+    return newSale;
+  }, [me, refetchSales]);
+
+  const completePendingSale = useCallback(async (args: {
+    saleId: string;
+    paymentMethod: string;
+    amountPaid: number;
+    cashAmount?: number;
+    momoAmount?: number;
+  }): Promise<Sale> => {
+    if (!me) throw new Error('Not authenticated');
+
+    const variables = {
+      saleId: args.saleId,
+      userId: me.id,
+      paymentMethod: args.paymentMethod.toUpperCase(),
+      amountPaid: args.amountPaid,
+      cashAmount: args.cashAmount,
+      momoAmount: args.momoAmount,
+    };
+
+    console.log('[store] 📤 Sending completePendingSale mutation...', variables);
+    const data = await gql<{ completePendingSale: Sale }>(M_COMPLETE_PENDING_SALE, variables);
+    const sale = data.completePendingSale;
+    console.log('[store] ✅ Pending sale completed!', { id: sale.id, total: sale.totalAmount });
+
+    (sale as any)._isSynced = true;
+    (sale as any)._syncStatus = 'SYNCED';
+
+    setSales(prev => prev.map(s => s.id === sale.id ? sale : s));
+
+    setTimeout(() => {
+      refetchSales().catch(() => { });
+      refetchProducts().catch(() => { });
+      refetchLedger().catch(() => { });
+    }, 500);
+
+    return sale;
+  }, [me, refetchSales, refetchProducts, refetchLedger]);
 
   const closeTerminal = useCallback(async (physicalCash?: number, digitalPayments?: number, notes?: string): Promise<TerminalReport> => {
     if (!me) throw new Error('Not authenticated');
@@ -1542,18 +1667,18 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   return (
     <StoreContext.Provider value={{
       products, suppliers, sales, staff, customers, me,
-      prescriptions, purchases, invoices, expenses, expenseCategories, ledger,
+      prescriptions, purchases, invoices, expenses, shiftReconciliations, expenseCategories, ledger,
       stockTransfers, loadingTransfers,
       loadingProducts, loadingSuppliers, loadingSales, loadingStaff, loadingCustomers,
-      loadingPrescriptions, loadingPurchases, loadingInvoices, loadingExpenses, loadingExpenseCategories, loadingLedger,
+      loadingPrescriptions, loadingPurchases, loadingInvoices, loadingExpenses, loadingShiftReconciliations, loadingExpenseCategories, loadingLedger,
       financialSummary, loadingFinancialSummary,
       budgets, loadingBudgets, budgetVsActual, loadingBudgetVsActual,
       error, syncStatus,
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
       refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers,
-      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
-      createSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
+      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
+      createSale, createPendingSale, completePendingSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, bulkUpdateProductPrices, updateProductFull,
       updateProductSupplier,
       bulkUpdateProductSupplier,

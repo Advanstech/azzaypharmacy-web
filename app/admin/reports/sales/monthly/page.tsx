@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
@@ -21,22 +21,40 @@ export default function MonthlyRevenueReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
+  const searchParams = useSearchParams();
   const { sales: allSales, products } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
   const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
   const [selectedMonth, setSelectedMonth] = useState(() => {
+    const fromUrl = searchParams?.get('to') || searchParams?.get('from');
+    if (fromUrl) {
+      const d = new Date(fromUrl);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  // Update to effective month once data loads
+  // Apply effective month once data loads, but only if the URL did not already specify one
   useEffect(() => {
-    if (sales.length > 0) {
+    if (sales.length > 0 && !searchParams?.get('to') && !searchParams?.get('from')) {
       const d = new Date(effectiveDay);
       setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sales.length]);
+  // Persist selected month to the URL for cross-report sync
+  useEffect(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const from = new Date(year, month - 1, 1).toISOString().split('T')[0];
+    const to = new Date(year, month, 0).toISOString().split('T')[0];
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    if (from !== params.get('from') || to !== params.get('to')) {
+      params.set('from', from);
+      params.set('to', to);
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [selectedMonth, router, searchParams]);
 
   // Parse selected month
   const [year, month] = selectedMonth.split('-').map(Number);
@@ -60,9 +78,18 @@ export default function MonthlyRevenueReportPage() {
     
     monthlySales.forEach(s => {
       // Payment method breakdown
-      if (!byPayment[s.paymentMethod]) byPayment[s.paymentMethod] = { amount: 0, count: 0 };
-      byPayment[s.paymentMethod].amount += s.totalAmount;
-      byPayment[s.paymentMethod].count += 1;
+      if (s.paymentMethod === 'SPLIT') {
+        if (!byPayment['CASH']) byPayment['CASH'] = { amount: 0, count: 0 };
+        if (!byPayment['MOMO']) byPayment['MOMO'] = { amount: 0, count: 0 };
+        byPayment['CASH'].amount += s.cashAmount || 0;
+        byPayment['MOMO'].amount += s.momoAmount || 0;
+        byPayment['CASH'].count += 0.5;
+        byPayment['MOMO'].count += 0.5;
+      } else {
+        if (!byPayment[s.paymentMethod]) byPayment[s.paymentMethod] = { amount: 0, count: 0 };
+        byPayment[s.paymentMethod].amount += s.totalAmount;
+        byPayment[s.paymentMethod].count += 1;
+      }
       
       // Daily breakdown
       const day = new Date(s.createdAt).toISOString().split('T')[0];

@@ -643,7 +643,12 @@ export default function EnhancedSalesPage() {
     
     // Payment method breakdown
     const paymentBreakdown = periodSales.reduce((acc, sale) => {
-      acc[sale.paymentMethod] = (acc[sale.paymentMethod] || 0) + sale.totalAmount;
+      if (sale.paymentMethod === 'SPLIT') {
+        acc['CASH'] = (acc['CASH'] || 0) + (sale.cashAmount || 0);
+        acc['MOMO'] = (acc['MOMO'] || 0) + (sale.momoAmount || 0);
+      } else {
+        acc[sale.paymentMethod] = (acc[sale.paymentMethod] || 0) + sale.totalAmount;
+      }
       return acc;
     }, {} as Record<string, number>);
 

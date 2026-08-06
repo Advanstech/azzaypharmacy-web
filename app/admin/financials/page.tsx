@@ -116,7 +116,9 @@ export default function FinancialsPage() {
           account: 'SALES_REVENUE',
           category: 'Pharmacy Sales',
           amount: sale.totalAmount,
-          description: `POS Sale — ${sale.paymentMethod}`,
+          description: sale.paymentMethod === 'SPLIT'
+            ? `POS Sale — CASH: GH₵ ${(sale.cashAmount || 0).toFixed(2)}, MOMO: GH₵ ${(sale.momoAmount || 0).toFixed(2)}`
+            : `POS Sale — ${sale.paymentMethod}`,
           ref: sale.id.slice(-8).toUpperCase(),
         });
       });

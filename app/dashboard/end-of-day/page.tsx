@@ -71,8 +71,8 @@ export default function EndOfDayDashboardPage() {
   const myRevenue = mySales.reduce((sum, s) => sum + Number(s.totalAmount), 0);
   const myTransactions = mySales.length;
 
-  const myCashSales = mySales.filter(s => s.paymentMethod === 'CASH').reduce((sum, s) => sum + Number(s.totalAmount), 0);
-  const myDigitalSales = mySales.filter(s => ['MOMO','CARD'].includes(s.paymentMethod)).reduce((sum, s) => sum + Number(s.totalAmount), 0);
+  const myCashSales = mySales.reduce((sum, s) => sum + (s.paymentMethod === 'CASH' ? Number(s.totalAmount) : (s.cashAmount || 0)), 0);
+  const myDigitalSales = mySales.reduce((sum, s) => sum + (s.paymentMethod === 'MOMO' || s.paymentMethod === 'CARD' ? Number(s.totalAmount) : (s.momoAmount || 0)), 0);
 
   useEffect(() => { 
     setMounted(true); 
@@ -126,8 +126,8 @@ export default function EndOfDayDashboardPage() {
         cashierName: me?.name || user?.email || 'Staff',
         branchName: (me?.branch?.name || '').toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch',
         totalSales: myRevenue,
-        cashSales: mySales.filter(s => s.paymentMethod === 'CASH').reduce((sum, s) => sum + Number(s.totalAmount), 0),
-        momoSales: mySales.filter(s => s.paymentMethod === 'MOMO').reduce((sum, s) => sum + Number(s.totalAmount), 0),
+        cashSales: mySales.reduce((sum, s) => sum + (s.paymentMethod === 'CASH' ? Number(s.totalAmount) : (s.cashAmount || 0)), 0),
+        momoSales: mySales.reduce((sum, s) => sum + (s.paymentMethod === 'MOMO' ? Number(s.totalAmount) : (s.momoAmount || 0)), 0),
         cardSales: mySales.filter(s => s.paymentMethod === 'CARD').reduce((sum, s) => sum + Number(s.totalAmount), 0),
         nhisSales: mySales.filter(s => s.paymentMethod === 'NHIS').reduce((sum, s) => sum + Number(s.totalAmount), 0),
         creditSales: mySales.filter(s => s.paymentMethod === 'CREDIT').reduce((sum, s) => sum + Number(s.totalAmount), 0),

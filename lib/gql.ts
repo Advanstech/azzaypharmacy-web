@@ -158,8 +158,8 @@ export async function gql<T = unknown>(
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 export const Q_PRODUCTS = `
-  query GetProducts {
-    products {
+  query GetProducts($branchId: String) {
+    products(branchId: $branchId) {
       id name genericName brand category sellingPrice costPrice branchId
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
       updatedAt
@@ -191,7 +191,7 @@ export const Q_SUPPLIERS = `
 export const Q_SALES = `
   query GetSales {
     sales {
-      id totalAmount amountPaid change paymentMethod
+      id totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
       customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
@@ -208,7 +208,7 @@ export const Q_SALES = `
 export const Q_SALES_PAGINATED = `
   query GetSalesPaginated($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String) {
     sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
-      id totalAmount amountPaid change paymentMethod
+      id totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
       customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
@@ -362,7 +362,7 @@ export const M_CREATE_SALE = `
       customerPhone: $customerPhone
       customerEmail: $customerEmail
     ) {
-      id totalAmount amountPaid change paymentMethod
+      id totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
       customerType notes isRefunded refundReason refundedAt createdAt cashierId
@@ -380,6 +380,64 @@ export const M_CLOSE_TERMINAL = `
     closeTerminal(userId: $userId, physicalCash: $physicalCash, digitalPayments: $digitalPayments, notes: $notes) {
       id status notes cashierName branchName totalSales cashSales momoSales
       cardSales nhisSales creditSales transactionCount closingTime
+    }
+  }
+`;
+
+export const M_CREATE_PENDING_SALE = `
+  mutation CreatePendingSale(
+    $userId: String!
+    $branchId: String!
+    $items: [SaleItemInput!]!
+    $customerId: String
+    $customerName: String
+    $customerPhone: String
+    $customerEmail: String
+  ) {
+    createPendingSale(
+      userId: $userId
+      branchId: $branchId
+      items: $items
+      customerId: $customerId
+      customerName: $customerName
+      customerPhone: $customerPhone
+      customerEmail: $customerEmail
+    ) {
+      id totalAmount amountPaid change paymentMethod receiptNo status customerName customerPhone
+      createdAt
+      user { id name role }
+      items {
+        id quantity unitPrice total batchNo
+        product { id name category }
+      }
+    }
+  }
+`;
+
+export const M_COMPLETE_PENDING_SALE = `
+  mutation CompletePendingSale(
+    $saleId: String!
+    $userId: String!
+    $paymentMethod: PaymentMethod!
+    $amountPaid: Float!
+    $cashAmount: Float
+    $momoAmount: Float
+  ) {
+    completePendingSale(
+      saleId: $saleId
+      userId: $userId
+      paymentMethod: $paymentMethod
+      amountPaid: $amountPaid
+      cashAmount: $cashAmount
+      momoAmount: $momoAmount
+    ) {
+      id totalAmount amountPaid change paymentMethod cashAmount momoAmount receiptNo status customerName customerPhone
+      createdAt
+      user { id name role }
+      items {
+        id quantity unitPrice total batchNo
+        product { id name category }
+      }
     }
   }
 `;

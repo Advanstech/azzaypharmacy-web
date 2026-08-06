@@ -702,7 +702,14 @@ function SalesOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isD
   // Payment breakdown for today
   const todayPayment = useMemo(() => {
     const counts: Record<string, number> = {};
-    myTodaySales.forEach(s => { counts[s.paymentMethod] = (counts[s.paymentMethod] || 0) + s.totalAmount; });
+    myTodaySales.forEach(s => {
+      if (s.paymentMethod === 'SPLIT') {
+        counts['CASH'] = (counts['CASH'] || 0) + (s.cashAmount || 0);
+        counts['MOMO'] = (counts['MOMO'] || 0) + (s.momoAmount || 0);
+      } else {
+        counts[s.paymentMethod] = (counts[s.paymentMethod] || 0) + s.totalAmount;
+      }
+    });
     return [
       { label: 'Cash', amount: counts['CASH'] || 0, color: '#0EA5E9', icon: Banknote },
       { label: 'MoMo', amount: counts['MOMO'] || 0, color: '#10B981', icon: Smartphone },
