@@ -10,7 +10,7 @@
  *    The switcher is not rendered for them; their branchId comes from the JWT.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { gql } from './gql';
 import { Q_BRANCHES } from './gql';
 
@@ -150,11 +150,15 @@ export function useBranch() {
  * Everyone else sees only their active branch (exact match, no equivalent branches).
  */
 export function useBranchFilter() {
-  const { activeBranchId, canSwitchBranch } = useBranch();
+  const { branches, activeBranchId, canSwitchBranch } = useBranch();
+  const allowedBranchIds = useMemo(() => {
+    if (!activeBranchId) return new Set<string>();
+    return new Set(getEquivalentBranchIds(branches, activeBranchId));
+  }, [branches, activeBranchId]);
+
   return useCallback(<T extends { branchId?: string }>(items: T[]): T[] => {
     if (canSwitchBranch && activeBranchId === null) return items; // All branches for managers
     if (!activeBranchId) return items; // No branch filter if no active branch
-    // For non-managers, use exact branch match only (no equivalent branches)
-    return items.filter(item => item.branchId === activeBranchId);
-  }, [activeBranchId, canSwitchBranch]);
+    return items.filter(item => item.branchId && allowedBranchIds.has(item.branchId));
+  }, [activeBranchId, canSwitchBranch, allowedBranchIds]);
 }

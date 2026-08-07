@@ -16,6 +16,7 @@ import { useToast } from '@/components/pharma-toast';
 import { gql, M_ASK_NEXUS_AI } from '@/lib/gql';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -38,10 +39,17 @@ export default function AdminDashboardPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, invoices, staff, products, customers, expenses, refetchSales, refetchInvoices, refetchStaff, refetchProducts, refetchCustomers, refetchExpenses, loadingSales, loadingInvoices } = useStore();
+  const { sales: allSales, invoices, staff: allStaff, products, customers, expenses: allExpenses, refetchSales, refetchInvoices, refetchStaff, refetchProducts, refetchCustomers, refetchExpenses, loadingSales, loadingInvoices } = useStore();
   const { session } = useCustomAuth();
   const { addToast } = useToast();
   const router = useRouter();
+  const { activeBranchId } = useBranch();
+  const branchFilter = useBranchFilter();
+
+  const sales = useMemo(() => branchFilter(allSales), [branchFilter, allSales]);
+  const staff = useMemo(() => branchFilter(allStaff), [branchFilter, allStaff]);
+  const expenses = useMemo(() => branchFilter(allExpenses), [branchFilter, allExpenses]);
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightText, setInsightText] = useState("Loading AI analytical forecast based on live database data...");
@@ -112,12 +120,12 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const loadData = async () => {
-      await refetchSales(undefined, rangeBounds.start.toISOString(), rangeBounds.end.toISOString());
+      await refetchSales(activeBranchId ?? undefined, rangeBounds.start.toISOString(), rangeBounds.end.toISOString());
       if (invoices.length === 0) await refetchInvoices();
-      if (staff.length === 0) await refetchStaff();
+      if (allStaff.length === 0) await refetchStaff();
       if (products.length === 0) await refetchProducts();
       if (customers.length === 0) await refetchCustomers();
-      if (expenses.length === 0) await refetchExpenses();
+      if (allExpenses.length === 0) await refetchExpenses();
       
       setTimeout(() => {
         fetchAiInsight();

@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { PageTransition } from '@/components/page-transition';
-import { BranchProvider } from '@/lib/branch-context';
+import { BranchProvider, useBranch } from '@/lib/branch-context';
 import { BranchSwitcher } from '@/components/BranchSwitcher';
 import {
   LayoutDashboard,
@@ -49,7 +49,8 @@ const adminItems = [
 
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useCustomAuth();
-  const { me } = useStore();
+  const { me, refetchSales } = useStore();
+  const { activeBranchId } = useBranch();
   const router = useRouter();
   const pathname = usePathname();
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -73,6 +74,13 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
       router.push('/');
     }
   }, [user, loading, router]);
+
+  // Refetch branch-scoped sales whenever the active branch changes
+  useEffect(() => {
+    if (mounted && me?.id) {
+      refetchSales(activeBranchId ?? undefined);
+    }
+  }, [activeBranchId, me?.id, mounted, refetchSales]);
 
   if (loading || !mounted) {
     return (
