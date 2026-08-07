@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { 
   ArrowLeft, Download, Package, Search, TrendingUp, ShoppingCart,
-  ChevronLeft, ChevronRight, Star, Award
+  ChevronLeft, ChevronRight, Star, Award, Calendar
 } from 'lucide-react';
 
 export default function SalesByProductReportPage() {
@@ -22,6 +22,21 @@ export default function SalesByProductReportPage() {
   const { sales: allSales, products } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const searchParams = useSearchParams();
+
+  const defaultDate = new Date().toISOString().split('T')[0];
+  const [fromDate, setFromDate] = useState(searchParams?.get('from') || defaultDate);
+  const [toDate, setToDate] = useState(searchParams?.get('to') || defaultDate);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    if (fromDate !== params.get('from') || toDate !== params.get('to')) {
+      params.set('from', fromDate);
+      params.set('to', toDate);
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [fromDate, toDate, router, searchParams]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
 
@@ -33,10 +48,13 @@ export default function SalesByProductReportPage() {
 
   // Analyze product sales
   const productAnalysis = useMemo(() => {
+    const start = new Date(fromDate); start.setHours(0, 0, 0, 0);
+    const end = new Date(toDate); end.setHours(23, 59, 59, 999);
     const data: Record<string, {
       id: string;
       name: string;
       category: string;
+      supplier: string;
       dosageForm: string;
       quantitySold: number;
       revenue: number;
@@ -46,6 +64,8 @@ export default function SalesByProductReportPage() {
     }> = {};
 
     sales.forEach(s => {
+      const saleDate = new Date(s.createdAt);
+      if (saleDate < start || saleDate > end) return;
       s.items.forEach(item => {
         const product = products.find(p => p.id === item.product.id);
         if (!data[item.product.id]) {
@@ -53,6 +73,7 @@ export default function SalesByProductReportPage() {
             id: item.product.id,
             name: item.product.name,
             category: item.product.category,
+            supplier: product?.supplier?.name || 'N/A',
             dosageForm: product?.dosageForm || 'N/A',
             quantitySold: 0,
             revenue: 0,
@@ -75,7 +96,7 @@ export default function SalesByProductReportPage() {
     });
 
     return Object.values(data).sort((a, b) => b.revenue - a.revenue);
-  }, [sales, products]);
+  }, [sales, products, fromDate, toDate]);
 
   // Filter
   const filteredProducts = useMemo(() => {
@@ -85,7 +106,8 @@ export default function SalesByProductReportPage() {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(p => 
         p.name.toLowerCase().includes(term) ||
-        p.category.toLowerCase().includes(term)
+        p.category.toLowerCase().includes(term) ||
+        p.supplier.toLowerCase().includes(term)
       );
     }
     
@@ -112,25 +134,28 @@ export default function SalesByProductReportPage() {
 
   const handleExport = () => {
     const rows = filteredProducts.map(p => [
-      p.name, p.category, p.dosageForm,
+      p.name, p.category, p.supplier, p.dosageForm,
       p.quantitySold, p.revenue, p.cogs, p.profit, p.profitMargin,
     ]);
     exportToExcel({
-      filename: `sales-by-product-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      filename: `sales-by-product-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${fromDate}-to-${toDate}`,
       title: 'Sales by Product',
       subtitle: 'Azzay Pharmacy — Product Performance and Profit Analysis',
-      meta: [{ label: 'Branch', value: activeBranchName }],
+      meta: [
+        { label: 'Branch', value: activeBranchName },
+        { label: 'Date Range', value: `${fromDate} to ${toDate}` },
+      ],
       summary: [
         { label: 'Products Sold', value: metrics.totalProducts },
         { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
         { label: 'Total Profit', value: `GH₵ ${metrics.totalProfit.toFixed(2)}` },
         { label: 'Avg Margin', value: `${metrics.avgMargin.toFixed(1)}%` },
       ],
-      headers: ['Product', 'Category', 'Dosage Form', 'Qty Sold', 'Revenue', 'COGS', 'Profit', 'Margin %'],
+      headers: ['Product', 'Category', 'Supplier', 'Dosage Form', 'Qty Sold', 'Revenue', 'COGS', 'Profit', 'Margin %'],
       rows,
-      currencyColumns: [4, 5, 6],
-      numberColumns: [3],
-      percentColumns: [7],
+      currencyColumns: [5, 6, 7],
+      numberColumns: [4],
+      percentColumns: [8],
       sheetName: 'Sales by Product',
     });
   };
@@ -212,7 +237,7 @@ export default function SalesByProductReportPage() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      <div className="flex flex-col lg:flex-row gap-3">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={16} style={{ color: card.subtle }} />
           <input 
@@ -222,6 +247,24 @@ export default function SalesByProductReportPage() {
             onChange={(e) => { setSearchTerm(e.target.value); goToPage(1); }}
             className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm"
             style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
+          />
+        </div>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: card.bg, border: `1px solid ${card.border}` }}>
+          <Calendar size={16} style={{ color: card.subtle }} />
+          <input 
+            type="date" 
+            value={fromDate}
+            onChange={(e) => { setFromDate(e.target.value); goToPage(1); }}
+            className="text-sm bg-transparent focus:outline-none"
+            style={{ color: card.text }}
+          />
+          <span style={{ color: card.muted }}>to</span>
+          <input 
+            type="date" 
+            value={toDate}
+            onChange={(e) => { setToDate(e.target.value); goToPage(1); }}
+            className="text-sm bg-transparent focus:outline-none"
+            style={{ color: card.text }}
           />
         </div>
         <select 
@@ -241,6 +284,7 @@ export default function SalesByProductReportPage() {
               <tr style={{ background: isDark ? 'rgba(15,23,42,0.8)' : '#F8FAFC' }}>
                 <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Product</th>
                 <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Category</th>
+                <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Supplier</th>
                 <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Qty Sold</th>
                 <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>Revenue</th>
                 <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>COGS</th>
@@ -256,6 +300,7 @@ export default function SalesByProductReportPage() {
                     <p className="text-xs" style={{ color: card.subtle }}>{product.dosageForm}</p>
                   </td>
                   <td className="px-4 py-3 text-sm" style={{ color: card.text }}>{product.category}</td>
+                  <td className="px-4 py-3 text-sm" style={{ color: card.text }}>{product.supplier}</td>
                   <td className="px-4 py-3 text-center font-bold" style={{ color: card.text }}>{product.quantitySold}</td>
                   <td className="px-4 py-3 text-right font-mono font-bold" style={{ color: card.text }}>
                     GH₵ {product.revenue.toFixed(2)}

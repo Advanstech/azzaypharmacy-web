@@ -2,16 +2,16 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { exportToExcel } from '@/lib/export-excel';
-import { getEffectiveToday } from '@/lib/effective-date';
 import { usePagination } from '@/hooks/use-pagination';
 import {
   ArrowLeft, Download, Users, Clock, CheckCircle, XCircle,
-  Search, UserCircle, Wifi, WifiOff, Shield, Building2,
+  Search, UserCircle, Wifi, WifiOff, Shield, Building2, Calendar,
+  ShoppingCart, TrendingUp, Award,
 } from 'lucide-react';
 
 const ROLE_COLORS: Record<string, string> = {
@@ -52,7 +52,19 @@ export default function StaffAttendancePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.access_token]);
 
-  const today = useMemo(() => getEffectiveToday(sales), [sales]);
+  const searchParams = useSearchParams();
+  const defaultDate = new Date().toISOString().split('T')[0];
+  const [selectedDate, setSelectedDate] = useState(searchParams?.get('date') || defaultDate);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    if (selectedDate !== params.get('date')) {
+      params.set('date', selectedDate);
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [selectedDate, router, searchParams]);
+
+  const isToday = selectedDate === defaultDate;
 
   // Filters
   const [search, setSearch] = useState('');
@@ -70,24 +82,30 @@ export default function StaffAttendancePage() {
     return ['All', ...Array.from(s)];
   }, [staff]);
 
-  // Today's sales per staff member
-  const todaySalesByStaff = useMemo(() => {
+  // Sales per staff member for the selected date
+  const salesByStaffForDate = useMemo(() => {
     const map: Record<string, { count: number; revenue: number }> = {};
     sales.forEach(s => {
       if (!s.cashierId) return;
       const d = new Date(s.createdAt).toISOString().split('T')[0];
-      if (d !== today) return;
+      if (d !== selectedDate) return;
       if (!map[s.cashierId]) map[s.cashierId] = { count: 0, revenue: 0 };
       map[s.cashierId].count += 1;
       map[s.cashierId].revenue += s.totalAmount;
     });
     return map;
-  }, [sales, today]);
+  }, [sales, selectedDate]);
+
+  const getDutyForDate = (m: typeof staff[0]) => {
+    if (isToday) return m.isOnDuty;
+    const lastSeenDate = m.lastSeen ? new Date(m.lastSeen).toISOString().split('T')[0] : null;
+    return lastSeenDate === selectedDate || !!salesByStaffForDate[m.id]?.count;
+  };
 
   const filtered = useMemo(() => {
     let list = [...staff];
-    if (dutyFilter === 'OnDuty') list = list.filter(m => m.isOnDuty);
-    if (dutyFilter === 'OffDuty') list = list.filter(m => !m.isOnDuty);
+    if (dutyFilter === 'OnDuty') list = list.filter(m => getDutyForDate(m));
+    if (dutyFilter === 'OffDuty') list = list.filter(m => !getDutyForDate(m));
     if (branchFilter !== 'All') list = list.filter(m => m.branch?.name === branchFilter);
     if (roleFilter !== 'All') list = list.filter(m => m.role === roleFilter);
     if (search.trim()) {
@@ -100,28 +118,46 @@ export default function StaffAttendancePage() {
       );
     }
     return list.sort((a, b) => {
-      if (a.isOnDuty !== b.isOnDuty) return a.isOnDuty ? -1 : 1;
+      const aOn = getDutyForDate(a);
+      const bOn = getDutyForDate(b);
+      if (aOn !== bOn) return aOn ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
-  }, [staff, dutyFilter, branchFilter, roleFilter, search]);
+  }, [staff, dutyFilter, branchFilter, roleFilter, search, salesByStaffForDate, isToday, selectedDate]);
 
   const { currentPage, totalPages, paginatedData: paginatedStaff, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filtered });
 
-  const kpis = useMemo(() => ({
-    total: staff.length,
-    onDuty: staff.filter(m => m.isOnDuty).length,
-    active: staff.filter(m => m.isActive).length,
-    inactive: staff.filter(m => !m.isActive).length,
-    branches: new Set(staff.map(m => m.branchId).filter(Boolean)).size,
-  }), [staff]);
+  const kpis = useMemo(() => {
+    const onDutyCount = staff.filter(getDutyForDate).length;
+    const dateEntries = Object.values(salesByStaffForDate);
+    const dateSales = dateEntries.reduce((s, v) => s + v.count, 0);
+    const dateRevenue = dateEntries.reduce((s, v) => s + v.revenue, 0);
+    const avgSales = staff.length ? dateSales / staff.length : 0;
+    const topPerformer = [...staff]
+      .map(m => ({ m, ...salesByStaffForDate[m.id] }))
+      .sort((a, b) => (b.count - a.count) || (b.revenue - a.revenue))[0];
+
+    return {
+      total: staff.length,
+      onDuty: onDutyCount,
+      active: staff.filter(m => m.isActive).length,
+      inactive: staff.filter(m => !m.isActive).length,
+      branches: new Set(staff.map(m => m.branchId).filter(Boolean)).size,
+      dateSales,
+      dateRevenue,
+      avgSales,
+      topPerformer: topPerformer?.m,
+      topPerformerCount: topPerformer?.count || 0,
+    };
+  }, [staff, salesByStaffForDate]);
 
   const handleExport = () => {
     const rows = filtered.map(m => {
-      const perf = todaySalesByStaff[m.id];
+      const perf = salesByStaffForDate[m.id];
       return [
         m.name, m.email, m.role,
         m.branch?.name || 'N/A',
-        m.isOnDuty ? 'YES' : 'NO',
+        getDutyForDate(m) ? 'YES' : 'NO',
         m.isActive ? 'YES' : 'NO',
         m.lastSeen ? new Date(m.lastSeen).toLocaleString('en-GB') : 'Never',
         m.phone || 'N/A',
@@ -130,17 +166,19 @@ export default function StaffAttendancePage() {
       ];
     });
     exportToExcel({
-      filename: `staff-attendance-log-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
+      filename: `staff-attendance-log-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${selectedDate}`,
       title: 'Staff Attendance Log',
-      subtitle: 'Azzay Pharmacy — Live Duty Status and Attendance',
-      meta: [{ label: 'Branch', value: activeBranchName }, { label: 'Date', value: today }],
+      subtitle: 'Azzay Pharmacy — Duty Status and Attendance by Date',
+      meta: [{ label: 'Branch', value: activeBranchName }, { label: 'Date', value: selectedDate }],
       summary: [
         { label: 'Total Staff', value: kpis.total },
         { label: 'On Duty', value: kpis.onDuty },
         { label: 'Active', value: kpis.active },
         { label: 'Inactive', value: kpis.inactive },
+        { label: 'Date Sales', value: kpis.dateSales },
+        { label: 'Date Revenue', value: `GH₵ ${kpis.dateRevenue.toFixed(2)}` },
       ],
-      headers: ['Name', 'Email', 'Role', 'Branch', 'On Duty', 'Active', 'Last Seen', 'Phone', "Today's Sales", "Today's Revenue"],
+      headers: ['Name', 'Email', 'Role', 'Branch', 'On Duty', 'Active', 'Last Seen', 'Phone', 'Date Sales', 'Date Revenue'],
       rows,
       currencyColumns: [9],
       numberColumns: [8],
@@ -181,27 +219,40 @@ export default function StaffAttendancePage() {
               Staff Attendance Log
             </h1>
             <p className="text-sm" style={{ color: card.muted }}>
-              Live duty status · {kpis.onDuty} of {kpis.total} currently on duty · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span>
+              Attendance for <span className="font-bold" style={{ color: card.primary }}>{selectedDate}</span> · {kpis.onDuty} of {kpis.total} on duty · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span>
             </p>
           </div>
         </div>
-        <button
-          onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
-          style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
-          <Download size={16} />
-          Export Excel
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl" style={{ background: card.bg, border: `1px solid ${card.border}` }}>
+            <Calendar size={16} style={{ color: card.muted }} />
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={e => { setSelectedDate(e.target.value); goToPage(1); }}
+              className="bg-transparent text-sm focus:outline-none"
+              style={{ color: card.text }}
+            />
+          </div>
+          <button
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
+            style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
+            <Download size={16} />
+            Export Excel
+          </button>
+        </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {[
           { label: 'Total Staff', value: String(kpis.total), icon: Users, color: card.primary },
-          { label: 'On Duty Now', value: String(kpis.onDuty), icon: Wifi, color: card.success },
-          { label: 'Off Duty', value: String(kpis.total - kpis.onDuty), icon: WifiOff, color: card.muted },
+          { label: 'On Duty', value: String(kpis.onDuty), icon: Wifi, color: card.success },
           { label: 'Active', value: String(kpis.active), icon: CheckCircle, color: '#10B981' },
-          { label: 'Inactive', value: String(kpis.inactive), icon: XCircle, color: card.danger },
+          { label: 'Date Sales', value: String(kpis.dateSales), icon: ShoppingCart, color: card.warning },
+          { label: 'Date Revenue', value: `GH₵ ${kpis.dateRevenue.toFixed(2)}`, icon: TrendingUp, color: card.warning },
+          { label: 'Avg Sales / Staff', value: kpis.avgSales.toFixed(1), icon: Award, color: '#8B5CF6' },
         ].map((k, i) => (
           <div key={i} className="rounded-xl border p-3" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -217,8 +268,8 @@ export default function StaffAttendancePage() {
       {kpis.onDuty > 0 && (
         <div className="p-4 rounded-xl border flex flex-wrap gap-2 items-center"
           style={{ background: `${card.success}08`, borderColor: `${card.success}30` }}>
-          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: card.success }}>On Duty:</span>
-          {staff.filter(m => m.isOnDuty).map(m => (
+          <span className="text-xs font-bold uppercase tracking-wider" style={{ color: card.success }}>On Duty {selectedDate}:</span>
+          {staff.filter(getDutyForDate).map(m => (
             <span key={m.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
               style={{ background: `${ROLE_COLORS[m.role] || card.primary}15`, color: ROLE_COLORS[m.role] || card.primary }}>
               <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: card.success }} />
@@ -274,7 +325,7 @@ export default function StaffAttendancePage() {
           <span>Role / Branch</span>
           <span>Duty Status</span>
           <span>Last Seen</span>
-          <span className="text-right">Today's Sales</span>
+          <span className="text-right">Date Sales</span>
           <span className="text-right">Account</span>
         </div>
 
@@ -289,8 +340,9 @@ export default function StaffAttendancePage() {
             {paginatedStaff.map(m => {
               const roleColor = ROLE_COLORS[m.role] || card.primary;
               const { text: lastSeenText, isRecent } = lastSeenLabel(m.lastSeen);
-              const perf = todaySalesByStaff[m.id];
+              const perf = salesByStaffForDate[m.id];
               const branchLabel = m.branch?.name || 'No Branch';
+              const onDuty = getDutyForDate(m);
 
               return (
                 <div key={m.id}
@@ -311,7 +363,7 @@ export default function StaffAttendancePage() {
                       )}
                       <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2"
                         style={{
-                          background: m.isOnDuty ? card.success : card.muted,
+                          background: onDuty ? card.success : card.muted,
                           borderColor: card.bg,
                         }} />
                     </div>
@@ -334,7 +386,7 @@ export default function StaffAttendancePage() {
 
                   {/* Duty Status */}
                   <div className="flex items-center gap-2">
-                    {m.isOnDuty ? (
+                    {onDuty ? (
                       <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full"
                         style={{ background: `${card.success}15`, color: card.success }}>
                         <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: card.success }} />
@@ -403,8 +455,7 @@ export default function StaffAttendancePage() {
                 </div>
               )}
               <span>
-                Total today: {Object.values(todaySalesByStaff).reduce((s, v) => s + v.count, 0)} sales ·
-                GH₵ {Object.values(todaySalesByStaff).reduce((s, v) => s + v.revenue, 0).toFixed(2)}
+                Total {selectedDate}: {kpis.dateSales} sales · GH₵ {kpis.dateRevenue.toFixed(2)}
               </span>
             </div>
           </div>
