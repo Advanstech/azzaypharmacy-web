@@ -24,7 +24,7 @@ import {
   Q_STOCK_TRANSFERS
 } from './gql';
 import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, isOnline } from './offline';
-import { initTauriSync } from './tauri-sync';
+import { initTauriSync, manualSync } from './tauri-sync';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1190,14 +1190,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         timestamp: Date.now()
       });
 
-      // Register sync if possible
-      if ('serviceWorker' in navigator && 'SyncManager' in window) {
-        const registration = await navigator.serviceWorker.ready;
-        try {
-          await (registration as any).sync.register('sync-pos-transactions');
-        } catch (e) {
-          console.warn('[store] Sync registration failed:', e);
-        }
+      // Trigger manual sync immediately if online; otherwise it will sync when connection is restored
+      if (isOnline()) {
+        manualSync().catch(err => console.warn('[store] Manual offline sync failed:', err));
       }
 
       console.warn('[store] 📱 Sale saved locally (offline mode). Will sync when connection restored.');
