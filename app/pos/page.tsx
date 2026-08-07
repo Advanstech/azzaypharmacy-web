@@ -15,7 +15,7 @@ import {
 import { useStore } from '@/lib/store';
 import { manualSync } from '@/lib/tauri-sync';
 
-import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI } from '@/lib/gql';
+import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI, Q_SALES } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
 import { PharmaProductImage } from '@/components/PharmaProductImage';
 import Image from 'next/image';
@@ -633,6 +633,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       setTimeout(() => {
         submissionLockRef.current = false;
       }, 500);
+      fetchPendingSales();
     }
   };
 
@@ -658,6 +659,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       alert(`❌ HOLD SALE FAILED\n\n${err?.message || 'Unknown error. Please try again.'}`);
     } finally {
       setSubmitting(false);
+      fetchPendingSales();
     }
   };
 
@@ -677,10 +679,20 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     setTendered('');
   };
 
-  const pendingSales = useMemo(() => {
-    const branchId = me?.branchId;
-    return sales.filter((s: any) => s.status === 'PENDING' && (!branchId || s.branchId === branchId));
-  }, [sales, me?.branchId]);
+  const [pendingSales, setPendingSales] = useState<any[]>([]);
+
+  const fetchPendingSales = useCallback(async () => {
+    try {
+      const data = await gql<{ sales: any[] }>(Q_SALES, { status: 'PENDING' });
+      setPendingSales(data.sales || []);
+    } catch (err) {
+      console.warn('[POS] Failed to fetch pending sales:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchPendingSales();
+  }, [fetchPendingSales]);
 
   const formatTime = (d: Date) => d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 

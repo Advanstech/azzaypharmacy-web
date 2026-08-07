@@ -189,8 +189,8 @@ export const Q_SUPPLIERS = `
 `;
 
 export const Q_SALES = `
-  query GetSales {
-    sales {
+  query GetSales($status: String) {
+    sales(status: $status) {
       id totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
@@ -206,8 +206,8 @@ export const Q_SALES = `
 
 // Paginated query for scalability (optional - falls back to full fetch if not supported by API)
 export const Q_SALES_PAGINATED = `
-  query GetSalesPaginated($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String) {
-    sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
+  query GetSalesPaginated($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String, $status: String) {
+    sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo, status: $status) {
       id totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
@@ -222,8 +222,8 @@ export const Q_SALES_PAGINATED = `
 `;
 
 export const Q_SALES_PAGINATED_LEGACY = `
-  query GetSalesPaginatedLegacy($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String) {
-    sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
+  query GetSalesPaginatedLegacy($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String, $status: String) {
+    sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo, status: $status) {
       id totalAmount amountPaid change paymentMethod
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
@@ -299,8 +299,8 @@ export const Q_STAFF = `
 `;
 
 export const Q_STAFF_ACTIVITIES = `
-  query GetStaffActivities($userId: ID!, $startDate: String, $endDate: String) {
-    staffActivities(userId: $userId, startDate: $startDate, endDate: $endDate) {
+  query GetStaffActivities($userId: ID!, $startDate: String, $endDate: String, $page: Int, $limit: Int) {
+    staffActivities(userId: $userId, startDate: $startDate, endDate: $endDate, page: $page, limit: $limit) {
       items {
         id type description timestamp amount details source
       }

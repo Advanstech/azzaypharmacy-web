@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -263,6 +263,7 @@ export default function StaffDetailPage() {
   const [backendActivities, setBackendActivities] = useState<Activity[]>([]);
   const [activitiesLoaded, setActivitiesLoaded] = useState(false);
   const [loadingActivities, setLoadingActivities] = useState(false);
+  const [activitiesMeta, setActivitiesMeta] = useState({ totalCount: 0, totalPages: 1, currentPage: 1 });
   
   const [activityPage, setActivityPage] = useState(1);
   const [startDate, setStartDate] = useState<string>('');
@@ -329,50 +330,51 @@ export default function StaffDetailPage() {
     };
   }, [mounted]);
 
+  const fetchActivities = useCallback(async (page = activityPage) => {
+    if (!staffId || !startDate || !endDate) return;
+    setLoadingActivities(true);
+    setActivitiesLoaded(false);
+    try {
+      const start = `${startDate}T00:00:00.000Z`;
+      const end = `${endDate}T23:59:59.999Z`;
+      const data = await gql<{ staffActivities: StaffActivitiesResponse }>(Q_STAFF_ACTIVITIES, { 
+        userId: staffId,
+        startDate: start,
+        endDate: end,
+        page,
+        limit: ITEMS_PER_PAGE,
+      });
+      setBackendActivities(
+        (data.staffActivities?.items || []).map((activity) => ({
+          ...activity,
+          date: activity.date ?? toActivityDate(activity.timestamp),
+        }))
+      );
+      setActivitiesMeta({
+        totalCount: data.staffActivities?.totalCount || 0,
+        totalPages: data.staffActivities?.totalPages || 1,
+        currentPage: data.staffActivities?.currentPage || page,
+      });
+    } catch (err) {
+      console.error('Failed to fetch staff activities', err);
+      setBackendActivities([]);
+      setActivitiesMeta({ totalCount: 0, totalPages: 1, currentPage: page });
+    } finally {
+      setActivitiesLoaded(true);
+      setLoadingActivities(false);
+    }
+  }, [staffId, startDate, endDate, activityPage]);
+
   useEffect(() => {
     if (!mounted || !staffId) return;
-    let cancelled = false;
-
-    const today = new Date().toISOString().split('T')[0];
-    const startOfDay = `${today}T00:00:00.000Z`;
-    const endOfDay = `${today}T23:59:59.999Z`;
-
-    const fetchActivities = async () => {
-      setLoadingActivities(true);
-      try {
-        const data = await gql<{ staffActivities: StaffActivitiesResponse }>(Q_STAFF_ACTIVITIES, { 
-          userId: staffId,
-          startDate: startOfDay,
-          endDate: endOfDay,
-        });
-        if (!cancelled) {
-          setBackendActivities(
-            (data.staffActivities?.items || []).map((activity) => ({
-              ...activity,
-              date: activity.date ?? toActivityDate(activity.timestamp),
-            }))
-          );
-        }
-      } catch (err) {
-        console.error('Failed to fetch staff activities', err);
-        if (!cancelled) {
-          setBackendActivities([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setActivitiesLoaded(true);
-          setLoadingActivities(false);
-        }
-      }
-    };
-
-    setActivitiesLoaded(false);
+    if (!startDate || !endDate) {
+      const today = new Date().toISOString().split('T')[0];
+      setStartDate(today);
+      setEndDate(today);
+      return;
+    }
     fetchActivities();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [mounted, staffId]);
+  }, [mounted, staffId, startDate, endDate, activityPage, fetchActivities]);
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
@@ -401,25 +403,23 @@ export default function StaffDetailPage() {
     [staffId]
   );
 
-  const allActivities = useMemo(() => {
-    let list = activitiesLoaded ? backendActivities : [...liveActivities, ...baseActivities];
-    
-    // Client-side date filtering
-    if (startDate) {
-      const start = new Date(startDate).getTime();
-      list = list.filter(a => a.date && a.date >= start);
+  const { allActivities, totalPages } = useMemo(() => {
+    if (activitiesLoaded) {
+      return {
+        allActivities: backendActivities,
+        totalPages: Math.max(1, activitiesMeta.totalPages || 1),
+      };
     }
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      list = list.filter(a => a.date && a.date <= end.getTime());
-    }
+    const list = [...liveActivities, ...baseActivities];
+    return {
+      allActivities: list,
+      totalPages: Math.max(1, Math.ceil(list.length / ITEMS_PER_PAGE)),
+    };
+  }, [activitiesLoaded, backendActivities, liveActivities, baseActivities, activitiesMeta.totalPages]);
 
-    return list.sort((a, b) => (b.date || 0) - (a.date || 0));
-  }, [activitiesLoaded, backendActivities, liveActivities, baseActivities, startDate, endDate]);
-  
-  const totalPages = Math.max(1, Math.ceil(allActivities.length / ITEMS_PER_PAGE));
-  const paginatedActivities = allActivities.slice((activityPage - 1) * ITEMS_PER_PAGE, activityPage * ITEMS_PER_PAGE);
+  const paginatedActivities = activitiesLoaded
+    ? allActivities
+    : allActivities.slice((activityPage - 1) * ITEMS_PER_PAGE, activityPage * ITEMS_PER_PAGE);
 
   useEffect(() => {
     setActivityPage(1);

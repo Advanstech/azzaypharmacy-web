@@ -187,10 +187,35 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = useCallback(async () => {
-    localStorage.removeItem('auth_token');
     setAuthToken(null);
     setUser(null);
     setSession(null);
+
+    try {
+      localStorage.clear();
+    } catch (_) {}
+    try {
+      sessionStorage.clear();
+    } catch (_) {}
+    try {
+      const { clearCache } = await import('@/lib/offline');
+      await clearCache();
+    } catch (_) {}
+    try {
+      const keys = await caches?.keys?.() ?? [];
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    } catch (_) {}
+    try {
+      const registrations = await navigator?.serviceWorker?.getRegistrations?.() ?? [];
+      await Promise.all(registrations.map((reg) => reg.unregister()));
+    } catch (_) {}
+    try {
+      document.cookie.split(';').forEach((cookie) => {
+        const [name] = cookie.split('=');
+        document.cookie = `${name.trim()}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`;
+      });
+    } catch (_) {}
+
     window.location.href = '/';
   }, []);
 
