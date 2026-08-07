@@ -61,6 +61,8 @@ export default function DailySalesReportPage() {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(s => 
         s.customerName?.toLowerCase().includes(term) ||
+        s.user?.name?.toLowerCase().includes(term) ||
+        s.cashierId?.toLowerCase().includes(term) ||
         s.id.toLowerCase().includes(term) ||
         s.items.some(i => i.product.name.toLowerCase().includes(term))
       );
@@ -263,6 +265,7 @@ export default function DailySalesReportPage() {
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Time</th>
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Receipt</th>
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Customer</th>
+                <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Staff</th>
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Items</th>
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Payment</th>
                 <th className="px-5 py-4 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Total</th>
@@ -285,6 +288,10 @@ export default function DailySalesReportPage() {
                     <td className="px-5 py-4">
                       <p className="text-xs font-bold" style={{ color: card.text }}>{sale.customerName || 'Walk-in'}</p>
                       {sale.customerPhone && <p className="text-[10px]" style={{ color: card.subtle }}>{sale.customerPhone}</p>}
+                    </td>
+                    <td className="px-5 py-4">
+                      <p className="text-xs font-bold" style={{ color: card.text }}>{sale.user?.name || 'Unknown'}</p>
+                      {sale.user?.role && <p className="text-[10px] capitalize" style={{ color: card.subtle }}>{sale.user.role.toLowerCase()}</p>}
                     </td>
                     <td className="px-5 py-4 text-xs font-medium" style={{ color: card.text }}>
                       {sale.items.reduce((sum, i) => sum + i.quantity, 0)} units
@@ -317,7 +324,7 @@ export default function DailySalesReportPage() {
               })}
               {paginatedSales.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-sm font-bold" style={{ color: card.muted }}>
+                  <td colSpan={8} className="px-5 py-8 text-center text-sm font-bold" style={{ color: card.muted }}>
                     No sales found for this date.
                   </td>
                 </tr>
