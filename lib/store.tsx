@@ -11,7 +11,7 @@ import {
 } from 'react';
 import {
   gql, setAuthToken,
-  Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_STAFF, Q_ME, Q_CUSTOMERS,
+  Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_SALES_PAGINATED_LEGACY, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_FINANCIAL_SUMMARY, Q_BUDGETS, Q_BUDGET_VS_ACTUAL, Q_INVOICES, Q_REFUND_REQUESTS, Q_ALL_SHIFT_RECONCILIATIONS,
   M_CREATE_SALE, M_CREATE_PENDING_SALE, M_COMPLETE_PENDING_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
   M_CREATE_BUDGET, M_UPDATE_BUDGET, M_DELETE_BUDGET,
@@ -778,14 +778,28 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       const cached = await getKV(cacheKey);
       if (cached?.length && requestId === salesRequestIdRef.current) setSales(cached);
 
-      const data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED, {
+      const variables = {
         limit: dateFrom || dateTo ? 10000 : 500,
         offset: 0,
         branchId: branchId ?? undefined,
         dateFrom: dateFrom ?? undefined,
         dateTo: dateTo ?? undefined,
-      });
-      if (data.sales) {
+      };
+
+      let data: { sales: Sale[] } | null = null;
+      try {
+        data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED, variables);
+      } catch (e: any) {
+        const msg = (e?.message || '').toLowerCase();
+        if (msg.includes('cashamount') || msg.includes('momoamount')) {
+          console.warn('[store] API missing cashAmount/momoAmount; falling back to legacy sales query');
+          data = await gql<{ sales: Sale[] }>(Q_SALES_PAGINATED_LEGACY, variables);
+        } else {
+          throw e;
+        }
+      }
+
+      if (data?.sales) {
         if (requestId === salesRequestIdRef.current) setSales(data.sales);
         await saveKV(cacheKey, data.sales);
       }

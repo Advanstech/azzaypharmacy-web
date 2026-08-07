@@ -221,6 +221,22 @@ export const Q_SALES_PAGINATED = `
   }
 `;
 
+export const Q_SALES_PAGINATED_LEGACY = `
+  query GetSalesPaginatedLegacy($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String) {
+    sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
+      id totalAmount amountPaid change paymentMethod
+      customerName customerPhone receiptNo subtotal discountAmt discountReason
+      nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
+      customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
+      user { id name role }
+      items {
+        id quantity unitPrice total batchNo
+        product { id name category }
+      }
+    }
+  }
+`;
+
 export const Q_LOGIN_STAFF = `
   query GetLoginStaff {
     loginStaff {
