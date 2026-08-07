@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useEffect, useState, ReactNode } from 'react';
 import { gql, setAuthToken } from '@/lib/gql';
 
 interface CustomAuthContextType {
@@ -186,13 +186,43 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     localStorage.removeItem('auth_token');
     setAuthToken(null);
     setUser(null);
     setSession(null);
     window.location.href = '/';
-  };
+  }, []);
+
+  // Auto sign-out after 30 minutes of inactivity
+  useEffect(() => {
+    if (typeof window === 'undefined' || !user) return;
+
+    const IDLE_TIMEOUT = 30 * 60 * 1000;
+    const THROTTLE = 1000;
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click', 'wheel'];
+
+    let idleTimer: ReturnType<typeof setTimeout>;
+    let lastReset = 0;
+
+    const resetTimer = () => {
+      const now = Date.now();
+      if (now - lastReset < THROTTLE) return;
+      lastReset = now;
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        signOut();
+      }, IDLE_TIMEOUT);
+    };
+
+    resetTimer();
+    events.forEach(event => window.addEventListener(event, resetTimer));
+
+    return () => {
+      clearTimeout(idleTimer);
+      events.forEach(event => window.removeEventListener(event, resetTimer));
+    };
+  }, [user, signOut]);
 
   return (
     <CustomAuthContext.Provider value={{ user, session, loading, signIn, requestLoginToken, verifyLoginToken, signOut }}>

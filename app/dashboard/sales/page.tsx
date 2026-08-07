@@ -25,6 +25,7 @@ const PAYMENT_METHODS = {
   CARD: { label: 'Card', color: '#8B5CF6', icon: '💳' },
   NHIS: { label: 'NHIS', color: '#F59E0B', icon: '🏥' },
   CREDIT: { label: 'Credit', color: '#EF4444', icon: '💰' },
+  SPLIT: { label: 'Split Payment', color: '#EC4899', icon: '⚡' },
 };
 
 const SALES_METRICS = {
@@ -641,11 +642,10 @@ export default function EnhancedSalesPage() {
     const totalTransactions = periodSales.length;
     const averageTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
     
-    // Payment method breakdown
+    // Payment method breakdown (split shown as its own method)
     const paymentBreakdown = periodSales.reduce((acc, sale) => {
       if (sale.paymentMethod === 'SPLIT') {
-        acc['CASH'] = (acc['CASH'] || 0) + (sale.cashAmount || 0);
-        acc['MOMO'] = (acc['MOMO'] || 0) + (sale.momoAmount || 0);
+        acc['SPLIT'] = (acc['SPLIT'] || 0) + sale.totalAmount;
       } else {
         acc[sale.paymentMethod] = (acc[sale.paymentMethod] || 0) + sale.totalAmount;
       }

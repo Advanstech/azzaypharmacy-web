@@ -17,7 +17,7 @@ import { BranchBanner } from '@/components/BranchBanner';
 
 export default function EndOfDayDashboardPage() {
   const { theme, resolvedTheme } = useTheme();
-  const { user } = useCustomAuth();
+  const { user, signOut } = useCustomAuth();
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { closeTerminal, todaySales, todayRevenue, todayTransactions, me, staff } = useStore();
@@ -121,6 +121,11 @@ export default function EndOfDayDashboardPage() {
       setReport(result);
       setSubmitted(true);
       await fetchPastShifts();
+      // Security: sign out shortly after a successful submission
+      setTimeout(async () => {
+        await signOut();
+        router.push('/');
+      }, 1500);
     } catch (e: any) {
       setReport({
         cashierName: me?.name || user?.email || 'Staff',
