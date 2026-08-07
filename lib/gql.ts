@@ -299,8 +299,8 @@ export const Q_STAFF = `
 `;
 
 export const Q_STAFF_ACTIVITIES = `
-  query GetStaffActivities($userId: ID!) {
-    staffActivities(userId: $userId) {
+  query GetStaffActivities($userId: ID!, $startDate: String, $endDate: String) {
+    staffActivities(userId: $userId, startDate: $startDate, endDate: $endDate) {
       items {
         id type description timestamp amount details source
       }

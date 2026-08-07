@@ -333,11 +333,17 @@ export default function StaffDetailPage() {
     if (!mounted || !staffId) return;
     let cancelled = false;
 
+    const today = new Date().toISOString().split('T')[0];
+    const startOfDay = `${today}T00:00:00.000Z`;
+    const endOfDay = `${today}T23:59:59.999Z`;
+
     const fetchActivities = async () => {
       setLoadingActivities(true);
       try {
         const data = await gql<{ staffActivities: StaffActivitiesResponse }>(Q_STAFF_ACTIVITIES, { 
-          userId: staffId 
+          userId: staffId,
+          startDate: startOfDay,
+          endDate: endOfDay,
         });
         if (!cancelled) {
           setBackendActivities(
@@ -374,7 +380,8 @@ export default function StaffDetailPage() {
   const staff = liveStaffMember ?? STAFF.find(s => s.id === staffId);
   
   const liveActivities = useMemo(() => {
-    const staffSales = sales.filter(s => s.cashierId === staffId || s.user?.id === staffId);
+    const today = new Date().toISOString().split('T')[0];
+    const staffSales = sales.filter(s => (s.cashierId === staffId || s.user?.id === staffId) && new Date(s.createdAt).toISOString().split('T')[0] === today);
     return staffSales.map(sale => ({
       id: sale.id,
       type: 'sale' as const,
