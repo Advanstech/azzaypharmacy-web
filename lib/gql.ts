@@ -626,6 +626,14 @@ export const M_UPDATE_DUTY_STATUS = `
   }
 `;
 
+export const M_RECORD_STAFF_LOGOUT = `
+  mutation RecordStaffLogout($userId: ID!) {
+    recordStaffLogout(userId: $userId) {
+      id isOnDuty lastSeen
+    }
+  }
+`;
+
 export const M_UPDATE_PRODUCT_PRICES = `
   mutation UpdateProductPrices($productId: ID!, $costPrice: Float!, $sellingPrice: Float!, $purchaseItemId: ID) {
     updateProductPrices(productId: $productId, costPrice: $costPrice, sellingPrice: $sellingPrice, purchaseItemId: $purchaseItemId) {
