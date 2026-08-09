@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useCallback, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import { gql, setAuthToken, M_RECORD_STAFF_LOGOUT } from '@/lib/gql';
 
 interface CustomAuthContextType {
@@ -51,6 +51,11 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
@@ -188,9 +193,10 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     // Record logout and set off-duty in staff activity log before clearing token
+    const currentUserId = userRef.current?.id;
     try {
-      if (user?.id) {
-        await gql(M_RECORD_STAFF_LOGOUT, { userId: user.id });
+      if (currentUserId) {
+        await gql(M_RECORD_STAFF_LOGOUT, { userId: currentUserId });
       }
     } catch (_) {}
 

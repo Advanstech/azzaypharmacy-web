@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
-import { useStore } from '@/lib/store';
+import { useStore, Product } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
@@ -21,7 +21,26 @@ export default function StockLevelReportPage() {
 
   const { products: allProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const products = useMemo(() => activeBranchId ? allProducts.filter(p => p.branchId === activeBranchId) : allProducts, [allProducts, activeBranchId]);
+  const products = useMemo(() => {
+    if (!activeBranchId) return allProducts;
+    return allProducts.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId));
+  }, [allProducts, activeBranchId]);
+
+  const branchStock = (p: Product) => activeBranchId
+    ? (p.stockItems || []).filter(si => si.branchId === activeBranchId).reduce((sum, si) => sum + si.quantity, 0)
+    : p.stockQuantity;
+
+  const branchStockValue = (p: Product) => {
+    const items = activeBranchId
+      ? (p.stockItems || []).filter(si => si.branchId === activeBranchId)
+      : (p.stockItems || []);
+    return items.reduce((sum, si) => sum + Number(si.costPrice || 0) * si.quantity, 0);
+  };
+
+  const branchAvgCost = (p: Product) => {
+    const qty = branchStock(p);
+    return qty > 0 ? branchStockValue(p) / qty : p.costPrice;
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -53,9 +72,10 @@ export default function StockLevelReportPage() {
     
     if (statusFilter !== 'All') {
       filtered = filtered.filter(p => {
-        if (statusFilter === 'OK') return p.stockQuantity > 10;
-        if (statusFilter === 'LOW') return p.stockQuantity > 0 && p.stockQuantity <= 10;
-        if (statusFilter === 'OUT') return p.stockQuantity === 0;
+        const qty = branchStock(p);
+        if (statusFilter === 'OK') return qty > 10;
+        if (statusFilter === 'LOW') return qty > 0 && qty <= 10;
+        if (statusFilter === 'OUT') return qty === 0;
         return true;
       });
     }
@@ -64,8 +84,8 @@ export default function StockLevelReportPage() {
     filtered.sort((a, b) => {
       let comparison = 0;
       if (sortField === 'name') comparison = a.name.localeCompare(b.name);
-      else if (sortField === 'stock') comparison = a.stockQuantity - b.stockQuantity;
-      else if (sortField === 'value') comparison = (a.costPrice * a.stockQuantity) - (b.costPrice * b.stockQuantity);
+      else if (sortField === 'stock') comparison = branchStock(a) - branchStock(b);
+      else if (sortField === 'value') comparison = branchStockValue(a) - branchStockValue(b);
       return sortDirection === 'asc' ? comparison : -comparison;
     });
 
@@ -77,22 +97,32 @@ export default function StockLevelReportPage() {
   // Metrics
   const metrics = useMemo(() => {
     const totalProducts = products.length;
-    const totalStockValue = products.reduce((sum, p) => sum + (p.costPrice * p.stockQuantity), 0);
-    const totalRetailValue = products.reduce((sum, p) => sum + (p.sellingPrice * p.stockQuantity), 0);
-    const lowStock = products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 10).length;
-    const outOfStock = products.filter(p => p.stockQuantity === 0).length;
+    const totalStockValue = products.reduce((sum, p) => sum + branchStockValue(p), 0);
+    const totalRetailValue = products.reduce((sum, p) => sum + (p.sellingPrice * branchStock(p)), 0);
+    const lowStock = products.filter(p => { const q = branchStock(p); return q > 0 && q <= 10; }).length;
+    const outOfStock = products.filter(p => branchStock(p) === 0).length;
     const potentialProfit = totalRetailValue - totalStockValue;
-    
+
     return { totalProducts, totalStockValue, totalRetailValue, lowStock, outOfStock, potentialProfit };
-  }, [products]);
+  }, [products, activeBranchId]);
 
   const handleExport = () => {
-    const rows = filteredProducts.map(p => [
-      p.name, p.category, p.dosageForm || 'N/A', p.stockQuantity,
-      p.costPrice, (p.costPrice * p.stockQuantity),
-      p.sellingPrice, (p.sellingPrice * p.stockQuantity),
-      p.stockQuantity === 0 ? 'OUT OF STOCK' : p.stockQuantity <= 10 ? 'LOW STOCK' : 'OK',
-    ]);
+    const sorted = [...filteredProducts].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    const rows = sorted.map(p => {
+      const qty = branchStock(p);
+      const totalCost = branchStockValue(p);
+      const unitCost = branchAvgCost(p);
+      const totalRetail = p.sellingPrice * qty;
+      return [
+        p.name, p.category, p.supplier?.name || 'N/A', p.dosageForm || 'N/A', qty,
+        unitCost, totalCost, p.sellingPrice, totalRetail,
+        qty === 0 ? 'OUT OF STOCK' : qty <= 10 ? 'LOW STOCK' : 'OK',
+      ];
+    });
+
+    const lowStockPct = metrics.totalProducts ? ((metrics.lowStock / metrics.totalProducts) * 100).toFixed(1) : '0.0';
+    const outOfStockPct = metrics.totalProducts ? ((metrics.outOfStock / metrics.totalProducts) * 100).toFixed(1) : '0.0';
+
     exportToExcel({
       filename: `stock-level-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
       title: 'Stock Level Report',
@@ -103,12 +133,16 @@ export default function StockLevelReportPage() {
         { label: 'Total Stock Value', value: `GH₵ ${metrics.totalStockValue.toFixed(2)}` },
         { label: 'Total Retail Value', value: `GH₵ ${metrics.totalRetailValue.toFixed(2)}` },
         { label: 'Low Stock', value: metrics.lowStock },
+        { label: 'Low Stock %', value: `${lowStockPct}%` },
         { label: 'Out of Stock', value: metrics.outOfStock },
+        { label: 'Out of Stock %', value: `${outOfStockPct}%` },
+        { label: 'Potential Profit', value: `GH₵ ${metrics.potentialProfit.toFixed(2)}` },
       ],
-      headers: ['Product', 'Category', 'Dosage Form', 'Stock Qty', 'Unit Cost', 'Total Cost', 'Unit Price', 'Total Retail', 'Status'],
+      headers: ['Product', 'Category', 'Supplier', 'Dosage Form', 'Stock Qty', 'Unit Cost', 'Total Cost', 'Unit Price', 'Total Retail', 'Status'],
       rows,
-      currencyColumns: [4, 5, 6, 7],
-      numberColumns: [3],
+      currencyColumns: [5, 6, 7, 8],
+      numberColumns: [4],
+      statusColumn: 9,
       sheetName: 'Stock Levels',
     });
   };
@@ -244,6 +278,7 @@ export default function StockLevelReportPage() {
                   </button>
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Category</th>
+                <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Supplier</th>
                 <th className="px-4 py-3 text-center">
                   <button onClick={() => handleSort('stock')} className="flex items-center gap-1 text-xs font-bold uppercase mx-auto" style={{ color: card.subtle }}>
                     Stock <ArrowUpDown size={12} />
@@ -260,7 +295,8 @@ export default function StockLevelReportPage() {
             </thead>
             <tbody>
               {paginatedProducts.map((product) => {
-                const status = getStatusBadge(product.stockQuantity);
+                const qty = branchStock(product);
+                const status = getStatusBadge(qty);
                 return (
                   <tr key={product.id} className="border-t" style={{ borderColor: card.border }}>
                     <td className="px-4 py-3">
@@ -268,14 +304,15 @@ export default function StockLevelReportPage() {
                       <p className="text-xs" style={{ color: card.subtle }}>{product.dosageForm || 'N/A'}</p>
                     </td>
                     <td className="px-4 py-3 text-sm" style={{ color: card.text }}>{product.category}</td>
+                    <td className="px-4 py-3 text-sm" style={{ color: card.text }}>{product.supplier?.name || 'N/A'}</td>
                     <td className="px-4 py-3 text-center font-mono font-bold" style={{ color: card.text }}>
-                      {product.stockQuantity}
+                      {qty}
                     </td>
                     <td className="px-4 py-3 text-right font-mono" style={{ color: card.text }}>
-                      GH₵ {product.costPrice.toFixed(2)}
+                      GH₵ {branchAvgCost(product).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-right font-mono font-bold" style={{ color: card.text }}>
-                      GH₵ {(product.costPrice * product.stockQuantity).toFixed(2)}
+                      GH₵ {branchStockValue(product).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className="text-xs font-bold px-2 py-1 rounded" 

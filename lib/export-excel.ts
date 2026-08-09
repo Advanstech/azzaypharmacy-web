@@ -43,6 +43,8 @@ export interface ExcelExportOptions {
   sheetName?: string;
   /** Optional row indices (relative to `rows`, 0-based) to render as bold "total" rows */
   totalRowIndices?: number[];
+  /** 0-based column index for status labels (OK/LOW/OUT OF STOCK) to color-code cells */
+  statusColumn?: number;
 }
 
 const HEADER_FILL = 'FF0EA5E9';
@@ -74,6 +76,7 @@ export function exportToExcel(opts: ExcelExportOptions) {
     percentColumns = [],
     sheetName = 'Report',
     totalRowIndices = [],
+    statusColumn,
   } = opts;
 
   const colCount = headers.length;
@@ -213,6 +216,20 @@ export function exportToExcel(opts: ExcelExportOptions) {
       } else if (ri % 2 === 1) {
         baseStyle.fill = { patternType: 'solid', fgColor: { rgb: 'FFF8FAFC' } };
       }
+      if (c === statusColumn && cell.v !== undefined && cell.v !== null) {
+        const v = String(cell.v).toUpperCase();
+        if (v.includes('OUT')) {
+          baseStyle.font = { bold: true, color: { rgb: 'FFEF4444' } };
+          baseStyle.fill = { patternType: 'solid', fgColor: { rgb: 'FFFEE2E2' } };
+        } else if (v.includes('LOW')) {
+          baseStyle.font = { bold: true, color: { rgb: 'FFF59E0B' } };
+          baseStyle.fill = { patternType: 'solid', fgColor: { rgb: 'FFFEF3C7' } };
+        } else if (v.includes('OK')) {
+          baseStyle.font = { bold: true, color: { rgb: 'FF10B981' } };
+          baseStyle.fill = { patternType: 'solid', fgColor: { rgb: 'FFD1FAE5' } };
+        }
+      }
+
       setCellStyle(rowIndex, c, baseStyle);
     }
   });

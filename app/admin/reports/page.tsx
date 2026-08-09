@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useStore } from '@/lib/store';
+import { useStore, Product } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday, getEffectiveDateRange } from '@/lib/effective-date';
@@ -34,7 +34,21 @@ export default function ReportsPage() {
 
   // Branch-scoped data — "All Branches" (activeBranchId === null) shows everything
   const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
-  const products = useMemo(() => activeBranchId ? allProducts.filter(p => p.branchId === activeBranchId) : allProducts, [allProducts, activeBranchId]);
+  const products = useMemo(() => {
+    if (!activeBranchId) return allProducts;
+    return allProducts.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId));
+  }, [allProducts, activeBranchId]);
+
+  const branchStock = (p: Product) => activeBranchId
+    ? (p.stockItems || []).filter(si => si.branchId === activeBranchId).reduce((sum, si) => sum + si.quantity, 0)
+    : p.stockQuantity;
+
+  const branchStockValue = (p: Product) => {
+    const items = activeBranchId
+      ? (p.stockItems || []).filter(si => si.branchId === activeBranchId)
+      : (p.stockItems || []);
+    return items.reduce((sum, si) => sum + Number(si.costPrice || 0) * si.quantity, 0);
+  };
   const staff = useMemo(() => activeBranchId ? allStaff.filter(s => s.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
   const expenses = useMemo(() => activeBranchId ? allExpenses.filter(e => e.branchId === activeBranchId) : allExpenses, [allExpenses, activeBranchId]);
 
@@ -87,19 +101,19 @@ export default function ReportsPage() {
   }, [sales]);
   const monthlyRevenue = useMemo(() => monthlySales.reduce((sum, s) => sum + s.totalAmount, 0), [monthlySales]);
 
-  const lowStock = useMemo(() => products.filter(p => p.stockQuantity <= 10 && p.stockQuantity > 0), [products]);
-  const outOfStock = useMemo(() => products.filter(p => p.stockQuantity === 0), [products]);
+  const lowStock = useMemo(() => products.filter(p => { const q = branchStock(p); return q <= 10 && q > 0; }), [products, activeBranchId]);
+  const outOfStock = useMemo(() => products.filter(p => branchStock(p) === 0), [products, activeBranchId]);
   const expiringItems = useMemo(() => {
     const thirtyDaysFromNow = new Date();
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     return products.filter(p => {
       return p.stockItems?.some(item => {
-        if (!item.expiryDate) return false;
+        if (!item.expiryDate || (activeBranchId && item.branchId !== activeBranchId)) return false;
         const expiry = new Date(item.expiryDate);
         return expiry <= thirtyDaysFromNow && expiry >= new Date() && item.quantity > 0;
       });
     });
-  }, [products]);
+  }, [products, activeBranchId]);
   
   const totalRevenue = useMemo(() => sales.reduce((sum, s) => sum + s.totalAmount, 0), [sales]);
   const totalCogs = useMemo(() => {
@@ -292,12 +306,24 @@ export default function ReportsPage() {
       lastGenerated: today,
       detailPath: '/admin/reports/inventory/stock',
       onExport: () => {
-        const rows = products.map(p => [
-          p.name, p.category, p.dosageForm || 'N/A', p.stockQuantity,
-          p.costPrice, p.sellingPrice, (p.costPrice * p.stockQuantity),
-          p.stockQuantity === 0 ? 'OUT OF STOCK' : p.stockQuantity <= 10 ? 'LOW STOCK' : 'OK',
-        ]);
-        const totalStockValue = products.reduce((sum, p) => sum + (p.costPrice * p.stockQuantity), 0);
+        const sorted = [...products].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+        const rows = sorted.map(p => {
+          const qty = branchStock(p);
+          const stockValue = branchStockValue(p);
+          const avgCost = qty > 0 ? stockValue / qty : p.costPrice;
+          return [
+            p.name, p.category, p.supplier?.name || 'N/A', p.dosageForm || 'N/A', qty,
+            avgCost, p.sellingPrice, stockValue,
+            qty === 0 ? 'OUT OF STOCK' : qty <= 10 ? 'LOW STOCK' : 'OK',
+          ];
+        });
+
+        const totalStockValue = products.reduce((sum, p) => sum + branchStockValue(p), 0);
+        const totalRetailValue = products.reduce((sum, p) => sum + (p.sellingPrice * branchStock(p)), 0);
+        const potentialProfit = totalRetailValue - totalStockValue;
+        const lowStockPct = products.length ? ((lowStock.length / products.length) * 100).toFixed(1) : '0.0';
+        const outOfStockPct = products.length ? ((outOfStock.length / products.length) * 100).toFixed(1) : '0.0';
+
         exportToExcel({
           filename: `stock-level-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${today}`,
           title: 'Stock Level Report',
@@ -306,13 +332,18 @@ export default function ReportsPage() {
           summary: [
             { label: 'Total Products', value: products.length },
             { label: 'Total Stock Value', value: `GH₵ ${totalStockValue.toFixed(2)}` },
+            { label: 'Total Retail Value', value: `GH₵ ${totalRetailValue.toFixed(2)}` },
             { label: 'Low Stock', value: lowStock.length },
+            { label: 'Low Stock %', value: `${lowStockPct}%` },
             { label: 'Out of Stock', value: outOfStock.length },
+            { label: 'Out of Stock %', value: `${outOfStockPct}%` },
+            { label: 'Potential Profit', value: `GH₵ ${potentialProfit.toFixed(2)}` },
           ],
-          headers: ['Product', 'Category', 'Dosage Form', 'Stock Qty', 'Cost Price', 'Sell Price', 'Stock Value', 'Status'],
+          headers: ['Product', 'Category', 'Supplier', 'Dosage Form', 'Stock Qty', 'Avg Cost', 'Sell Price', 'Stock Value', 'Status'],
           rows,
-          currencyColumns: [4, 5, 6],
+          currencyColumns: [5, 6, 7],
           numberColumns: [3],
+          statusColumn: 8,
           sheetName: 'Stock Levels',
         });
       },

@@ -164,7 +164,7 @@ export const Q_PRODUCTS = `
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
       updatedAt
       supplier { id name }
-      stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
+      stockItems { id branchId batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
 `;
@@ -448,13 +448,19 @@ export const M_COMPLETE_PENDING_SALE = `
       momoAmount: $momoAmount
     ) {
       id totalAmount amountPaid change paymentMethod cashAmount momoAmount receiptNo status customerName customerPhone
-      createdAt
+      notes createdAt
       user { id name role }
       items {
         id quantity unitPrice total batchNo
         product { id name category }
       }
     }
+  }
+`;
+
+export const M_CANCEL_PENDING_SALE = `
+  mutation CancelPendingSale($saleId: String!) {
+    cancelPendingSale(saleId: $saleId)
   }
 `;
 

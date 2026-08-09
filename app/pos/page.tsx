@@ -63,6 +63,7 @@ function POSInner() {
     createSale, 
     createPendingSale,
     completePendingSale,
+    cancelPendingSale,
     createCustomer,
     me,
     loadingProducts,
@@ -316,6 +317,7 @@ function POSInner() {
             <span>Customer:</span>
             <span>${sale.customer?.name || selectedCustomer?.name || 'Walk-in'}</span>
           </div>
+          ${sale.notes === 'CONVERTED_FROM_PENDING' ? `<div style="text-align:center;background:#000;color:#fff;font-size:12px;font-weight:900;padding:6px 0;margin:8px 0;text-transform:uppercase;">From Pending Hold</div>` : ''}
 
           <div class="divider"></div>
 
@@ -677,6 +679,23 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     setResumedPendingId(sale.id);
     setShowPendingPanel(false);
     setTendered('');
+  };
+
+  const handleCancelPendingSale = async (saleId: string) => {
+    if (!confirm('Cancel this pending sale? It will be permanently removed.')) return;
+    try {
+      await cancelPendingSale(saleId);
+      if (resumedPendingId === saleId) {
+        setResumedPendingId(null);
+        setCart([]);
+        setTendered('');
+        setSelectedCustomer(null);
+      }
+      fetchPendingSales();
+    } catch (err: any) {
+      console.error('Cancel pending sale failed:', err);
+      alert(`Failed to cancel pending sale: ${err.message || 'Unknown error'}`);
+    }
   };
 
   const [pendingSales, setPendingSales] = useState<any[]>([]);
@@ -1922,6 +1941,11 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                   ✓ SYNCED TO SERVER
                 </div>
               )}
+              {completedSale.notes === 'CONVERTED_FROM_PENDING' && (
+                <div className="mt-3 px-3 py-2 rounded-lg bg-amber-500/20 border border-amber-500/50 text-[10px] font-bold text-amber-200 print:hidden">
+                  ⏸️ FROM PENDING HOLD
+                </div>
+              )}
             </div>
 
             <div className="p-6 space-y-4 print:p-3 print:space-y-3">
@@ -2176,13 +2200,22 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                 <div className="flex items-center gap-2 text-[10px]" style={{ color: c.muted }}>
                   <span>{new Date(sale.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
                 </div>
-                <button
-                  onClick={() => resumePendingSale(sale)}
-                  className="w-full mt-3 py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-2"
-                  style={{ background: c.primary }}
-                >
-                  <ShoppingCart size={14} /> Resume Sale
-                </button>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => resumePendingSale(sale)}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-2"
+                    style={{ background: c.primary }}
+                  >
+                    <ShoppingCart size={14} /> Resume Sale
+                  </button>
+                  <button
+                    onClick={() => handleCancelPendingSale(sale.id)}
+                    className="px-3 py-2 rounded-xl text-xs font-bold text-red-400 border border-red-400/30 hover:bg-red-400/10 flex items-center justify-center"
+                    title="Cancel pending sale"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))
           )}

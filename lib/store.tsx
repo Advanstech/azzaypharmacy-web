@@ -13,7 +13,7 @@ import {
   gql, setAuthToken,
   Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_SALES_PAGINATED_LEGACY, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_FINANCIAL_SUMMARY, Q_BUDGETS, Q_BUDGET_VS_ACTUAL, Q_INVOICES, Q_REFUND_REQUESTS, Q_ALL_SHIFT_RECONCILIATIONS,
-  M_CREATE_SALE, M_CREATE_PENDING_SALE, M_COMPLETE_PENDING_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
+  M_CREATE_SALE, M_CREATE_PENDING_SALE, M_COMPLETE_PENDING_SALE, M_CANCEL_PENDING_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
   M_CREATE_BUDGET, M_UPDATE_BUDGET, M_DELETE_BUDGET,
   M_UPDATE_STAFF_PROFILE, M_UPDATE_DUTY_STATUS, M_GENERATE_TEMP_PASSWORD, M_DELETE_STAFF,
   M_UPDATE_PRODUCT_PRICES, M_BULK_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
@@ -30,6 +30,7 @@ import { initTauriSync, manualSync } from './tauri-sync';
 
 export interface StockItem {
   id: string;
+  branchId: string;
   batchNo: string;
   expiryDate: string;
   quantity: number;
@@ -515,6 +516,8 @@ interface StoreState {
     cashAmount?: number;
     momoAmount?: number;
   }) => Promise<Sale>;
+
+  cancelPendingSale: (saleId: string) => Promise<boolean>;
 
   closeTerminal: (physicalCash?: number, digitalPayments?: number, notes?: string) => Promise<TerminalReport>;
 
@@ -1327,6 +1330,20 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     return sale;
   }, [me, refetchSales, refetchProducts, refetchLedger]);
 
+  const cancelPendingSale = useCallback(async (saleId: string): Promise<boolean> => {
+    if (!me) throw new Error('Not authenticated');
+
+    await gql<{ cancelPendingSale: boolean }>(M_CANCEL_PENDING_SALE, { saleId });
+
+    setSales(prev => prev.filter(s => s.id !== saleId));
+
+    setTimeout(() => {
+      refetchSales().catch(() => { });
+    }, 500);
+
+    return true;
+  }, [me, refetchSales]);
+
   const closeTerminal = useCallback(async (physicalCash?: number, digitalPayments?: number, notes?: string): Promise<TerminalReport> => {
     if (!me) throw new Error('Not authenticated');
     const data = await gql<{ closeTerminal: TerminalReport }>(M_CLOSE_TERMINAL, {
@@ -1687,7 +1704,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       stockMovements,
       refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers,
       refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
-      createSale, createPendingSale, completePendingSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
+      createSale, createPendingSale, completePendingSale, cancelPendingSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, bulkUpdateProductPrices, updateProductFull,
       updateProductSupplier,
       bulkUpdateProductSupplier,

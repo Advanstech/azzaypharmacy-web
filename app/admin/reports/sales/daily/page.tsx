@@ -114,6 +114,7 @@ export default function DailySalesReportPage() {
         s.customerPhone || 'N/A',
         s.items.reduce((sum, i) => sum + i.quantity, 0),
         s.paymentMethod,
+        s.notes === 'CONVERTED_FROM_PENDING' ? 'Pending Hold' : 'Direct',
         (s.subtotal || s.totalAmount),
         (s.discountAmt || 0),
         s.totalAmount,
@@ -131,9 +132,9 @@ export default function DailySalesReportPage() {
         { label: 'Transactions', value: metrics.totalTransactions },
         { label: 'Total Profit', value: `GH₵ ${metrics.totalProfit.toFixed(2)}` },
       ],
-      headers: ['Date', 'Sale ID', 'Customer', 'Phone', 'Items', 'Payment', 'Subtotal', 'Discount', 'Total', 'Profit', 'Cashier'],
+      headers: ['Date', 'Sale ID', 'Customer', 'Phone', 'Items', 'Payment', 'Origin', 'Subtotal', 'Discount', 'Total', 'Profit', 'Cashier'],
       rows,
-      currencyColumns: [6, 7, 8, 9],
+      currencyColumns: [7, 8, 9, 10],
       numberColumns: [4],
       sheetName: 'Daily Sales',
     });
@@ -268,6 +269,7 @@ export default function DailySalesReportPage() {
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Staff</th>
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Items</th>
                 <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Payment</th>
+                <th className="px-5 py-4 text-left text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Origin</th>
                 <th className="px-5 py-4 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Total</th>
                 <th className="px-5 py-4 text-right text-[10px] font-black uppercase tracking-widest" style={{ color: card.subtle }}>Profit</th>
               </tr>
@@ -313,6 +315,17 @@ export default function DailySalesReportPage() {
                         </span>
                       )}
                     </td>
+                    <td className="px-5 py-4">
+                      {sale.notes === 'CONVERTED_FROM_PENDING' ? (
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md" style={{ background: 'rgba(245,158,11,0.15)', color: '#F59E0B' }}>
+                          Pending Hold
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-md" style={{ background: card.primaryBg, color: card.primary }}>
+                          Direct
+                        </span>
+                      )}
+                    </td>
                     <td className="px-5 py-4 text-right font-mono text-sm font-black" style={{ color: card.text }}>
                       GH₵ {sale.totalAmount.toFixed(2)}
                     </td>
@@ -324,7 +337,7 @@ export default function DailySalesReportPage() {
               })}
               {paginatedSales.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-sm font-bold" style={{ color: card.muted }}>
+                  <td colSpan={9} className="px-5 py-8 text-center text-sm font-bold" style={{ color: card.muted }}>
                     No sales found for this date.
                   </td>
                 </tr>
