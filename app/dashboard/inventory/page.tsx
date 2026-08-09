@@ -15,6 +15,7 @@ import { useStore } from '@/lib/store';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE, M_REPAIR_STOCK_BRANCHES } from '@/lib/gql';
+import { exportToExcel } from '@/lib/export-excel';
 import { useToast } from '@/components/pharma-toast';
 import { useBranchFilter, useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -396,6 +397,58 @@ export default function InventoryPage() {
   const lowCount = products.filter((p: any) => p.status === 'LOW').length;
   const outCount = products.filter((p: any) => p.status === 'OUT').length;
   const potentialProfit = retailValue - totalValue;
+
+  const handleExport = () => {
+    const exportProducts = [...filteredProducts].sort((a: any, b: any) => a.name.localeCompare(b.name));
+    const rows = exportProducts.map((p: any) => {
+      const stock = Number(p.stock || 0);
+      const unitCost = Number(p.cost || 0);
+      const unitPrice = Number(p.price || 0);
+      const totalCost = stock * unitCost;
+      const totalRetail = stock * unitPrice;
+      return [
+        p.name,
+        p.genericName || '',
+        p.cat || '',
+        p.medClass || '',
+        stock,
+        unitCost,
+        totalCost,
+        unitPrice,
+        totalRetail,
+        suppliers.find((s: any) => s.id === p.supplierId)?.name || 'Direct / Unknown',
+        p.status || 'OK',
+      ];
+    });
+
+    const totalCostValue = exportProducts.reduce((sum: number, p: any) => sum + (Number(p.stock || 0) * Number(p.cost || 0)), 0);
+    const totalRetailValue = exportProducts.reduce((sum: number, p: any) => sum + (Number(p.stock || 0) * Number(p.price || 0)), 0);
+    const low = exportProducts.filter((p: any) => p.status === 'LOW').length;
+    const out = exportProducts.filter((p: any) => p.status === 'OUT').length;
+
+    exportToExcel({
+      filename: `inventory-export-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}`,
+      title: 'Inventory & Stock Management',
+      subtitle: 'Azzay Pharmacy — Product Stock, Valuation and Status',
+      meta: [{ label: 'Branch', value: activeBranchName }],
+      summary: [
+        { label: 'Total Products', value: exportProducts.length },
+        { label: 'Total Cost Value', value: `GH₵ ${totalCostValue.toFixed(2)}` },
+        { label: 'Total Retail Value', value: `GH₵ ${totalRetailValue.toFixed(2)}` },
+        { label: 'Potential Profit', value: `GH₵ ${(totalRetailValue - totalCostValue).toFixed(2)}` },
+        { label: 'Low Stock', value: low },
+        { label: 'Out of Stock', value: out },
+      ],
+      headers: ['Product', 'Generic Name', 'Category', 'Med Class', 'Stock Qty', 'Unit Cost', 'Total Cost', 'Unit Price', 'Total Retail', 'Supplier', 'Status'],
+      rows,
+      currencyColumns: [5, 6, 7, 8],
+      numberColumns: [4],
+      statusColumn: 10,
+      sheetName: 'Inventory',
+    });
+
+    addToast?.({ type: 'success', title: 'Export Complete', message: `${exportProducts.length} products exported to Excel` });
+  };
 
   // Real data sync on mount and whenever the active branch changes
   useEffect(() => {
@@ -1386,33 +1439,11 @@ export default function InventoryPage() {
         </div>
         <div className="flex gap-2">
           <button 
-            onClick={() => {
-              // Export products to CSV
-              const rows = [
-                ['Name', 'Generic Name', 'Category', 'Dosage Form', 'Strength', 'Stock', 'Cost Price', 'Selling Price', 'Supplier', 'Status'],
-                ...products.map((p: any) => [
-                  p.name, p.genericName || '', p.category, p.dosageForm || '', p.strength || '',
-                  String(p.stock || p.stockQuantity || 0),
-                  String(p.costPrice || p.cost || 0),
-                  String(p.sellingPrice || p.price || 0),
-                  suppliers.find((s: any) => s.id === p.supplierId)?.name || 'N/A',
-                  p.status || 'OK'
-                ])
-              ];
-              const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `inventory-export-${new Date().toISOString().split('T')[0]}.csv`;
-              a.click();
-              URL.revokeObjectURL(url);
-              addToast?.({ type: 'success', title: 'Export Complete', message: `${products.length} products exported to CSV` });
-            }}
+            onClick={handleExport}
             className="flex items-center gap-2 px-3 py-2.5 rounded-xl font-bold text-sm"
             style={{ background: card.bg, color: card.text, border: `1px solid ${card.border}` }}
           >
-            <FileText size={16} />
+            <Download size={16} />
             Export
           </button>
           <button
