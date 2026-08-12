@@ -11,6 +11,7 @@ import {
   Printer, Share2,
 } from 'lucide-react';
 import { useStore, type StockTransfer, type Product, type Supplier } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
 import { gql } from '@/lib/gql';
 import {
   M_INITIATE_TRANSFER, M_APPROVE_TRANSFER, M_REJECT_TRANSFER, M_DELETE_TRANSFER, Q_BRANCHES,
@@ -161,6 +162,7 @@ export default function StockTransferPage() {
     products, me, refetchProducts, refetchLedger, refetchPurchases, refetchInvoices,
     createProduct,
   } = useStore();
+  const { activeBranchId } = useBranch();
 
   // ── Branches ──────────────────────────────────────────────────────────────
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -172,7 +174,6 @@ export default function StockTransferPage() {
       const main = list.find(b => b.name.toLowerCase().includes('main'));
       if (main) setSourceBranchId(main.id);
     }).catch(() => {});
-    refetchTransfers();
   }, []);
 
   const isAdmin = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
@@ -183,6 +184,11 @@ export default function StockTransferPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+
+  // Refetch transfers whenever branch or date filters change
+  useEffect(() => {
+    refetchTransfers(activeBranchId, dateFrom, dateTo);
+  }, [activeBranchId, dateFrom, dateTo, refetchTransfers]);
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -316,8 +322,8 @@ export default function StockTransferPage() {
           transferPrice: l.transferPrice,
         })),
       });
-      await refetchTransfers();
-      setTimeout(() => refetchProducts(), 400);
+      await refetchTransfers(activeBranchId, dateFrom, dateTo);
+      setTimeout(() => refetchProducts(activeBranchId || undefined), 400);
       setShowCreate(false);
       setLineItems([]);
       setNotes('');
@@ -360,9 +366,9 @@ export default function StockTransferPage() {
       const res = await gql<any>(M_APPROVE_TRANSFER, { transferId: id });
       const updated = res?.approveTransfer;
       if (detailItem?.id === id) setDetailItem(p => p ? { ...p, status: 'APPROVED', approvedBy: updated?.approvedBy } : p);
-      await refetchTransfers();
+      await refetchTransfers(activeBranchId, dateFrom, dateTo);
       setTimeout(() => {
-        refetchProducts();
+        refetchProducts(activeBranchId || undefined);
         refetchLedger();
         refetchPurchases();
         refetchInvoices();
@@ -387,8 +393,8 @@ export default function StockTransferPage() {
     try {
       await gql<any>(M_DELETE_TRANSFER, { transferId: id });
       if (detailItem?.id === id) setDetailItem(null);
-      await refetchTransfers();
-      setTimeout(() => refetchProducts(), 400);
+      await refetchTransfers(activeBranchId, dateFrom, dateTo);
+      setTimeout(() => refetchProducts(activeBranchId || undefined), 400);
     } catch (err: any) {
       setErrorMsg('Delete failed — please try again.');
     } finally {
@@ -403,8 +409,8 @@ export default function StockTransferPage() {
       const res = await gql<any>(M_REJECT_TRANSFER, { transferId: id, reason: rejectReason || undefined });
       const updated = res?.rejectTransfer;
       if (detailItem?.id === id) setDetailItem(p => p ? { ...p, status: 'REJECTED', approvedBy: updated?.approvedBy } : p);
-      await refetchTransfers();
-      setTimeout(() => refetchProducts(), 400);
+      await refetchTransfers(activeBranchId, dateFrom, dateTo);
+      setTimeout(() => refetchProducts(activeBranchId || undefined), 400);
       setSuccessMsg('Transfer rejected — stock restored to source branch.');
     } catch (err: any) {
       setErrorMsg('Rejection failed — please try again.');
@@ -473,7 +479,7 @@ export default function StockTransferPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => refetchTransfers()}
+          <button onClick={() => refetchTransfers(activeBranchId, dateFrom, dateTo)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all"
             style={{ borderColor: c.border, color: c.muted, background: c.card }}>
             <RefreshCw size={13} /> Refresh

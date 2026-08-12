@@ -1211,8 +1211,8 @@ export const Q_NOTIFICATION_STATS = `
 // ─── Inter-Branch Stock Transfers ────────────────────────────────────────────
 
 export const Q_STOCK_TRANSFERS = `
-  query GetStockTransfers($branchId: String) {
-    stockTransfers(branchId: $branchId) {
+  query GetStockTransfers($branchId: String, $dateFrom: String, $dateTo: String) {
+    stockTransfers(branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
       id transferNo status notes transferDate totalCost transferPrice invoiceId purchaseId
       createdAt updatedAt
       sourceBranch { id name }

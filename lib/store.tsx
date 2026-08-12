@@ -482,7 +482,7 @@ interface StoreState {
   refetchShiftReconciliations: (branchId?: string | null) => Promise<void>;
   refetchLedger: () => Promise<void>;
   refetchExpenseCategories: () => Promise<void>;
-  refetchTransfers: () => Promise<void>;
+  refetchTransfers: (branchId?: string | null, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchFinancialSummary: (branchId?: string, startDate?: string, endDate?: string) => Promise<void>;
   refetchBudgets: (branchId?: string) => Promise<void>;
   refetchBudgetVsActual: (branchId?: string, startDate?: string, endDate?: string) => Promise<void>;
@@ -720,10 +720,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   // ── Fetchers ──────────────────────────────────────────────────────────────
 
-  const refetchTransfers = useCallback(async () => {
+  const refetchTransfers = useCallback(async (branchId?: string | null, dateFrom?: string, dateTo?: string) => {
     setLoadingTransfers(true);
     try {
-      const data = await gql<{ stockTransfers: StockTransfer[] }>(Q_STOCK_TRANSFERS);
+      const data = await gql<{ stockTransfers: StockTransfer[] }>(Q_STOCK_TRANSFERS, {
+        branchId: branchId ?? undefined,
+        dateFrom: dateFrom || undefined,
+        dateTo: dateTo || undefined,
+      });
       setStockTransfers(data.stockTransfers ?? []);
     } catch (e: any) {
       console.warn('[store] stockTransfers fetch failed:', e.message);
