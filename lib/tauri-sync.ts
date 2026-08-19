@@ -139,10 +139,22 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
         const errorMsg = err?.message || 'Unknown error';
         console.error(`[tauri-sync] ❌ Failed to sync sale ${sale.id}:`, errorMsg);
         
-        // If the error is about invalid data (e.g., product not found), delete the pending sale to prevent repeated errors
-        if (errorMsg.includes('not found') || errorMsg.includes('Invalid') || errorMsg.includes('GRAPHQL_VALIDATION')) {
-          console.warn(`[tauri-sync] Deleting invalid pending sale ${sale.id} due to data error`);
+        // Track retry count — only delete after MAX_RETRIES to prevent data loss
+        const MAX_RETRIES = 5;
+        const retryCount = ((sale as any)._retryCount || 0) + 1;
+        
+        if (retryCount >= MAX_RETRIES && (errorMsg.includes('not found') || errorMsg.includes('Invalid') || errorMsg.includes('GRAPHQL_VALIDATION'))) {
+          console.warn(`[tauri-sync] ⚠️ Retiring invalid pending sale ${sale.id} after ${retryCount} failed attempts`);
           await deletePendingSale(sale.id);
+        } else {
+          // Update the pending sale with retry count so we can track attempts
+          try {
+            const { savePendingSale } = await import('./offline');
+            await savePendingSale({ ...sale, _retryCount: retryCount, _lastError: errorMsg, _lastRetry: Date.now() } as any);
+          } catch (saveErr) {
+            console.warn(`[tauri-sync] Could not update retry count for sale ${sale.id}:`, saveErr);
+          }
+          console.warn(`[tauri-sync] Sale ${sale.id} retry ${retryCount}/${MAX_RETRIES} — will retry later`);
         }
       }
 

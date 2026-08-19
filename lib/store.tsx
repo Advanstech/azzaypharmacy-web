@@ -1187,7 +1187,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       // Save to IndexedDB with proper PendingSale structure for tauri-sync
       await savePendingSale({
         id: newSale.id,
-        items: args.items.map(i => ({ name: i.product.id, qty: i.quantity, price: i.product.sellingPrice })),
+        items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
         total: totalAmount,
         payment_method: args.paymentMethod,
         cashier_name: me?.name || 'Unknown',
