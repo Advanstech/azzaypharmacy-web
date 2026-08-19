@@ -90,6 +90,7 @@ export async function gql<T = unknown>(
           method: 'POST',
           headers,
           body: JSON.stringify({ query, variables }),
+          signal: AbortSignal.timeout(90_000),
         });
         res = maybeRes;
         usedApi = candidate;

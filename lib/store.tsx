@@ -1158,7 +1158,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           response: err?.response,
           stack: err?.stack
         });
-        // Fall through to offline path
+        throw err; // Re-throw to prevent generating a fake offline receipt
       }
     }
 
