@@ -994,7 +994,7 @@ export default function LoginPage() {
 
         setIsSuccessTransition(true);
         setTimeout(() => {
-          router.replace('/dashboard');
+          window.location.href = '/dashboard';
         }, 900);
       }
     } else {
@@ -1029,7 +1029,7 @@ export default function LoginPage() {
 
           setIsSuccessTransition(true);
           setTimeout(() => {
-            router.replace('/dashboard');
+            window.location.href = '/dashboard';
           }, 900);
         }
       }
@@ -1395,7 +1395,7 @@ export default function LoginPage() {
             email={email}
             currentPassword={password}
             isFirstTime={isFirstTimeLogin}
-            onSuccess={() => router.push('/dashboard')}
+            onSuccess={() => { window.location.href = '/dashboard'; }}
             isDark={isDark}
           />
         )}
