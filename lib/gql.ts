@@ -744,8 +744,8 @@ export const M_REPAIR_STOCK_BRANCHES = `
 `;
 
 export const Q_SEARCH_PRODUCTS = `
-  query SearchProducts($query: String!, $limit: Int) {
-    searchProducts(query: $query, limit: $limit) {
+  query SearchProducts($query: String!, $limit: Int, $branchId: String) {
+    searchProducts(query: $query, limit: $limit, branchId: $branchId) {
       id name genericName brand category
       strength dosageForm sellingPrice costPrice
       stockQuantity supplierId imageUrl

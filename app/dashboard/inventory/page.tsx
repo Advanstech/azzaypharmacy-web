@@ -277,7 +277,7 @@ export default function InventoryPage() {
   const hasResolvableSupplier = Boolean(invoiceSupplier || (createSupplierOnConfirm && invoiceSupplierDraft.trim()));
 
   const branchFilter = useBranchFilter();
-  const branchProducts = branchFilter(storeProducts);
+  const branchProducts = storeProducts;
   const { branches, canSwitchBranch, activeBranchId, activeBranchName } = useBranch();
 
   const branchPurchases = useMemo(() => branchFilter(purchases || []), [branchFilter, purchases]);
