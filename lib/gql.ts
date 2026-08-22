@@ -460,7 +460,7 @@ export const M_COMPLETE_PENDING_SALE = `
 `;
 
 export const M_CANCEL_PENDING_SALE = `
-  mutation CancelPendingSale($saleId: String!) {
+  mutation CancelPendingSale($saleId: ID!) {
     cancelPendingSale(saleId: $saleId)
   }
 `;
