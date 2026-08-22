@@ -313,7 +313,7 @@ export default function InvoicesPage() {
       return;
     }
 
-    const branchId = me?.branchId || '';
+    const branchId = activeBranchId || me?.branchId || '';
     if (!branchId) {
       addToast({
         type: 'error',
@@ -521,7 +521,7 @@ export default function InvoicesPage() {
       return;
     }
 
-    const branchId = me?.branchId || '';
+    const branchId = activeBranchId || me?.branchId || '';
     if (!branchId) {
       addToast({
         type: 'error',
@@ -593,7 +593,7 @@ export default function InvoicesPage() {
               stockQuantity: 0,
               supplierId: resolvedSupplierId,
               dosageForm: 'OTHER',
-              branchId: me?.branchId || undefined,
+              branchId: activeBranchId || me?.branchId || undefined,
             });
             resolvedProductId = createdProduct.id;
           }

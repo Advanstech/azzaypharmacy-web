@@ -290,7 +290,7 @@ export default function StockTransferPage() {
         costPrice: cost,
         sellingPrice: sell,
         stockQuantity: 0,
-        branchId: me?.branchId || undefined,
+        branchId: sourceBranchId || activeBranchId || me?.branchId || undefined,
       });
       resetQuickAdd();
       setProductSearch('');

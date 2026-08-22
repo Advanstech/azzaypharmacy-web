@@ -171,8 +171,8 @@ export const Q_PRODUCTS = `
 `;
 
 export const Q_PRODUCTS_BY_SUPPLIER = `
-  query GetProductsBySupplier($supplierId: String!) {
-    productsBySupplier(supplierId: $supplierId) {
+  query GetProductsBySupplier($supplierId: String!, $branchId: String) {
+    productsBySupplier(supplierId: $supplierId, branchId: $branchId) {
       id name genericName brand category sellingPrice costPrice
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
       stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }

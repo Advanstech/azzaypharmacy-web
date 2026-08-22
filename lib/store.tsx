@@ -580,7 +580,7 @@ interface StoreState {
   approveRefund: (requestId: string) => Promise<void>;
   rejectRefund: (requestId: string) => Promise<void>;
 
-  getProductsBySupplier: (supplierId: string) => Promise<Product[]>;
+  getProductsBySupplier: (supplierId: string, branchId?: string) => Promise<Product[]>;
 
   // Stock movements (local log derived from sales + purchases)
   stockMovements: StockMovement[];
@@ -739,9 +739,15 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchProducts = useCallback(async (branchId?: string) => {
     setLoadingProducts(true);
     try {
-      // Try cache first
+      // Try cache first. The IndexedDB products_cache store accumulates
+      // products across every branch ever viewed on this device (upsert-only,
+      // never pruned), so it must be filtered to the requested branch before
+      // being used as an instant paint — otherwise stale/other-branch stock
+      // levels flash (or persist if offline) alongside the real data.
       const cached = await getFromCache('products_cache');
-      if (cached?.length) setProducts(cached);
+      const cacheScopeBranchId = branchId || me?.branchId;
+      const scopedCached = cacheScopeBranchId ? cached.filter((p: any) => p.branchId === cacheScopeBranchId) : cached;
+      if (scopedCached?.length) setProducts(scopedCached);
 
       const data = await gql<{ products: Product[] }>(Q_PRODUCTS, { branchId: branchId || undefined });
       if (data.products) {
@@ -756,7 +762,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     } finally {
       setLoadingProducts(false);
     }
-  }, []);
+  }, [me?.branchId]);
 
   const refetchSuppliers = useCallback(async () => {
     setLoadingSuppliers(true);
@@ -1687,9 +1693,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [refetchProducts, refetchLedger, refetchSales]);
 
-  const getProductsBySupplier = useCallback(async (supplierId: string): Promise<Product[]> => {
+  const getProductsBySupplier = useCallback(async (supplierId: string, branchId?: string): Promise<Product[]> => {
     const data = await gql<{ productsBySupplier: Product[] }>(
-      Q_PRODUCTS_BY_SUPPLIER, { supplierId }
+      Q_PRODUCTS_BY_SUPPLIER, { supplierId, branchId: branchId || undefined }
     );
     return data.productsBySupplier ?? [];
   }, []);

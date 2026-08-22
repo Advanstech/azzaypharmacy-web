@@ -834,7 +834,7 @@ export default function InventoryPage() {
         stockQuantity: 0,
         supplierId: resolvedSupplierId,
         dosageForm: 'OTHER',
-        branchId: me?.branchId || undefined,
+        branchId: activeBranchId || me?.branchId || undefined,
       });
 
       setInvoiceItems(prev => prev.map(item => item.id === itemId

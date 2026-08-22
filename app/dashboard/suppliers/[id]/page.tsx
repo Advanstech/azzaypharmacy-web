@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
+import { useBranch } from '@/lib/branch-context';
 
 // Fallback suppliers if store is empty
 const FALLBACK_SUPPLIERS = [
@@ -32,6 +33,7 @@ export default function SupplierProductsPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { products: allProducts, suppliers: storeSuppliers, getProductsBySupplier, updateProductPrices, updateProductSupplier, updateProductFull, adjustProductStock, deleteProduct, refetchProducts, loadingProducts, createProduct, updateSupplier, deleteSupplier, me } = useStore();
+  const { activeBranchId } = useBranch();
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
   
   const supplierId = params.id as string;
@@ -65,12 +67,12 @@ export default function SupplierProductsPage() {
   useEffect(() => {
     setMounted(true);
     loadProducts();
-  }, [supplierId]);
+  }, [supplierId, activeBranchId]);
 
   const loadProducts = async () => {
     setLoading(true);
     try {
-      const data = await getProductsBySupplier(supplierId);
+      const data = await getProductsBySupplier(supplierId, activeBranchId || undefined);
       if (data && data.length > 0) {
         setProducts(data.map(p => ({
           id: p.id,
@@ -225,7 +227,7 @@ export default function SupplierProductsPage() {
         requiresRx: addForm.requiresRx,
         dosageForm: 'TABLET',
         expiryDate: addForm.expiryDate || undefined,
-        branchId: me?.branchId || undefined,
+        branchId: activeBranchId || me?.branchId || undefined,
       });
       setShowAddModal(false);
       refetchProducts();
