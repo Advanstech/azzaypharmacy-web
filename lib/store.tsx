@@ -477,10 +477,10 @@ interface StoreState {
   refetchCustomers: () => Promise<void>;
   refetchPrescriptions: () => Promise<void>;
   refetchPurchases: () => Promise<void>;
-  refetchInvoices: () => Promise<void>;
+  refetchInvoices: (branchId?: string | null) => Promise<void>;
   refetchExpenses: () => Promise<void>;
   refetchShiftReconciliations: (branchId?: string | null) => Promise<void>;
-  refetchLedger: () => Promise<void>;
+  refetchLedger: (branchId?: string | null) => Promise<void>;
   refetchExpenseCategories: () => Promise<void>;
   refetchTransfers: (branchId?: string | null, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchFinancialSummary: (branchId?: string, startDate?: string, endDate?: string) => Promise<void>;
@@ -887,21 +887,21 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
-  const refetchInvoices = useCallback(async () => {
+  const refetchInvoices = useCallback(async (branchId?: string | null) => {
     setLoadingInvoices(true);
     try {
       // Fetch branchId directly from Q_ME rather than relying on `me` React state
       // (which may not have updated yet when called from refetchAll)
-      let branchId = me?.branchId;
-      if (!branchId) {
+      let effectiveBranchId = branchId || me?.branchId;
+      if (!effectiveBranchId) {
         const meData = await gql<{ me: { branchId: string } }>(`query Me { me { branchId } }`);
-        branchId = meData.me?.branchId;
+        effectiveBranchId = meData.me?.branchId;
       }
-      if (!branchId) {
+      if (!effectiveBranchId) {
         console.warn('[store] refetchInvoices: no branchId — skipping');
         return;
       }
-      const data = await gql<{ invoices: Invoice[] }>(Q_INVOICES, { branchId });
+      const data = await gql<{ invoices: Invoice[] }>(Q_INVOICES, { branchId: effectiveBranchId });
       setInvoices(data.invoices ?? []);
     } catch (e: any) {
       console.warn('[store] invoices fetch failed:', e.message);
@@ -946,11 +946,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, []);
 
-  const refetchLedger = useCallback(async () => {
-    if (!me?.branchId) return;
+  const refetchLedger = useCallback(async (branchId?: string | null) => {
+    const effectiveBranchId = branchId || me?.branchId;
+    if (!effectiveBranchId) return;
     setLoadingLedger(true);
     try {
-      const data = await gql<{ ledgerEntries: LedgerEntry[] }>(Q_LEDGER, { branchId: me.branchId });
+      const data = await gql<{ ledgerEntries: LedgerEntry[] }>(Q_LEDGER, { branchId: effectiveBranchId });
       setLedger(data.ledgerEntries ?? []);
     } catch (e: any) {
       console.warn('[store] ledger fetch failed:', e.message);

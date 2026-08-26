@@ -53,7 +53,7 @@ const navItems = [
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useCustomAuth();
-  const { me, refetchSales, refetchProducts } = useStore();
+  const { me, refetchSales, refetchProducts, refetchExpenses, refetchPurchases, refetchInvoices, refetchLedger, refetchTransfers, refetchShiftReconciliations, refetchStaff } = useStore();
   const { activeBranchId } = useBranch();
   const router = useRouter();
   const pathname = usePathname();
@@ -70,8 +70,15 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     if (mounted && me?.id) {
       refetchSales(activeBranchId ?? undefined);
       refetchProducts(activeBranchId ?? undefined);
+      refetchExpenses();
+      refetchPurchases();
+      refetchInvoices(activeBranchId ?? undefined);
+      refetchLedger(activeBranchId ?? undefined);
+      refetchTransfers(activeBranchId ?? undefined);
+      refetchShiftReconciliations(activeBranchId ?? undefined);
+      refetchStaff();
     }
-  }, [activeBranchId, me?.id, mounted, refetchSales, refetchProducts]);
+  }, [activeBranchId, me?.id, mounted, refetchSales, refetchProducts, refetchExpenses, refetchPurchases, refetchInvoices, refetchLedger, refetchTransfers, refetchShiftReconciliations, refetchStaff]);
 
   useEffect(() => {
     console.log(`[DASHBOARD] auth check: loading=${loading} user=${user?.email ?? 'null'}`);

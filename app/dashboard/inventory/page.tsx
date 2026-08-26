@@ -277,7 +277,7 @@ export default function InventoryPage() {
   const hasResolvableSupplier = Boolean(invoiceSupplier || (createSupplierOnConfirm && invoiceSupplierDraft.trim()));
 
   const branchFilter = useBranchFilter();
-  const branchProducts = storeProducts;
+  const branchProducts = useMemo(() => branchFilter(storeProducts || []), [branchFilter, storeProducts]);
   const { branches, canSwitchBranch, activeBranchId, activeBranchName } = useBranch();
 
   const branchPurchases = useMemo(() => branchFilter(purchases || []), [branchFilter, purchases]);
@@ -1267,7 +1267,7 @@ export default function InventoryPage() {
   };
 
   const handleReceiveInvoice = async () => {
-    const branchId = me?.branchId || '';
+    const branchId = activeBranchId || me?.branchId || '';
     if (!branchId) {
       addToast({
         type: 'error',
@@ -1322,7 +1322,7 @@ export default function InventoryPage() {
             stockQuantity: 0,
             supplierId: resolvedSupplierId,
             dosageForm: 'OTHER',
-            branchId: me?.branchId || undefined,
+            branchId: activeBranchId || me?.branchId || undefined,
           });
           resolvedItems.push({
             ...item,
@@ -1365,9 +1365,9 @@ export default function InventoryPage() {
       
       // Refresh all relevant data to sync across all modules
       await Promise.all([
-        refetchProducts(),
+        refetchProducts(activeBranchId ?? undefined),
         refetchPurchases(),
-        refetchInvoices(),
+        refetchInvoices(activeBranchId ?? undefined),
       ]);
       
       setShowUploadModal(false);
