@@ -1079,6 +1079,7 @@ export const Q_INVOICES = `
       id invoiceNo type total paidAmount balance paymentStatus issueDate dueDate createdAt
       approvalStatus
       approvedBy { id name role }
+      branch { id name }
       supplier { id name }
       payments { id amount method reference notes paidAt }
       uploadedBy { id name role }

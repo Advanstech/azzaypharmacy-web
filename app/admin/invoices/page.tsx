@@ -72,10 +72,15 @@ export default function SupplierInvoicesPage() {
     }
   };
 
-  const handleDeleteInvoice = async (invoiceId: string) => {
-    if (confirm('Are you sure you want to delete this invoice? This will also remove associated ledger liability entries.')) {
+  const handleDeleteInvoice = async (invoice: any) => {
+    const isApproved = invoice.approvalStatus === 'APPROVED';
+    const confirmMsg = isApproved
+      ? `Deleting this APPROVED invoice will reverse stock, remove ledger entries and cancel the linked purchase. Are you sure?`
+      : 'Are you sure you want to delete this invoice? This will also remove associated ledger liability entries.';
+    if (confirm(confirmMsg)) {
       try {
-        await deleteInvoice(invoiceId);
+        await deleteInvoice(invoice.id);
+        addToast({ type: 'success', title: 'Invoice Deleted', message: isApproved ? 'Invoice removed and stock/financials reversed.' : 'Invoice removed.', duration: 4000 });
       } catch (err) {
         console.error('Failed to delete invoice', err);
         addToast({ type: 'error', title: 'Delete Failed', message: 'Could not delete invoice.', duration: 5000 });
@@ -190,6 +195,9 @@ export default function SupplierInvoicesPage() {
                   
                   <div>
                     <p className="font-medium text-sm" style={{ color: textC }}>{invoice.supplier?.name || 'Unknown Supplier'}</p>
+                    <p className="text-[10px] font-bold mt-0.5" style={{ color: mutedC }}>
+                      {invoice.branch?.name || 'Unknown Branch'} • Uploaded by {invoice.uploadedBy?.name || 'Unknown'}
+                    </p>
                     <div className="flex justify-between mt-2 text-sm font-bold">
                       <span style={{ color: textC }}>Total: GH₵ {invoice.total.toFixed(2)}</span>
                       {invoice.balance > 0 && <span className="text-red-500">Bal: GH₵ {invoice.balance.toFixed(2)}</span>}
@@ -216,7 +224,7 @@ export default function SupplierInvoicesPage() {
                           <ThumbsUp size={14} />
                         </button>
                       )}
-                      <button onClick={() => handleDeleteInvoice(invoice.id)} className="p-2 rounded-xl bg-red-500/10 text-red-500">
+                      <button onClick={() => handleDeleteInvoice(invoice)} className="p-2 rounded-xl bg-red-500/10 text-red-500">
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -270,11 +278,9 @@ export default function SupplierInvoicesPage() {
                           <p className="text-xs font-medium mt-0.5" style={{ color: mutedC }}>
                             Due: {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'N/A'}
                           </p>
-                          {invoice.uploadedBy && (
-                            <p className="text-[10px] font-bold mt-0.5" style={{ color: mutedC }}>
-                              By: {invoice.uploadedBy.name}
-                            </p>
-                          )}
+                          <p className="text-[10px] font-bold mt-0.5" style={{ color: mutedC }}>
+                            {invoice.branch?.name || 'Unknown Branch'} • By {invoice.uploadedBy?.name || 'Unknown'}
+                          </p>
                         </div>
                       </Link>
                     </td>
@@ -384,7 +390,7 @@ export default function SupplierInvoicesPage() {
 
                         {/* Delete */}
                         <button
-                          onClick={() => handleDeleteInvoice(invoice.id)}
+                          onClick={() => handleDeleteInvoice(invoice)}
                           className="p-2 rounded-xl bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-colors"
                           title="Delete Invoice"
                         >

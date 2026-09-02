@@ -129,6 +129,9 @@ export default function InvoiceDetailPage() {
             <Truck size={16} /> 
             {invoice.supplier?.name || 'Unknown Supplier'}
           </p>
+          <p className="text-xs font-bold mt-1" style={{ color: isDark ? '#64748B' : '#94A3B8' }}>
+            {invoice.branch?.name || 'Unknown Branch'} • Uploaded by {invoice.uploadedBy?.name || 'Unknown'}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <span className={`text-sm font-black px-4 py-2 rounded-xl uppercase tracking-wider ${getStatusColor(invoice.paymentStatus)}`}>

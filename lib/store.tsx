@@ -1672,8 +1672,10 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const deleteInvoice = useCallback(async (invoiceId: string): Promise<void> => {
     await gql(M_DELETE_INVOICE, { invoiceId });
     setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
+    await refetchProducts();
+    await refetchPurchases();
     refetchLedger();
-  }, [refetchLedger]);
+  }, [refetchProducts, refetchPurchases, refetchLedger]);
 
   const deleteSale = useCallback(async (saleId: string): Promise<boolean> => {
     try {
