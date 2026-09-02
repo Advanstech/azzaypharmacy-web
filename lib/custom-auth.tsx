@@ -8,6 +8,7 @@ interface CustomAuthContextType {
   session: any;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ data?: any; error: string | null }>;
+  signInWithPin: (email: string, pin: string) => Promise<{ data?: any; error: string | null }>;
   requestLoginToken: (args: { email: string; phone?: string }) => Promise<{ error: string | null }>;
   verifyLoginToken: (args: { email: string; token: string; phone?: string }) => Promise<{ data?: any; error: string | null }>;
   signOut: () => Promise<void>;
@@ -150,6 +151,29 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithPin = async (email: string, pin: string) => {
+    try {
+      const result = await gql<{ loginWithPin: string }>(
+        `mutation LoginWithPin($email: String!, $pin: String!) {
+          loginWithPin(email: $email, pin: $pin)
+        }`,
+        { email, pin }
+      );
+      
+      if (result.loginWithPin) {
+        const authData = JSON.parse(result.loginWithPin);
+        localStorage.setItem('auth_token', authData.access_token);
+        setUser(authData.user);
+        setSession({ access_token: authData.access_token, user: authData.user });
+        setAuthToken(authData.access_token);
+        return { data: authData, error: null };
+      }
+      return { error: 'Invalid PIN. Please try again.' };
+    } catch (error: any) {
+      return { error: sanitizeAuthError(error.message) };
+    }
+  };
+
   const requestLoginToken = async ({ email }: { email: string; phone?: string }) => {
     try {
       await gql<{ guardLoginTokenRequest: boolean }>(
@@ -263,7 +287,7 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
   }, [user, signOut]);
 
   return (
-    <CustomAuthContext.Provider value={{ user, session, loading, signIn, requestLoginToken, verifyLoginToken, signOut }}>
+    <CustomAuthContext.Provider value={{ user, session, loading, signIn, signInWithPin, requestLoginToken, verifyLoginToken, signOut }}>
       {children}
     </CustomAuthContext.Provider>
   );

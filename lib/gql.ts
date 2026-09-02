@@ -84,19 +84,22 @@ export async function gql<T = unknown>(
     let res: Response | null = null;
     let usedApi = API;
 
-    for (const candidate of API_CANDIDATES) {
-      try {
-        const maybeRes = await fetch(candidate, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ query, variables }),
-          signal: AbortSignal.timeout(90_000),
-        });
-        res = maybeRes;
-        usedApi = candidate;
-        break;
-      } catch (error) {
-        console.warn(`[gql] [${queryName}] Network failed on ${candidate}, trying next candidate...`);
+    const candidatePromises = API_CANDIDATES.map((candidate) =>
+      fetch(candidate, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query, variables }),
+        signal: AbortSignal.timeout(90_000),
+      }).then((r) => ({ res: r, candidate }))
+    );
+
+    try {
+      const winner = await Promise.any(candidatePromises);
+      res = winner.res;
+      usedApi = winner.candidate;
+    } catch {
+      for (const candidate of API_CANDIDATES) {
+        console.warn(`[gql] [${queryName}] Network failed on ${candidate}`);
       }
     }
 
@@ -181,10 +184,11 @@ export const Q_PRODUCTS_BY_SUPPLIER = `
 `;
 
 export const Q_SUPPLIERS = `
-  query GetSuppliers {
-    suppliers {
+  query GetSuppliers($branchId: String) {
+    suppliers(branchId: $branchId) {
       id name contact phone email address tin aiScore categories
       paymentTerms onTimeRate performanceScore lastOrderDate status riskLevel
+      branches { id name }
     }
   }
 `;
@@ -235,6 +239,18 @@ export const Q_SALES_PAGINATED_LEGACY = `
         product { id name category }
       }
     }
+  }
+`;
+
+export const M_LOGIN_WITH_PIN = `
+  mutation LoginWithPin($email: String!, $pin: String!) {
+    loginWithPin(email: $email, pin: $pin)
+  }
+`;
+
+export const M_SET_STAFF_PIN = `
+  mutation SetStaffPin($userId: String!, $pin: String!) {
+    setStaffPin(userId: $userId, pin: $pin)
   }
 `;
 
@@ -1058,7 +1074,7 @@ export const M_RECEIVE_INVOICE = `
 `;
 
 export const Q_INVOICES = `
-  query GetInvoices($branchId: String!, $supplierId: String) {
+  query GetInvoices($branchId: String, $supplierId: String) {
     invoices(branchId: $branchId, supplierId: $supplierId) {
       id invoiceNo type total paidAmount balance paymentStatus issueDate dueDate createdAt
       approvalStatus

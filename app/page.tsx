@@ -1,1414 +1,1237 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Float, OrbitControls, Sphere, Trail, MeshDistortMaterial, Stars, Torus } from '@react-three/drei';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Float, Sphere, Stars } from '@react-three/drei';
 import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { useTheme } from 'next-themes';
-import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as THREE from 'three';
-import { gql, Q_LOGIN_STAFF, M_CHANGE_PASSWORD, M_FORGOT_PASSWORD, M_UPDATE_DUTY_STATUS } from '@/lib/gql';
+import {
+  gql,
+  Q_LOGIN_STAFF,
+  M_CHANGE_PASSWORD,
+  M_FORGOT_PASSWORD,
+  M_UPDATE_DUTY_STATUS,
+  M_SET_STAFF_PIN,
+} from '@/lib/gql';
 import { saveToCache, getFromCache } from '@/lib/offline';
 import { StaffMember } from '@/lib/store';
+import {
+  X,
+  Eye,
+  EyeOff,
+  Lock,
+  AlertTriangle,
+  Sparkles,
+  KeyRound,
+  Delete,
+  CheckCircle2,
+  ShieldCheck,
+  Building2,
+  ArrowRight,
+  Sun,
+  Moon,
+  Pill,
+} from 'lucide-react';
 
 const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === 'true';
 
-// ── Staff Selector Modal ───────────────────────────────────────────────────
-function StaffSelectorModal({ 
-  show, 
-  onClose, 
-  onSelect, 
-  staff, 
-  isDark 
-}: { 
-  show: boolean; 
-  onClose: () => void; 
-  onSelect: (email: string) => void; 
-  staff: any[];
-  isDark: boolean;
-}) {
-  const [search, setSearch] = useState('');
-  const filteredStaff = staff.filter(s => 
-    s.name.toLowerCase().includes(search.toLowerCase()) || 
-    s.email.toLowerCase().includes(search.toLowerCase()) ||
-    s.role.toLowerCase().includes(search.toLowerCase())
-  );
+// ── 3D FLOATING PHARMACEUTICAL ELEMENTS ──────────────────────────────────────
 
-  const getRoleColor = (role: string) => {
-    switch(role) {
-      case 'MANAGER': return isDark ? '#FBBF24' : '#F59E0B'; // Amber
-      case 'PHARMACIST': return isDark ? '#10B981' : '#059669'; // Emerald
-      case 'HEAD_PHARMACIST': return isDark ? '#00D9FF' : '#0EA5E9'; // Cyan
-      case 'OWNER': return isDark ? '#F472B6' : '#EC4899'; // Pink
-      default: return isDark ? '#94A3B8' : '#64748B'; // Slate
-    }
-  };
-
-  return (
-    <AnimatePresence>
-      {show && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/60 backdrop-blur-md"
-          />
-          
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-lg rounded-[32px] overflow-hidden border"
-            style={{
-              background: isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-            }}
-          >
-            <div className="p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-bold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>Select Your Profile</h2>
-                  <p className="text-sm opacity-60" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Tap to quickly fill your email</p>
-                </div>
-                <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
-                  <X className="w-6 h-6" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }} />
-                </button>
-              </div>
-
-              <div className="relative mb-6">
-                <input 
-                  autoFocus
-                  type="text" 
-                  placeholder="Search name or role..." 
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 rounded-2xl outline-none border transition-all"
-                  style={{
-                    background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
-                    borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                    color: isDark ? '#F8FAFC' : '#0F172A'
-                  }}
-                />
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 opacity-40" />
-              </div>
-
-              <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar space-y-3">
-                {filteredStaff.length === 0 ? (
-                  <div className="py-10 text-center opacity-40">No profiles found</div>
-                ) : filteredStaff.map((person, idx) => (
-                  <motion.div
-                    key={person.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.03 }}
-                    onClick={() => onSelect(person.email)}
-                    whileHover={{ scale: 1.02, x: 4 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="group cursor-pointer p-4 rounded-2xl border transition-all flex items-center gap-4"
-                    style={{
-                      background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                      borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'
-                    }}
-                  >
-                    <div className="relative w-12 h-12 rounded-full overflow-hidden border-2" style={{ borderColor: isDark ? '#00D9FF' : '#0EA5E9' }}>
-                      {person.avatarUrl ? (
-                        <img src={person.avatarUrl} alt={person.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center font-bold text-lg" style={{ background: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)', color: isDark ? '#00D9FF' : '#0EA5E9' }}>
-                          {person.name[0]}
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-tr from-black/20 to-transparent pointer-events-none" />
-                    </div>
-
-                    <div className="flex-1">
-                      <h4 className="font-bold text-sm" style={{ color: isDark ? '#F1F5F9' : '#1E293B' }}>{person.name}</h4>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider" 
-                          style={{ background: isDark ? 'rgba(0,217,255,0.1)' : 'rgba(14,165,233,0.1)', color: isDark ? '#00D9FF' : '#0EA5E9' }}>
-                          {person.branch?.name || 'Branch not assigned'}
-                        </span>
-                        <span className="text-[11px] opacity-40" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>{person.email}</span>
-                      </div>
-                    </div>
-
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                      <ChevronRight className="w-5 h-5" />
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-// ── Particle Field ─────────────────────────────────────────────────────────
 function ParticleField({ isDark }: { isDark: boolean }) {
   const ref = useRef<THREE.Points>(null);
   const elapsed = useRef(0);
-  const count = 800;
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    positions[i * 3]     = (Math.random() - 0.5) * 30;
-    positions[i * 3 + 1] = (Math.random() - 0.5) * 30;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 30;
-  }
-  useFrame((s: any) => {
-    elapsed.current += s.delta;
-    if (ref.current) ref.current.rotation.y = elapsed.current * 0.02;
+  const count = 900;
+  const positions = useMemo(() => {
+    const pos = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (Math.random() - 0.5) * 36;
+      pos[i * 3 + 1] = (Math.random() - 0.5) * 36;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 36;
+    }
+    return pos;
+  }, [count]);
+
+  useFrame((_, delta) => {
+    elapsed.current += delta;
+    if (ref.current) {
+      ref.current.rotation.y = elapsed.current * 0.03;
+      ref.current.rotation.x = Math.sin(elapsed.current * 0.02) * 0.1;
+    }
   });
+
   return (
     <points ref={ref}>
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
-      <pointsMaterial size={0.06} color={isDark ? '#00D9FF' : '#0EA5E9'} transparent opacity={isDark ? 0.6 : 0.4} sizeAttenuation />
+      <pointsMaterial
+        size={0.065}
+        color={isDark ? '#10B981' : '#059669'}
+        transparent
+        opacity={isDark ? 0.65 : 0.45}
+        sizeAttenuation
+      />
     </points>
   );
 }
 
-// ── DNA Double Helix ────────────────────────────────────────────────────────
-function DNAHelix({ isDark, pos, scale = 1 }: { isDark: boolean, pos: [number, number, number], scale?: number }) {
-  const group = useRef<THREE.Group>(null);
+function Capsule3D({
+  pos,
+  color1,
+  color2,
+  speed,
+  isDark,
+  scale = 1,
+  rotation = [0, 0, 0],
+}: {
+  pos: [number, number, number];
+  color1: string;
+  color2: string;
+  speed: number;
+  isDark: boolean;
+  scale?: number;
+  rotation?: [number, number, number];
+}) {
+  const ref = useRef<THREE.Group>(null);
+  const initialPos = useRef(pos);
   const elapsed = useRef(0);
-  const N = 60;
-  const R = 1.2;
-  const H = 10;
 
-  useFrame((s: any) => {
-    elapsed.current += s.delta;
-    if (group.current) {
-      group.current.rotation.y = elapsed.current * 0.15;
-      group.current.position.y = pos[1] + Math.sin(elapsed.current * 0.3) * 0.5;
-    }
-  });
-
-  const nodes: React.ReactElement[] = [];
-  for (let i = 0; i < N; i++) {
-    const t = (i / N) * Math.PI * 5;
-    const y = (i / N) * H - H / 2;
-    const x1 = Math.cos(t) * R, z1 = Math.sin(t) * R;
-    const x2 = Math.cos(t + Math.PI) * R, z2 = Math.sin(t + Math.PI) * R;
-    const pulse = 0.5 + 0.5 * Math.sin(t * 0.5);
-
-    nodes.push(
-      <Sphere key={`a${i}`} position={[x1, y, z1]} args={[0.09, 12, 12]}>
-        <meshStandardMaterial color={isDark ? '#00D9FF' : '#0284C7'} emissive={isDark ? '#00D9FF' : '#0284C7'} emissiveIntensity={isDark ? 0.6 : 0.2} metalness={0.9} roughness={0.1} />
-      </Sphere>,
-      <Sphere key={`b${i}`} position={[x2, y, z2]} args={[0.09, 12, 12]}>
-        <meshStandardMaterial color={isDark ? '#A78BFA' : '#7C3AED'} emissive={isDark ? '#A78BFA' : '#7C3AED'} emissiveIntensity={isDark ? 0.6 : 0.2} metalness={0.9} roughness={0.1} />
-      </Sphere>
-    );
-    if (i % 4 === 0) {
-      nodes.push(
-        <mesh key={`r${i}`} position={[(x1+x2)/2, y, (z1+z2)/2]} rotation={[0, t, 0]}>
-          <cylinderGeometry args={[0.025, 0.025, R * 2, 6]} />
-          <meshStandardMaterial color={isDark ? '#10B981' : '#059669'} emissive={isDark ? '#10B981' : '#059669'} emissiveIntensity={isDark ? 0.5 : 0.15} transparent opacity={0.85} />
-        </mesh>
-      );
-    }
-  }
-  return <group ref={group} position={pos} scale={scale}>{nodes}</group>;
-}
-
-// ── Oval Pill ───────────────────────────────────────────────────────────────
-function OvalPill({ pos, color, speed, isDark, scale = 1, rotation = [0,0,0] }: { pos: [number,number,number]; color: string; speed: number; isDark: boolean, scale?: number, rotation?: [number,number,number] }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((s: any) => {
+  useFrame((_, delta) => {
+    elapsed.current += delta;
     if (ref.current) {
-      ref.current.rotation.x += s.delta * 0.3 * speed;
-      ref.current.rotation.y += s.delta * 0.2 * speed;
+      ref.current.rotation.x += delta * 0.45 * speed;
+      ref.current.rotation.y += delta * 0.6 * speed;
+      ref.current.rotation.z += delta * 0.25 * speed;
+      ref.current.position.y =
+        initialPos.current[1] + Math.sin(elapsed.current * speed * 0.8) * 0.45;
+      ref.current.position.x =
+        initialPos.current[0] + Math.cos(elapsed.current * speed * 0.5) * 0.35;
     }
   });
-  return (
-    <Float speed={speed} rotationIntensity={0.8} floatIntensity={0.9}>
-      <mesh ref={ref} position={pos} scale={scale} rotation={rotation}>
-        <capsuleGeometry args={[0.22, 0.55, 8, 16]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isDark ? 0.35 : 0.15} metalness={0.2} roughness={0.4} />
-      </mesh>
-    </Float>
-  );
-}
 
-// ── Pill Bottle ─────────────────────────────────────────────────────────────
-function PillBottle({ isDark, pos, scale = 1, rotation = [0,0,0] }: { isDark: boolean, pos: [number, number, number], scale?: number, rotation?: [number,number,number] }) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame((s: any) => {
-    if (ref.current) {
-      ref.current.rotation.y += s.delta * 0.15;
-      ref.current.rotation.z += s.delta * 0.05;
-    }
-  });
-  const bodyColor = isDark ? '#F8FAFC' : '#FFFFFF';
-  const capColor = isDark ? '#38BDF8' : '#0EA5E9';
-  const labelColor = isDark ? '#10B981' : '#059669';
   return (
-    <Float speed={1.2} rotationIntensity={0.4} floatIntensity={0.7}>
+    <Float speed={speed * 1.4} rotationIntensity={1.2} floatIntensity={1.4}>
       <group ref={ref} position={pos} scale={scale} rotation={rotation}>
-        <mesh position={[0, 0, 0]}>
-          <cylinderGeometry args={[0.55, 0.55, 1.4, 32]} />
-          <meshStandardMaterial color={bodyColor} emissive={isDark ? '#F8FAFC' : '#E2E8F0'} emissiveIntensity={isDark ? 0.1 : 0.05} metalness={0.1} roughness={0.3} />
-        </mesh>
-        <mesh position={[0, 0.75, 0]}>
-          <cylinderGeometry args={[0.38, 0.38, 0.35, 32]} />
-          <meshStandardMaterial color={capColor} emissive={capColor} emissiveIntensity={isDark ? 0.4 : 0.2} metalness={0.3} roughness={0.3} />
-        </mesh>
-        <mesh position={[0, 0.05, 0.56]}>
-          <boxGeometry args={[0.8, 0.7, 0.05]} />
-          <meshStandardMaterial color={labelColor} emissive={labelColor} emissiveIntensity={isDark ? 0.3 : 0.1} metalness={0.1} roughness={0.5} />
-        </mesh>
-      </group>
-    </Float>
-  );
-}
-
-// ── Blister Pack ────────────────────────────────────────────────────────────
-function BlisterPack({ isDark, pos, scale = 1, rotation = [0,0,0] }: { isDark: boolean, pos: [number, number, number], scale?: number, rotation?: [number,number,number] }) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame((s: any) => {
-    if (ref.current) {
-      ref.current.rotation.x += s.delta * 0.12;
-      ref.current.rotation.y += s.delta * 0.18;
-    }
-  });
-  const foilColor = isDark ? '#CBD5E1' : '#94A3B8';
-  const pillColor = isDark ? '#FBBF24' : '#F59E0B';
-  const pills = [] as React.ReactElement[];
-  for (let i = 0; i < 2; i++) {
-    for (let j = 0; j < 4; j++) {
-      pills.push(
-        <mesh key={`${i}-${j}`} position={[(j - 1.5) * 0.35, 0.04, (i - 0.5) * 0.5]}>
-          <sphereGeometry args={[0.14, 16, 16]} />
-          <meshStandardMaterial color={pillColor} emissive={pillColor} emissiveIntensity={isDark ? 0.3 : 0.15} metalness={0.2} roughness={0.3} />
-        </mesh>
-      );
-    }
-  }
-  return (
-    <Float speed={1.3} rotationIntensity={0.5} floatIntensity={0.8}>
-      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
-        <mesh position={[0, 0, 0]}>
-          <boxGeometry args={[1.6, 0.06, 0.95]} />
-          <meshStandardMaterial color={foilColor} transparent opacity={0.55} metalness={0.6} roughness={0.25} side={THREE.DoubleSide} />
-        </mesh>
-        {pills}
-      </group>
-    </Float>
-  );
-}
-
-// ── Syringe ─────────────────────────────────────────────────────────────────
-function Syringe({ isDark, pos, scale = 1, rotation = [0,0,0] }: { isDark: boolean, pos: [number, number, number], scale?: number, rotation?: [number,number,number] }) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame((s: any) => {
-    if (ref.current) ref.current.rotation.z += s.delta * 0.1;
-  });
-  const glass = isDark ? '#CBD5E1' : '#94A3B8';
-  const plunger = isDark ? '#F472B6' : '#EC4899';
-  const liquid = isDark ? '#34D399' : '#10B981';
-  return (
-    <Float speed={1.4} rotationIntensity={0.6} floatIntensity={0.9}>
-      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
-        <mesh position={[0, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.12, 0.12, 1.4, 16]} />
-          <meshStandardMaterial color={glass} transparent opacity={0.35} metalness={0.3} roughness={0.1} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh position={[0.15, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.1, 0.1, 0.8, 16]} />
-          <meshStandardMaterial color={liquid} emissive={liquid} emissiveIntensity={isDark ? 0.35 : 0.15} transparent opacity={0.8} />
-        </mesh>
-        <mesh position={[0.85, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.35, 16]} />
-          <meshStandardMaterial color={isDark ? '#E2E8F0' : '#64748B'} metalness={0.6} roughness={0.2} />
-        </mesh>
-        <mesh position={[-0.9, 0, 0]}>
-          <cylinderGeometry args={[0.05, 0.05, 0.25, 16]} />
-          <meshStandardMaterial color={plunger} emissive={plunger} emissiveIntensity={isDark ? 0.3 : 0.15} />
-        </mesh>
-      </group>
-    </Float>
-  );
-}
-
-// ── Laboratory Beaker ───────────────────────────────────────────────────────
-function Beaker({ isDark, pos, scale = 1, rotation = [0,0,0] }: { isDark: boolean, pos: [number, number, number], scale?: number, rotation?: [number,number,number] }) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame((s: any) => {
-    if (ref.current) {
-      ref.current.rotation.y += s.delta * 0.12;
-      ref.current.rotation.z += s.delta * 0.08;
-    }
-  });
-  const glass = isDark ? '#CBD5E1' : '#94A3B8';
-  const liquid = isDark ? '#00D9FF' : '#0EA5E9';
-  return (
-    <Float speed={1.1} rotationIntensity={0.4} floatIntensity={0.8}>
-      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
-        <mesh>
-          <cylinderGeometry args={[0.45, 0.55, 1.1, 32, 1, true]} />
-          <meshStandardMaterial color={glass} transparent opacity={0.25} metalness={0.2} roughness={0.1} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh position={[0, -0.2, 0]}>
-          <cylinderGeometry args={[0.42, 0.52, 0.6, 32]} />
-          <meshStandardMaterial color={liquid} emissive={liquid} emissiveIntensity={isDark ? 0.4 : 0.2} transparent opacity={0.85} />
-        </mesh>
-        <mesh position={[0, 0.58, 0]}>
-          <torusGeometry args={[0.45, 0.04, 8, 32]} />
-          <meshStandardMaterial color={isDark ? '#E2E8F0' : '#64748B'} metalness={0.4} roughness={0.3} />
-        </mesh>
-      </group>
-    </Float>
-  );
-}
-
-// ── Cross / Plus (medical symbol) ──────────────────────────────────────────
-function MedicalCross({ isDark, pos, scale = 1, rotationSpeed = 1 }: { isDark: boolean, pos: [number, number, number], scale?: number, rotationSpeed?: number }) {
-  const ref = useRef<THREE.Group>(null);
-  const elapsed = useRef(0);
-  useFrame((s: any) => {
-    elapsed.current += s.delta;
-    if (ref.current) {
-      ref.current.rotation.z = elapsed.current * 0.2 * rotationSpeed;
-      ref.current.rotation.x = elapsed.current * 0.1 * rotationSpeed;
-    }
-  });
-  const mat = <meshStandardMaterial color={isDark ? '#34D399' : '#059669'} emissive={isDark ? '#34D399' : '#059669'} emissiveIntensity={isDark ? 0.7 : 0.4} metalness={isDark ? 0.6 : 0.3} roughness={isDark ? 0.2 : 0.4} />;
-  return (
-    <Float speed={1.2 * rotationSpeed} rotationIntensity={0.3} floatIntensity={1.5}>
-      <group ref={ref} position={pos} scale={scale}>
-        <mesh><boxGeometry args={[0.18, 1.2, 0.18]} />{mat}</mesh>
-        <mesh><boxGeometry args={[1.2, 0.18, 0.18]} />{mat}</mesh>
-      </group>
-    </Float>
-  );
-}
-
-// ── Main Scene ──────────────────────────────────────────────────────────────
-function Capsule3D({ pos, color1, color2, speed, isDark, scale = 1, rotation = [0,0,0] }: { pos: [number,number,number]; color1: string; color2: string; speed: number; isDark: boolean, scale?: number, rotation?: [number,number,number] }) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame((s: any) => {
-    if (ref.current) {
-      ref.current.rotation.x += s.delta * 0.2 * speed;
-      ref.current.rotation.y += s.delta * 0.3 * speed;
-    }
-  });
-
-  return (
-    <Float speed={speed} rotationIntensity={0.8} floatIntensity={1}>
-      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
+        {/* Top Half */}
         <mesh position={[0, 0.35, 0]}>
-          <cylinderGeometry args={[0.25, 0.25, 0.7, 16]} />
-          <meshStandardMaterial color={color1} emissive={color1} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+          <cylinderGeometry args={[0.26, 0.26, 0.7, 24]} />
+          <meshStandardMaterial
+            color={color1}
+            emissive={color1}
+            emissiveIntensity={isDark ? 0.6 : 0.25}
+            metalness={isDark ? 0.4 : 0.2}
+            roughness={0.25}
+          />
         </mesh>
         <mesh position={[0, 0.7, 0]}>
-          <sphereGeometry args={[0.25, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color={color1} emissive={color1} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+          <sphereGeometry args={[0.26, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial
+            color={color1}
+            emissive={color1}
+            emissiveIntensity={isDark ? 0.6 : 0.25}
+            metalness={isDark ? 0.4 : 0.2}
+            roughness={0.25}
+          />
         </mesh>
-        
+
+        {/* Bottom Half */}
         <mesh position={[0, -0.35, 0]}>
-          <cylinderGeometry args={[0.25, 0.25, 0.7, 16]} />
-          <meshStandardMaterial color={color2} emissive={color2} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+          <cylinderGeometry args={[0.26, 0.26, 0.7, 24]} />
+          <meshStandardMaterial
+            color={color2}
+            emissive={color2}
+            emissiveIntensity={isDark ? 0.5 : 0.2}
+            metalness={isDark ? 0.3 : 0.15}
+            roughness={0.3}
+          />
         </mesh>
         <mesh position={[0, -0.7, 0]} rotation={[Math.PI, 0, 0]}>
-          <sphereGeometry args={[0.25, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
-          <meshStandardMaterial color={color2} emissive={color2} emissiveIntensity={isDark ? 0.5 : 0.2} metalness={isDark ? 0.4 : 0.2} roughness={isDark ? 0.3 : 0.4} />
+          <sphereGeometry args={[0.26, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2]} />
+          <meshStandardMaterial
+            color={color2}
+            emissive={color2}
+            emissiveIntensity={isDark ? 0.5 : 0.2}
+            metalness={isDark ? 0.3 : 0.15}
+            roughness={0.3}
+          />
         </mesh>
       </group>
     </Float>
   );
 }
 
-// ── Tablet ──────────────────────────────────────────────────────────────────
-function Tablet3D({ pos, color, speed, isDark, scale = 1, rotation = [0,0,0] }: { pos: [number,number,number]; color: string; speed: number; isDark: boolean, scale?: number, rotation?: [number,number,number] }) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((s: any) => {
+function Tablet3D({
+  pos,
+  color,
+  speed,
+  isDark,
+  scale = 1,
+  rotation = [0, 0, 0],
+}: {
+  pos: [number, number, number];
+  color: string;
+  speed: number;
+  isDark: boolean;
+  scale?: number;
+  rotation?: [number, number, number];
+}) {
+  const ref = useRef<THREE.Group>(null);
+  const initialPos = useRef(pos);
+  const elapsed = useRef(0);
+
+  useFrame((_, delta) => {
+    elapsed.current += delta;
     if (ref.current) {
-      ref.current.rotation.x += s.delta * 0.4 * speed;
-      ref.current.rotation.z += s.delta * 0.2 * speed;
+      ref.current.rotation.x += delta * 0.5 * speed;
+      ref.current.rotation.z += delta * 0.35 * speed;
+      ref.current.position.y =
+        initialPos.current[1] + Math.sin(elapsed.current * speed * 0.9) * 0.5;
     }
   });
 
   return (
-    <Float speed={speed} rotationIntensity={1} floatIntensity={1}>
-      <mesh ref={ref} position={pos} scale={scale} rotation={rotation}>
-        <cylinderGeometry args={[0.4, 0.4, 0.15, 32]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={isDark ? 0.4 : 0.2} metalness={isDark ? 0.2 : 0.1} roughness={isDark ? 0.3 : 0.4} />
-        <mesh position={[0, 0.08, 0]} rotation={[0, 0, Math.PI / 2]}>
-           <cylinderGeometry args={[0.02, 0.02, 0.7, 8]} />
-           <meshStandardMaterial color={isDark ? "#000" : "#fff"} opacity={0.15} transparent />
+    <Float speed={speed * 1.3} rotationIntensity={1.3} floatIntensity={1.2}>
+      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
+        <mesh>
+          <cylinderGeometry args={[0.42, 0.42, 0.16, 32]} />
+          <meshStandardMaterial
+            color={color}
+            emissive={color}
+            emissiveIntensity={isDark ? 0.45 : 0.2}
+            metalness={0.25}
+            roughness={0.35}
+          />
         </mesh>
+        {/* Scored line in the center of the tablet */}
+        <mesh position={[0, 0.082, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.02, 0.02, 0.72, 12]} />
+          <meshStandardMaterial color={isDark ? '#0F172A' : '#E2E8F0'} roughness={0.5} />
+        </mesh>
+      </group>
+    </Float>
+  );
+}
+
+function OvalPill({
+  pos,
+  color,
+  speed,
+  isDark,
+  scale = 1,
+  rotation = [0, 0, 0],
+}: {
+  pos: [number, number, number];
+  color: string;
+  speed: number;
+  isDark: boolean;
+  scale?: number;
+  rotation?: [number, number, number];
+}) {
+  const ref = useRef<THREE.Mesh>(null);
+  const initialPos = useRef(pos);
+  const elapsed = useRef(0);
+
+  useFrame((_, delta) => {
+    elapsed.current += delta;
+    if (ref.current) {
+      ref.current.rotation.x += delta * 0.4 * speed;
+      ref.current.rotation.y += delta * 0.3 * speed;
+      ref.current.position.y =
+        initialPos.current[1] + Math.sin(elapsed.current * speed * 0.7) * 0.4;
+    }
+  });
+
+  return (
+    <Float speed={speed * 1.5} rotationIntensity={1.1} floatIntensity={1.3}>
+      <mesh ref={ref} position={pos} scale={scale} rotation={rotation}>
+        <capsuleGeometry args={[0.22, 0.55, 12, 24]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={isDark ? 0.45 : 0.2}
+          metalness={0.2}
+          roughness={0.3}
+        />
       </mesh>
     </Float>
   );
 }
 
-// ── Main Scene ──────────────────────────────────────────────────────────────
-function Scene({ isDark }: { isDark: boolean }) {
+function BlisterPack({
+  isDark,
+  pos,
+  scale = 1,
+  rotation = [0, 0, 0],
+}: {
+  isDark: boolean;
+  pos: [number, number, number];
+  scale?: number;
+  rotation?: [number, number, number];
+}) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    if (ref.current) {
+      ref.current.rotation.x += delta * 0.18;
+      ref.current.rotation.y += delta * 0.24;
+    }
+  });
+
+  const foilColor = isDark ? '#94A3B8' : '#CBD5E1';
+  const pillColor = isDark ? '#10B981' : '#059669';
+
+  return (
+    <Float speed={1.5} rotationIntensity={0.8} floatIntensity={1.1}>
+      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
+        <mesh position={[0, 0, 0]}>
+          <boxGeometry args={[1.7, 0.06, 1.05]} />
+          <meshStandardMaterial
+            color={foilColor}
+            metalness={0.8}
+            roughness={0.2}
+            transparent
+            opacity={0.7}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+        {[-0.5, 0, 0.5].map((x, i) =>
+          [-0.25, 0.25].map((z, j) => (
+            <mesh key={`${i}-${j}`} position={[x, 0.05, z]}>
+              <sphereGeometry args={[0.13, 16, 16]} />
+              <meshStandardMaterial
+                color={pillColor}
+                emissive={pillColor}
+                emissiveIntensity={isDark ? 0.4 : 0.2}
+                metalness={0.3}
+                roughness={0.3}
+              />
+            </mesh>
+          ))
+        )}
+      </group>
+    </Float>
+  );
+}
+
+function PillBottle({
+  isDark,
+  pos,
+  scale = 1,
+  rotation = [0, 0, 0],
+}: {
+  isDark: boolean;
+  pos: [number, number, number];
+  scale?: number;
+  rotation?: [number, number, number];
+}) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    if (ref.current) {
+      ref.current.rotation.y += delta * 0.25;
+      ref.current.rotation.z += delta * 0.08;
+    }
+  });
+
+  return (
+    <Float speed={1.3} rotationIntensity={0.6} floatIntensity={0.9}>
+      <group ref={ref} position={pos} scale={scale} rotation={rotation}>
+        <mesh position={[0, 0, 0]}>
+          <cylinderGeometry args={[0.52, 0.52, 1.35, 32]} />
+          <meshStandardMaterial
+            color={isDark ? '#F1F5F9' : '#FFFFFF'}
+            emissive={isDark ? '#1E293B' : '#F8FAFC'}
+            emissiveIntensity={0.1}
+            metalness={0.15}
+            roughness={0.3}
+          />
+        </mesh>
+        <mesh position={[0, 0.74, 0]}>
+          <cylinderGeometry args={[0.38, 0.38, 0.32, 32]} />
+          <meshStandardMaterial
+            color={isDark ? '#10B981' : '#059669'}
+            emissive={isDark ? '#059669' : '#047857'}
+            emissiveIntensity={0.35}
+            metalness={0.3}
+            roughness={0.3}
+          />
+        </mesh>
+        <mesh position={[0, 0.02, 0.53]}>
+          <boxGeometry args={[0.78, 0.65, 0.04]} />
+          <meshStandardMaterial
+            color={isDark ? '#00D9FF' : '#0EA5E9'}
+            emissive={isDark ? '#00D9FF' : '#0EA5E9'}
+            emissiveIntensity={0.25}
+            metalness={0.1}
+            roughness={0.4}
+          />
+        </mesh>
+      </group>
+    </Float>
+  );
+}
+
+function MedicalCross({
+  isDark,
+  pos,
+  scale = 1,
+  rotationSpeed = 1,
+}: {
+  isDark: boolean;
+  pos: [number, number, number];
+  scale?: number;
+  rotationSpeed?: number;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame((_, delta) => {
+    if (ref.current) {
+      ref.current.rotation.z += delta * 0.3 * rotationSpeed;
+      ref.current.rotation.x += delta * 0.15 * rotationSpeed;
+    }
+  });
+
+  const mat = (
+    <meshStandardMaterial
+      color={isDark ? '#10B981' : '#059669'}
+      emissive={isDark ? '#10B981' : '#059669'}
+      emissiveIntensity={isDark ? 0.7 : 0.4}
+      metalness={isDark ? 0.6 : 0.3}
+      roughness={0.2}
+    />
+  );
+
+  return (
+    <Float speed={1.4 * rotationSpeed} rotationIntensity={0.6} floatIntensity={1.5}>
+      <group ref={ref} position={pos} scale={scale}>
+        <mesh>
+          <boxGeometry args={[0.2, 1.2, 0.2]} />
+          {mat}
+        </mesh>
+        <mesh>
+          <boxGeometry args={[1.2, 0.2, 0.2]} />
+          {mat}
+        </mesh>
+      </group>
+    </Float>
+  );
+}
+
+function MovingPillsScene({ isDark }: { isDark: boolean }) {
   return (
     <>
-      <color attach="background" args={[isDark ? '#060B14' : '#EFF6FF']} />
-      <fog attach="fog" args={[isDark ? '#060B14' : '#EFF6FF', 8, 28]} />
+      <color attach="background" args={[isDark ? '#040810' : '#F7F9FC']} />
+      <fog attach="fog" args={[isDark ? '#040810' : '#F7F9FC', 8, 30]} />
 
-      <ambientLight intensity={isDark ? 0.25 : 1.2} />
-      <pointLight position={[8, 8, 8]}   intensity={isDark ? 3 : 2.5}   color={isDark ? '#00D9FF' : '#0EA5E9'} />
-      <pointLight position={[-8,-6,-4]}  intensity={isDark ? 2 : 1.8} color={isDark ? '#A78BFA' : '#8B5CF6'} />
-      <pointLight position={[0, 12, 0]}  intensity={isDark ? 2.5 : 2} color={isDark ? '#10B981' : '#059669'} />
-      <pointLight position={[-5, 0, 5]}  intensity={isDark ? 1.5 : 1.5} color={isDark ? '#F472B6' : '#EC4899'} />
+      <ambientLight intensity={isDark ? 0.45 : 1.4} />
+      <pointLight position={[10, 10, 10]} intensity={isDark ? 3.5 : 2.5} color={isDark ? '#10B981' : '#059669'} />
+      <pointLight position={[-10, -8, -5]} intensity={isDark ? 2.5 : 2.0} color={isDark ? '#00D9FF' : '#0EA5E9'} />
+      <pointLight position={[0, 12, 4]} intensity={isDark ? 3.0 : 2.2} color={isDark ? '#34D399' : '#10B981'} />
+      <pointLight position={[-6, 2, 6]} intensity={isDark ? 2.0 : 1.8} color={isDark ? '#F59E0B' : '#D97706'} />
 
       <ParticleField isDark={isDark} />
-      
-      {/* Spread DNA Helix to the left so it's not hidden */}
-      <DNAHelix isDark={isDark} pos={[-7, 0, -5]} scale={0.8} />
 
-      {/* Medical crosses */}
-      <MedicalCross isDark={isDark} pos={[5.5, 2.5, -1]} scale={0.55} rotationSpeed={1.3} />
-      <MedicalCross isDark={isDark} pos={[-6, -3, 1]} scale={0.5} rotationSpeed={1.5} />
-      <MedicalCross isDark={isDark} pos={[-7, 3, -4]} scale={0.5} rotationSpeed={1.6} />
-      <MedicalCross isDark={isDark} pos={[2.5, -3.5, -1]} scale={0.35} rotationSpeed={1.8} />
+      {/* Floating 3D Capsules */}
+      <Capsule3D isDark={isDark} pos={[-6, 2.5, -2]} color1="#10B981" color2="#FFFFFF" speed={1.3} scale={0.9} />
+      <Capsule3D isDark={isDark} pos={[6.5, 3.2, -3]} color1="#00D9FF" color2="#FFFFFF" speed={1.6} scale={0.8} rotation={[Math.PI / 4, 0, 0]} />
+      <Capsule3D isDark={isDark} pos={[-5.5, -3.2, 0]} color1="#F59E0B" color2="#FFFFFF" speed={1.4} scale={0.75} />
+      <Capsule3D isDark={isDark} pos={[5.8, -2.5, 1]} color1="#10B981" color2="#34D399" speed={1.7} scale={0.85} rotation={[0, 0, Math.PI / 3]} />
+      <Capsule3D isDark={isDark} pos={[0.5, 4.2, -2]} color1="#A78BFA" color2="#FFFFFF" speed={1.2} scale={0.7} />
+      <Capsule3D isDark={isDark} pos={[-1.5, -4.5, -1]} color1="#00D9FF" color2="#10B981" speed={1.5} scale={0.75} />
 
-      {/* Pill bottles and blister packs */}
-      <PillBottle isDark={isDark} pos={[-5.5, 3.5, -2]} scale={1.05} rotation={[0.3, 0.5, 0]} />
-      <PillBottle isDark={isDark} pos={[6, -2, -3]} scale={0.95} rotation={[0.2, -0.4, 0.1]} />
-      <BlisterPack isDark={isDark} pos={[3, 4.5, -4]} scale={1.15} rotation={[0.4, 0.3, 0]} />
-      <BlisterPack isDark={isDark} pos={[-3, -4, -3]} scale={1.0} rotation={[-0.2, 0.6, 0.2]} />
+      {/* Floating Tablets */}
+      <Tablet3D isDark={isDark} pos={[-7, -0.5, -3]} color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.2} scale={0.85} />
+      <Tablet3D isDark={isDark} pos={[7, 0.5, -2]} color={isDark ? '#34D399' : '#10B981'} speed={1.5} scale={0.8} rotation={[0, Math.PI / 4, 0]} />
+      <Tablet3D isDark={isDark} pos={[-3.5, 4.0, -1]} color={isDark ? '#38BDF8' : '#0EA5E9'} speed={1.4} scale={0.7} />
+      <Tablet3D isDark={isDark} pos={[4.0, -4.0, -2]} color={isDark ? '#F472B6' : '#EC4899'} speed={1.6} scale={0.65} />
 
-      {/* Syringes and beakers */}
-      <Syringe isDark={isDark} pos={[7, 0, -3]} scale={1.15} rotation={[0.4, 0, 0.8]} />
-      <Syringe isDark={isDark} pos={[-3.5, 4, -2]} scale={1.0} rotation={[0.3, 0.5, -0.6]} />
-      <Beaker isDark={isDark} pos={[5, -3.5, -1]} scale={1.0} rotation={[0.2, 0, 0]} />
-      <Beaker isDark={isDark} pos={[-6.5, -1, -2]} scale={0.9} rotation={[0.1, 0.4, 0]} />
+      {/* Scattered Oval Pills */}
+      <OvalPill isDark={isDark} pos={[-4.5, 1.8, 1]} color={isDark ? '#34D399' : '#10B981'} speed={1.8} scale={0.75} rotation={[0.4, 0.5, 0]} />
+      <OvalPill isDark={isDark} pos={[4.5, 1.2, 0]} color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.5} scale={0.7} rotation={[0.2, 0.8, 0.3]} />
+      <OvalPill isDark={isDark} pos={[-2.5, -3.2, 1]} color={isDark ? '#00D9FF' : '#0EA5E9'} speed={1.9} scale={0.65} rotation={[0.5, 0.1, 0.4]} />
+      <OvalPill isDark={isDark} pos={[3.0, 3.8, 1]} color={isDark ? '#A78BFA' : '#8B5CF6'} speed={1.7} scale={0.6} />
 
-      {/* Capsules */}
-      <Capsule3D isDark={isDark} pos={[-5, 0.5, 2]} color1={isDark ? '#00D9FF' : '#0EA5E9'} color2="#ffffff" speed={1.2} scale={0.8} />
-      <Capsule3D isDark={isDark} pos={[4.5, -1.5, 3]} color1={isDark ? '#A78BFA' : '#8B5CF6'} color2={isDark ? '#F472B6' : '#EC4899'} speed={1.5} scale={0.6} rotation={[Math.PI/4, 0, 0]} />
-      <Capsule3D isDark={isDark} pos={[6.5, 4, -4]} color1={isDark ? '#34D399' : '#10B981'} color2="#ffffff" speed={1.8} scale={0.5} />
-      <Capsule3D isDark={isDark} pos={[1, 4, 1]} color1={isDark ? '#00D9FF' : '#0EA5E9'} color2="#ffffff" speed={1.3} scale={0.5} />
-      <Capsule3D isDark={isDark} pos={[0, -4.5, 2]} color1={isDark ? '#A78BFA' : '#8B5CF6'} color2={isDark ? '#F472B6' : '#EC4899'} speed={1.6} scale={0.55} rotation={[0, 0, Math.PI/6]} />
+      {/* Blister Packs & Pill Bottles */}
+      <BlisterPack isDark={isDark} pos={[-6.8, -4.0, -4]} scale={1.1} rotation={[0.3, 0.5, 0.1]} />
+      <BlisterPack isDark={isDark} pos={[6.2, 4.5, -5]} scale={1.15} rotation={[-0.3, 0.4, 0.2]} />
+      <PillBottle isDark={isDark} pos={[-7.5, 3.8, -4]} scale={1.05} rotation={[0.2, 0.4, 0]} />
+      <PillBottle isDark={isDark} pos={[7.2, -3.8, -3]} scale={1.0} rotation={[0.3, -0.3, 0.1]} />
 
-      {/* Tablets */}
-      <Tablet3D isDark={isDark} pos={[-4, 4, -1]} color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.1} scale={0.8} />
-      <Tablet3D isDark={isDark} pos={[5.5, 0.5, 2]} color={isDark ? '#60A5FA' : '#3B82F6'} speed={1.4} scale={0.7} rotation={[0, Math.PI/3, 0]} />
-      <Tablet3D isDark={isDark} pos={[-4.5, -2.5, -1]} color={isDark ? '#F472B6' : '#EC4899'} speed={1.7} scale={0.6} />
-      <Tablet3D isDark={isDark} pos={[6.5, -3.5, -1]} color={isDark ? '#34D399' : '#10B981'} speed={1.2} scale={0.5} />
-      <Tablet3D isDark={isDark} pos={[-2, -4.5, -2]} color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.5} scale={0.55} />
+      {/* Medical Cross Symbols */}
+      <MedicalCross isDark={isDark} pos={[-3.0, 0.0, -4]} scale={0.65} rotationSpeed={1.2} />
+      <MedicalCross isDark={isDark} pos={[3.5, -0.8, -4]} scale={0.6} rotationSpeed={1.4} />
 
-      {/* Scattered oval pills */}
-      <OvalPill isDark={isDark} pos={[6, 1.5, 0]} color={isDark ? '#F472B6' : '#EC4899'} speed={1.8} scale={0.75} rotation={[0.5, 0.3, 0]} />
-      <OvalPill isDark={isDark} pos={[-5,-1.5, 3]} color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.4} scale={0.65} rotation={[0.2, 0.6, 0.4]} />
-      <OvalPill isDark={isDark} pos={[4.5,-3.5,-2]} color={isDark ? '#34D399' : '#10B981'} speed={2.1} scale={0.55} rotation={[0.4, 0, 0.3]} />
-      <OvalPill isDark={isDark} pos={[-5, 2.5, -3]} color={isDark ? '#60A5FA' : '#3B82F6'} speed={1.6} scale={0.6} rotation={[0.3, 0.5, 0]} />
-      <OvalPill isDark={isDark} pos={[7, 3, -2]} color={isDark ? '#F472B6' : '#EC4899'} speed={1.9} scale={0.5} rotation={[0.6, 0.2, 0.1]} />
-      <OvalPill isDark={isDark} pos={[-7,-3.5,-1]} color={isDark ? '#FBBF24' : '#F59E0B'} speed={1.5} scale={0.6} rotation={[0.1, 0.4, 0.5]} />
-      <OvalPill isDark={isDark} pos={[0, 4.5, -3]} color={isDark ? '#34D399' : '#10B981'} speed={2.0} scale={0.5} rotation={[0.5, 0.1, 0.2]} />
-      <OvalPill isDark={isDark} pos={[3.5, 4, 2]} color={isDark ? '#60A5FA' : '#3B82F6'} speed={1.7} scale={0.55} rotation={[0.2, 0.3, 0.4]} />
-
-      {isDark && <Stars radius={80} depth={40} count={3000} factor={3} saturation={0} fade speed={0.8} />}
+      {isDark && <Stars radius={80} depth={40} count={2500} factor={3} saturation={0} fade speed={0.8} />}
 
       <EffectComposer>
-        <Bloom luminanceThreshold={isDark ? 0.15 : 0.7} intensity={isDark ? 2.2 : 0.6} levels={8} mipmapBlur />
-        <Vignette eskil={false} offset={0.15} darkness={isDark ? 0.65 : 0.2} />
+        <Bloom luminanceThreshold={isDark ? 0.2 : 0.75} intensity={isDark ? 1.8 : 0.5} levels={8} mipmapBlur />
+        <Vignette eskil={false} offset={0.12} darkness={isDark ? 0.55 : 0.15} />
       </EffectComposer>
     </>
   );
 }
 
-import { Search, X, ChevronRight, Eye, EyeOff, Lock, AlertTriangle, Sparkles, KeyRound } from 'lucide-react';
+// ── ROLE HELPER ─────────────────────────────────────────────────────────────
 
-// ── Password Change Modal ─────────────────────────────────────────────────────
-function PasswordChangeModal({ 
-  show, 
-  onClose, 
-  email, 
-  currentPassword, 
-  isFirstTime, 
-  onSuccess, 
-  isDark 
-}: {
-  show: boolean;
-  onClose: () => void;
-  email: string;
-  currentPassword: string;
-  isFirstTime: boolean;
-  onSuccess: () => void;
-  isDark: boolean;
-}) {
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters long');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await gql<{ changePassword?: boolean }>(M_CHANGE_PASSWORD, {
-        currentPassword,
-        newPassword
-      });
-
-      if (result?.changePassword) {
-        onSuccess();
-      } else {
-        setError('Failed to change password. Please try again.');
-      }
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <AnimatePresence>
-      {show && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/60 backdrop-blur-md"
-          />
-          
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-md rounded-2xl overflow-hidden border"
-            style={{
-              background: isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-            }}
-          >
-            <div className="p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-bold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>
-                    {isFirstTime ? 'Set Your Password' : 'Change Password'}
-                  </h2>
-                  <p className="text-sm opacity-60" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>
-                    {isFirstTime ? 'Choose a secure password for your account' : 'Update your account password'}
-                  </p>
-                </div>
-                <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
-                  <X className="w-6 h-6" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }} />
-                </button>
-              </div>
-
-              {isFirstTime && (
-                <div className="mb-4 p-3 rounded-lg flex items-start gap-3" 
-                  style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>
-                  <AlertTriangle className="w-5 h-5 mt-0.5" style={{ color: '#F59E0B' }} />
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: '#F59E0B' }}>First-time Login</p>
-                    <p className="text-xs" style={{ color: isDark ? '#FCD34D' : '#D97706' }}>
-                      You're using a temporary password. Please set a new password to continue.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {error && (
-                <div className="mb-4 p-3 rounded-lg text-sm" 
-                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
-                  {error}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                    style={{ color: isDark ? '#94A3B8' : '#64748B' }}>New Password</label>
-                  <div className="relative">
-                    <input 
-                      type={showNewPassword ? 'text' : 'password'}
-                      value={newPassword}
-                      onChange={e => setNewPassword(e.target.value)}
-                      required
-                      placeholder="Enter new password"
-                      className="w-full px-4 py-3 rounded-xl text-sm focus:outline-none"
-                      style={{
-                        background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
-                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                        color: isDark ? '#F8FAFC' : '#0F172A',
-                        border: '1px solid'
-                      }}
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => setShowNewPassword(!showNewPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 hover:opacity-100 transition-opacity"
-                      style={{ color: isDark ? '#94A3B8' : '#64748B' }}
-                    >
-                      {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                    style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Confirm Password</label>
-                  <div className="relative">
-                    <input 
-                      type={showConfirmPassword ? 'text' : 'password'}
-                      value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      required
-                      placeholder="Confirm new password"
-                      className="w-full px-4 py-3 rounded-xl text-sm focus:outline-none"
-                      style={{
-                        background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
-                        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                        color: isDark ? '#F8FAFC' : '#0F172A',
-                        border: '1px solid'
-                      }}
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 hover:opacity-100 transition-opacity"
-                      style={{ color: isDark ? '#94A3B8' : '#64748B' }}
-                    >
-                      {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3 rounded-xl font-bold text-sm transition-all"
-                  style={{
-                    background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)',
-                    color: isDark ? '#0A0E1A' : '#fff',
-                    opacity: loading ? 0.7 : 1
-                  }}
-                >
-                  {loading ? 'Updating...' : 'Update Password'}
-                </button>
-              </form>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
+function getRoleBadge(role: string, isDark: boolean) {
+  const r = (role || '').toUpperCase();
+  switch (r) {
+    case 'OWNER':
+    case 'SE_ADMIN':
+      return {
+        label: 'Owner',
+        color: isDark ? '#34D399' : '#059669',
+        bg: isDark ? 'rgba(16,185,129,0.12)' : 'rgba(5,150,105,0.08)',
+        border: isDark ? 'rgba(16,185,129,0.3)' : 'rgba(5,150,105,0.2)',
+        gradient: isDark ? 'linear-gradient(135deg, #064E3B 0%, #047857 100%)' : 'linear-gradient(135deg, #059669 0%, #10B981 100%)',
+      };
+    case 'MANAGER':
+      return {
+        label: 'Manager',
+        color: isDark ? '#FBBF24' : '#D97706',
+        bg: isDark ? 'rgba(245,158,11,0.12)' : 'rgba(217,119,6,0.08)',
+        border: isDark ? 'rgba(245,158,11,0.3)' : 'rgba(217,119,6,0.2)',
+        gradient: isDark ? 'linear-gradient(135deg, #78350F 0%, #B45309 100%)' : 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)',
+      };
+    case 'HEAD_PHARMACIST':
+      return {
+        label: 'Head Pharmacist',
+        color: isDark ? '#00D9FF' : '#0284C7',
+        bg: isDark ? 'rgba(0,217,255,0.12)' : 'rgba(2,132,199,0.08)',
+        border: isDark ? 'rgba(0,217,255,0.3)' : 'rgba(2,132,199,0.2)',
+        gradient: isDark ? 'linear-gradient(135deg, #0C4A6E 0%, #0369A1 100%)' : 'linear-gradient(135deg, #0284C7 0%, #38BDF8 100%)',
+      };
+    case 'PHARMACIST':
+      return {
+        label: 'Pharmacist',
+        color: isDark ? '#A78BFA' : '#7C3AED',
+        bg: isDark ? 'rgba(167,139,250,0.12)' : 'rgba(124,58,237,0.08)',
+        border: isDark ? 'rgba(167,139,250,0.3)' : 'rgba(124,58,237,0.2)',
+        gradient: isDark ? 'linear-gradient(135deg, #4C1D95 0%, #6D28D9 100%)' : 'linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%)',
+      };
+    case 'CASHIER':
+    case 'CHEMICAL_CASHIER':
+      return {
+        label: 'Cashier',
+        color: isDark ? '#F472B6' : '#DB2777',
+        bg: isDark ? 'rgba(244,114,182,0.12)' : 'rgba(219,39,119,0.08)',
+        border: isDark ? 'rgba(244,114,182,0.3)' : 'rgba(219,39,119,0.2)',
+        gradient: isDark ? 'linear-gradient(135deg, #831843 0%, #BE185D 100%)' : 'linear-gradient(135deg, #DB2777 0%, #F472B6 100%)',
+      };
+    default:
+      return {
+        label: role ? role.replace(/_/g, ' ') : 'Staff',
+        color: isDark ? '#94A3B8' : '#64748B',
+        bg: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(100,116,139,0.08)',
+        border: isDark ? 'rgba(148,163,184,0.3)' : 'rgba(100,116,139,0.2)',
+        gradient: isDark ? 'linear-gradient(135deg, #1E293B 0%, #334155 100%)' : 'linear-gradient(135deg, #64748B 0%, #94A3B8 100%)',
+      };
+  }
 }
 
-// ── Forgot Password Modal ───────────────────────────────────────────────────────
-function ForgotPasswordModal({ 
-  show, 
-  onClose, 
-  isDark 
-}: {
-  show: boolean;
-  onClose: () => void;
-  isDark: boolean;
-}) {
-  const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage(null);
-
-    try {
-      const result = await gql<{ forgotPassword?: boolean }>(M_FORGOT_PASSWORD, { email });
-      
-      if (result?.forgotPassword) {
-        setMessage({
-          type: 'success',
-          text: 'Password reset link sent! Check your email inbox.'
-        });
-        setTimeout(() => onClose(), 3000);
-      } else {
-        setMessage({
-          type: 'error',
-          text: 'Failed to send reset link. Please try again.'
-        });
-      }
-    } catch (err: any) {
-      setMessage({
-        type: 'error',
-        text: err.message
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <AnimatePresence>
-      {show && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-black/60 backdrop-blur-md"
-          />
-          
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-            className="relative w-full max-w-md rounded-2xl overflow-hidden border"
-            style={{
-              background: isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.95)',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
-            }}
-          >
-            <div className="p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-bold" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}>
-                    Forgot Password
-                  </h2>
-                  <p className="text-sm opacity-60" style={{ color: isDark ? '#94A3B8' : '#64748B' }}>
-                    Enter your email to receive a reset link
-                  </p>
-                </div>
-                <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors">
-                  <X className="w-6 h-6" style={{ color: isDark ? '#F8FAFC' : '#0F172A' }} />
-                </button>
-              </div>
-
-              {message && (
-                <div className={`mb-4 p-3 rounded-lg text-sm ${
-                  message.type === 'success' 
-                    ? 'bg-green-50 border-green-200 text-green-800' 
-                    : 'bg-red-50 border-red-200 text-red-800'
-                }`}>
-                  {message.text}
-                </div>
-              )}
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                    style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Email Address</label>
-                  <input 
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    required
-                    placeholder="your@email.com"
-                    className="w-full px-4 py-3 rounded-xl text-sm focus:outline-none"
-                    style={{
-                      background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
-                      borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
-                      color: isDark ? '#F8FAFC' : '#0F172A',
-                      border: '1px solid'
-                    }}
-                  />
-                </div>
-
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-3 rounded-xl font-bold text-sm transition-all"
-                  style={{
-                    background: isDark ? 'linear-gradient(135deg,#00D9FF,#00A3CC)' : 'linear-gradient(135deg,#0EA5E9,#0284C7)',
-                    color: isDark ? '#0A0E1A' : '#fff',
-                    opacity: loading ? 0.7 : 1
-                  }}
-                >
-                  {loading ? 'Sending...' : 'Send Reset Link'}
-                </button>
-              </form>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
+function getInitials(name: string) {
+  if (!name) return 'AP';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
 }
 
-// ── Login Page ──────────────────────────────────────────────────────────────
+// ── MAIN CLOCK-IN LOGIN PAGE ────────────────────────────────────────────────
+
 export default function LoginPage() {
-  const [email, setEmail]       = useState('');
+  const [mounted, setMounted] = useState(false);
+  const [staff, setStaff] = useState<any[]>([]);
+  const [loadingStaff, setLoadingStaff] = useState(true);
+  const [selectedStaff, setSelectedStaff] = useState<any | null>(null);
+
+  // PIN / Auth State
+  const [pin, setPin] = useState('');
+  const [authMode, setAuthMode] = useState<'pin' | 'password'>('pin');
   const [password, setPassword] = useState('');
-  const [token, setToken]       = useState('');
-  const [loginMode, setLoginMode] = useState<'token' | 'password'>('password');
-  const [tokenStepVisible, setTokenStepVisible] = useState(false);
-  const [passwordStepVisible, setPasswordStepVisible] = useState(false);
-  const [tokenSent, setTokenSent] = useState(false);
-  const [tokenSending, setTokenSending] = useState(false);
-  const [tokenCooldown, setTokenCooldown] = useState(0);
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError]       = useState<string | null>(null);
-  const [loading, setLoading]   = useState(false);
-  const [mounted, setMounted]   = useState(false);
-  const [focused, setFocused]   = useState<string | null>(null);
-  const [staff, setStaff]       = useState<any[]>([]);
-  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [shakeKey, setShakeKey] = useState(0);
+
+  // Success Transition
+  const [isSuccessTransition, setIsSuccessTransition] = useState(false);
   const [showPasswordChangeModal, setShowPasswordChangeModal] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showPinChangeModal, setShowPinChangeModal] = useState(false);
+  const [pinChangeUser, setPinChangeUser] = useState<any | null>(null);
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
   const [isFirstTimeLogin, setIsFirstTimeLogin] = useState(false);
-  const [isSuccessTransition, setIsSuccessTransition] = useState(false);
-  
-  const { signIn, requestLoginToken, verifyLoginToken, signOut } = useCustomAuth();
-  const router                  = useRouter();
-  const { resolvedTheme }       = useTheme();
-  const passwordRef             = useRef<HTMLInputElement>(null);
-  const tokenRef                = useRef<HTMLInputElement>(null);
-  const isFetchingRef           = useRef(false);
+
+  const { signIn, signInWithPin, signOut } = useCustomAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const router = useRouter();
+  const isFetchingRef = useRef(false);
 
   useEffect(() => {
     setMounted(true);
     fetchStaff();
   }, []);
 
-  useEffect(() => {
-    const cleanEmail = email.trim().toLowerCase();
-    
-    if (loginMode === 'token') {
-      setPasswordStepVisible(false);
-      if (!cleanEmail) {
-        setTokenStepVisible(false);
-        setTokenSent(false);
-        setToken('');
-      } else {
-        setTokenStepVisible(true);
-        // Auto-send OTP when email is valid and no cooldown active
-        if (tokenCooldown <= 0 && !tokenSent && !tokenSending) {
-          handleSendToken(cleanEmail, true);
-        }
-      }
-    } else {
-      setTokenStepVisible(false);
-      setTokenSent(false);
-      setToken('');
-      if (!cleanEmail) {
-        setPasswordStepVisible(false);
-      } else {
-        setPasswordStepVisible(true);
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [email, loginMode]);
-
-  useEffect(() => {
-    if (tokenCooldown <= 0) return;
-    const timer = setInterval(() => {
-      setTokenCooldown((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [tokenCooldown]);
-
-  useEffect(() => {
-    if (loginMode === 'token' && tokenStepVisible) {
-      setTimeout(() => tokenRef.current?.focus(), 180);
-    }
-  }, [loginMode, tokenStepVisible]);
-
   const fetchStaff = async () => {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
-    
+    setLoadingStaff(true);
+
     try {
       const cached = await getFromCache('staff_cache');
-      if (cached?.length) setStaff(cached);
+      if (cached?.length) {
+        setStaff(cached);
+        setLoadingStaff(false);
+      }
 
       const data = await gql<{ loginStaff?: StaffMember[] }>(Q_LOGIN_STAFF);
-      if (data?.loginStaff) {
+      if (data?.loginStaff?.length) {
         setStaff(data.loginStaff);
         await saveToCache('staff_cache', data.loginStaff);
       }
     } catch (e) {
-      console.error("Failed to fetch staff list", e);
+      console.error('Failed to fetch staff list', e);
     } finally {
+      setLoadingStaff(false);
       isFetchingRef.current = false;
     }
   };
 
   const isDark = !mounted || resolvedTheme === 'dark';
-  const selectedStaff = staff.find((member: any) => member.email?.toLowerCase() === email.trim().toLowerCase());
-  const selectedPhone = selectedStaff?.phone?.trim();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitAuth = useCallback(async (pinOverride?: string) => {
+    if (!selectedStaff || isVerifying) return;
+    const email = selectedStaff.email.trim();
+    const secret = pinOverride ?? (authMode === 'pin' ? pin : password);
+
+    if (!secret) {
+      setError(authMode === 'pin' ? 'Please enter your 4-digit PIN' : 'Please enter your password');
+      return;
+    }
+
+    setIsVerifying(true);
     setError(null);
-    setLoading(true);
-    if (loginMode === 'token') {
-      const cleanToken = token.trim();
-      if (DEBUG_AUTH) {
-        console.log('[AUTH][UI] Verify attempt', {
-          email,
-          hasPhone: !!selectedPhone,
-          tokenLength: cleanToken.length,
-        });
+
+    try {
+      let result;
+      if (authMode === 'pin') {
+        result = await signInWithPin(email, secret);
+      } else {
+        result = await signIn(email, secret);
       }
-      if (!/^\d{6}$/.test(cleanToken)) {
-        setError('Enter the 6-digit login token sent to you.');
-        setLoading(false);
+
+      if (result.error) {
+        setError(result.error);
+        setShakeKey((k) => k + 1);
+        if (authMode === 'pin') setPin('');
+        setIsVerifying(false);
         return;
       }
 
-      const { data, error: err } = await verifyLoginToken({
-        email,
-        token: cleanToken,
-        phone: selectedPhone,
-      });
-
-      if (err) {
-        if (DEBUG_AUTH) {
-          console.error('[AUTH][UI] Verify failed', { error: err });
-        }
-        setError(err);
-        setLoading(false);
-      } else {
-        if (DEBUG_AUTH) {
-          console.log('[AUTH][UI] Verify succeeded');
-        }
-        
-        if (data?.user?.id) {
-          try {
-            await gql(M_UPDATE_DUTY_STATUS, { userId: data.user.id, isOnDuty: true });
-          } catch (e) {
-            console.error('[AUTH] Failed to auto-clock in', e);
-          }
-        }
-
-        setIsSuccessTransition(true);
-        setTimeout(() => {
-          window.location.href = '/dashboard';
-        }, 900);
-      }
-    } else {
-      const cleanEmail = email.trim();
-      const cleanPassword = password.trim();
-      const { data, error: err } = await signIn(cleanEmail, cleanPassword);
-      if (err) {
-        if (err.includes('Invalid login credentials') || err.includes('Invalid email or password')) {
-          setError('Invalid credentials. If you are a new staff member, please ask your manager to set up your account.');
-        } else if (err.includes('refresh token') || err.includes('session')) {
-          setError('Session expired. Please refresh the page and try again.');
-        } else if (err.includes('Service temporarily') || err.includes('unavailable')) {
-          setError('The system is temporarily unavailable. Please try again in a moment.');
-        } else {
-          setError('Login failed. Please check your credentials or use token login.');
-        }
-        setLoading(false);
-      } else {
-        // Check if this is a temporary password (starts with "Azzay@")
-        if (cleanPassword.startsWith('Azzay@')) {
-          setIsFirstTimeLogin(true);
-          setShowPasswordChangeModal(true);
-          setLoading(false);
-        } else {
-          if (data?.user?.id) {
-            try {
-              await gql(M_UPDATE_DUTY_STATUS, { userId: data.user.id, isOnDuty: true });
-            } catch (e) {
-              console.error('[AUTH] Failed to auto-clock in', e);
-            }
-          }
-
-          setIsSuccessTransition(true);
-          setTimeout(() => {
-            window.location.href = '/dashboard';
-          }, 900);
-        }
-      }
-    }
-  };
-
-  const handleSendToken = async (emailOverride?: string, silent = false) => {
-    if (!silent) setError(null);
-    const targetEmail = (emailOverride ?? email).trim();
-
-    if (!targetEmail) {
-      setError('Please select or enter your email first.');
-      return;
-    }
-
-    if (tokenCooldown > 0) {
-      setError(`Please wait ${tokenCooldown}s before requesting another code.`);
-      return;
-    }
-
-    if (DEBUG_AUTH) {
-      console.log('[AUTH][UI] Request token', {
-        email: targetEmail,
-        hasPhone: !!selectedPhone,
-        silent,
-      });
-    }
-
-    setTokenSending(true);
-    const { error: err } = await requestLoginToken({
-      email: targetEmail,
-      phone: selectedPhone,
-    });
-    setTokenSending(false);
-
-    if (err) {
-      if (DEBUG_AUTH) {
-        console.error('[AUTH][UI] Request token failed', { error: err });
-      }
-      if (err.toLowerCase().includes('rate limit')) {
-        setTokenCooldown(60);
-        setError('Email rate limit exceeded. Please wait about 60 seconds, then resend. You can use password login immediately.');
+      if (authMode === 'pin' && result.data?.requiresPinChange) {
+        setPinChangeUser(result.data.user);
+        setShowPinChangeModal(true);
+        setIsVerifying(false);
         return;
       }
-      setError(err);
-      return;
-    }
 
-    if (DEBUG_AUTH) {
-      console.log('[AUTH][UI] Request token succeeded');
-    }
-    setTokenSent(true);
-    setTokenCooldown(60);
-    // Auto-focus token input after send
-    setTimeout(() => tokenRef.current?.focus(), 120);
-  };
+      // Check first-time temporary password
+      if (secret.startsWith('Azzay@')) {
+        setIsFirstTimeLogin(true);
+        setShowPasswordChangeModal(true);
+        setIsVerifying(false);
+        return;
+      }
 
-  const handleStaffSelect = (selectedEmail: string) => {
-    setEmail(selectedEmail);
-    setShowStaffModal(false);
-    if (loginMode === 'password') {
-      setTimeout(() => passwordRef.current?.focus(), 100);
-    }
-  };
+      // Auto-clock in on duty
+      if (result.data?.user?.id) {
+        try {
+          await gql(M_UPDATE_DUTY_STATUS, { userId: result.data.user.id, isOnDuty: true });
+        } catch (e) {
+          console.error('[AUTH] Duty status update failed', e);
+        }
+      }
 
-  const inputStyle = (field: string) => ({
-    background: isDark ? 'rgba(6,11,20,0.6)' : 'rgba(255,255,255,0.9)',
-    border: `1.5px solid ${focused === field ? (isDark ? '#00D9FF' : '#0EA5E9') : isDark ? 'rgba(148,163,184,0.15)' : 'rgba(203,213,225,0.6)'}`,
-    color: isDark ? '#F8FAFC' : '#0F172A',
-    boxShadow: focused === field ? `0 0 0 3px ${isDark ? 'rgba(0,217,255,0.12)' : 'rgba(14,165,233,0.12)'}` : 'none',
-    transition: 'all 0.2s ease',
-  });
+      setIsSuccessTransition(true);
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 850);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed. Please try again.';
+      setError(msg);
+      setShakeKey((k) => k + 1);
+      if (authMode === 'pin') setPin('');
+      setIsVerifying(false);
+    }
+  }, [selectedStaff, isVerifying, authMode, pin, password, signInWithPin, signIn]);
+
+  // Handle PIN input
+  const handlePinDigit = useCallback((digit: string) => {
+    if (pin.length >= 6 || isVerifying) return;
+    setError(null);
+    const newPin = pin + digit;
+    setPin(newPin);
+
+    // Auto-verify on 4-digit PIN (or allow 6-digit)
+    if (newPin.length === 4) {
+      setTimeout(() => {
+        submitAuth(newPin);
+      }, 150);
+    }
+  }, [pin, isVerifying, submitAuth]);
+
+  const handlePinBackspace = useCallback(() => {
+    if (isVerifying) return;
+    setError(null);
+    setPin((prev) => prev.slice(0, -1));
+  }, [isVerifying]);
+
+  const handlePinClear = useCallback(() => {
+    if (isVerifying) return;
+    setError(null);
+    setPin('');
+  }, [isVerifying]);
+
+  // Keyboard navigation for PIN & form
+  useEffect(() => {
+    if (!selectedStaff || authMode !== 'pin' || isVerifying) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') {
+        handlePinDigit(e.key);
+      } else if (e.key === 'Backspace') {
+        handlePinBackspace();
+      } else if (e.key === 'Escape') {
+        setSelectedStaff(null);
+        setPin('');
+        setError(null);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedStaff, authMode, isVerifying, handlePinDigit, handlePinBackspace]);
 
   return (
-    <div className="relative w-full h-screen overflow-hidden flex items-center justify-center">
-
-      {/* Staff Selector Modal */}
-      <StaffSelectorModal 
-        show={showStaffModal} 
-        onClose={() => setShowStaffModal(false)}
-        onSelect={handleStaffSelect}
-        staff={staff}
-        isDark={isDark}
-      />
-
-      {/* ── 3D CANVAS ── */}
-      <div className="absolute inset-0 z-0">
-        <Canvas camera={{ position: [0, 0, 13], fov: 52 }} dpr={[1, 1.5]}>
+    <div className="relative w-full h-[100dvh] lg:h-screen overflow-hidden flex flex-col lg:flex-row items-stretch select-none">
+      {/* ── 3D CANVAS BACKGROUND ── */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <Canvas camera={{ position: [0, 0, 13], fov: 50 }} dpr={[1, 1.5]}>
           <Suspense fallback={null}>
-            <Scene isDark={isDark} />
+            <MovingPillsScene isDark={isDark} />
           </Suspense>
-          <OrbitControls enableZoom={false} enablePan={false} autoRotate autoRotateSpeed={0.25} maxPolarAngle={Math.PI * 0.55} minPolarAngle={Math.PI * 0.45} />
         </Canvas>
       </div>
 
-      {/* Subtle ambient wash behind the 3D pharmaceutical scene */}
-      <div className="absolute inset-0 pointer-events-none opacity-60"
-        style={{ background: isDark ? 'radial-gradient(ellipse at 30% 20%, rgba(0,217,255,0.06) 0%, transparent 45%), radial-gradient(ellipse at 70% 80%, rgba(167,139,250,0.06) 0%, transparent 45%)' : 'radial-gradient(ellipse at 30% 20%, rgba(14,165,233,0.05) 0%, transparent 45%), radial-gradient(ellipse at 70% 80%, rgba(139,92,246,0.05) 0%, transparent 45%)' }} />
-
-      {/* ── LOGIN CARD ── */}
-      <motion.div
-        className="relative z-10 w-full max-w-[420px] mx-4"
-        initial={{ opacity: 0, y: 32, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      {/* ── LEFT BRAND PANEL ── */}
+      <div
+        className="relative z-10 w-full lg:w-[380px] xl:w-[420px] p-3 sm:p-6 lg:p-10 flex flex-col justify-between border-b lg:border-b-0 lg:border-r backdrop-blur-xl transition-all"
+        style={{
+          background: isDark
+            ? 'linear-gradient(165deg, rgba(2, 6, 23, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%)'
+            : 'linear-gradient(165deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.98) 100%)',
+          borderColor: isDark ? 'rgba(0, 217, 255, 0.15)' : 'rgba(0, 217, 255, 0.25)',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.3)',
+        }}
       >
-        {/* Card glow */}
-        <div className="absolute -inset-1 rounded-[28px] opacity-40 blur-2xl pointer-events-none"
-          style={{ background: isDark ? 'linear-gradient(135deg, rgba(0,217,255,0.3), rgba(167,139,250,0.3))' : 'linear-gradient(135deg, rgba(14,165,233,0.2), rgba(139,92,246,0.2))' }} />
-
-        <div className="relative rounded-[24px] border overflow-hidden"
-          style={{
-            background: isDark ? 'rgba(6,11,20,0.82)' : 'rgba(255,255,255,0.88)',
-            borderColor: isDark ? 'rgba(0,217,255,0.18)' : 'rgba(14,165,233,0.25)',
-            backdropFilter: 'blur(32px) saturate(180%)',
-            boxShadow: isDark
-              ? '0 32px 64px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.06)'
-              : '0 32px 64px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9)',
-          }}>
-
-          {/* Top accent line */}
-          <div className="h-[2px] w-full"
-            style={{ background: isDark ? 'linear-gradient(90deg, transparent, #00D9FF, #A78BFA, transparent)' : 'linear-gradient(90deg, transparent, #0EA5E9, #8B5CF6, transparent)' }} />
-
-          <div className="p-6 md:p-8">
-            {/* Logo */}
-            <motion.div className="flex flex-col items-center mb-8"
-              initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15, duration: 0.5 }}>
-              <div className="relative mb-5">
-                <div className="absolute inset-0 rounded-2xl blur-xl opacity-50"
-                  style={{ background: isDark ? 'radial-gradient(circle, #00D9FF, #A78BFA)' : 'radial-gradient(circle, #0EA5E9, #8B5CF6)' }} />
-                <div className="relative w-20 h-20 rounded-2xl flex items-center justify-center overflow-hidden"
-                  style={{
-                    background: isDark ? 'linear-gradient(135deg, rgba(0,217,255,0.12), rgba(167,139,250,0.12))' : 'linear-gradient(135deg, rgba(14,165,233,0.1), rgba(139,92,246,0.1))',
-                    border: `2px solid ${isDark ? 'rgba(0,217,255,0.35)' : 'rgba(14,165,233,0.35)'}`,
-                    boxShadow: isDark ? '0 0 30px rgba(0,217,255,0.25)' : '0 0 20px rgba(14,165,233,0.2)',
-                  }}>
-                  <img src="/azzay-logo.png" alt="Azzay" className="w-14 h-14 object-contain" />
-                </div>
-              </div>
-
-              <h1 className="font-display text-2xl font-bold tracking-tight mb-1"
-                style={{ color: isDark ? '#F8FAFC' : '#0F172A', textShadow: isDark ? '0 0 30px rgba(0,217,255,0.2)' : 'none' }}>
-                Azzay Pharmacy
-              </h1>
-              <p className="text-sm font-medium mb-3" style={{ color: isDark ? '#64748B' : '#94A3B8' }}>
-                AI-Powered Pharmaceutical Intelligence
-              </p>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
-                style={{ background: isDark ? 'rgba(16,185,129,0.1)' : 'rgba(5,150,105,0.08)', color: isDark ? '#34D399' : '#059669', border: `1px solid ${isDark ? 'rgba(16,185,129,0.25)' : 'rgba(5,150,105,0.2)'}` }}>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: isDark ? '#34D399' : '#059669' }} />
-                  <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: isDark ? '#34D399' : '#059669' }} />
-                </span>
-                NEXUS v2.0 · Online
-              </div>
-            </motion.div>
-
-            {/* Error */}
-            <AnimatePresence>
-              {error && (
-                <motion.div className="mb-5 p-3.5 rounded-xl text-sm font-medium text-center"
-                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                  style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
-                  {error}
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Form */}
-            <motion.form onSubmit={handleSubmit} className="space-y-4"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25, duration: 0.4 }}>
-              <div>
-                <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                  style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Email Address</label>
-                <div className="relative group">
-                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                    placeholder="staff@azzay.app"
-                    className="w-full px-4 py-3 rounded-xl text-sm font-medium focus:outline-none cursor-pointer"
-                    style={inputStyle('email')}
-                    onFocus={() => { setFocused('email'); setShowStaffModal(true); }} 
-                    onClick={() => setShowStaffModal(true)}
-                    onBlur={() => setFocused(null)} />
-                  
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 group-hover:opacity-100 transition-opacity bg-white/5 border border-white/10"
-                    onClick={() => setShowStaffModal(true)}>
-                    <ChevronRight className="w-4 h-4" />
-                  </div>
-                </div>
-              </div>
-              {loginMode === 'token' ? (
-                <AnimatePresence initial={false}>
-                  {tokenStepVisible && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, height: 0 }}
-                      animate={{ opacity: 1, y: 0, height: 'auto' }}
-                      exit={{ opacity: 0, y: -6, height: 0 }}
-                      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                      className="overflow-hidden"
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-xs font-semibold uppercase tracking-wider"
-                          style={{ color: isDark ? '#94A3B8' : '#64748B' }}>6-Digit Login Token</label>
-                        <button
-                          type="button"
-                          onClick={() => handleSendToken()}
-                          disabled={tokenSending || tokenCooldown > 0}
-                          className="text-[11px] font-semibold"
-                          style={{ color: tokenSending || tokenCooldown > 0 ? (isDark ? '#64748B' : '#94A3B8') : (isDark ? '#00D9FF' : '#0EA5E9') }}
-                        >
-                          {tokenSending ? 'Sending...' : tokenCooldown > 0 ? `Resend in ${tokenCooldown}s` : tokenSent ? 'Resend code' : 'Send code'}
-                        </button>
-                      </div>
-                      <p className="text-[11px] mb-2" style={{ color: isDark ? '#64748B' : '#94A3B8' }}>
-                        {tokenSent
-                          ? <span style={{ color: isDark ? '#34D399' : '#059669' }}>✓ Code sent to your email{selectedPhone ? ' & SMS' : ''}. Enter it below.</span>
-                          : tokenSending
-                            ? 'Sending your login code…'
-                            : 'We send your code to email and SMS (if your phone is on file).'}
-                      </p>
-                      <input
-                        ref={tokenRef}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={token}
-                        onChange={(e) => setToken(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                        required={tokenStepVisible}
-                        placeholder="000000"
-                        className="w-full px-4 py-3 rounded-xl text-sm font-medium tracking-[0.35em] text-center focus:outline-none"
-                        style={inputStyle('token')}
-                        onFocus={() => setFocused('token')}
-                        onBlur={() => setFocused(null)}
-                      />
-
-                      <div className="pt-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setError(null);
-                            setLoginMode('password');
-                          }}
-                          className="text-xs font-medium inline-flex items-center gap-1.5"
-                          style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }}
-                        >
-                          <KeyRound size={12} />
-                          Prefer password? Click here
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              ) : (
-                <AnimatePresence initial={false}>
-                  {passwordStepVisible && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10, height: 0 }}
-                      animate={{ opacity: 1, y: 0, height: 'auto' }}
-                      exit={{ opacity: 0, y: -6, height: 0 }}
-                      transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                      className="overflow-hidden"
-                    >
-                      <div className="mb-2">
-                        <label className="block text-xs font-semibold mb-2 uppercase tracking-wider"
-                          style={{ color: isDark ? '#94A3B8' : '#64748B' }}>Password</label>
-                        <div className="relative group">
-                          <input ref={passwordRef} type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
-                            placeholder="••••••••"
-                            className="w-full px-4 py-3 rounded-xl text-sm font-medium focus:outline-none"
-                            style={inputStyle('password')}
-                            onFocus={() => setFocused('password')} onBlur={() => setFocused(null)} />
-
-                          <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg opacity-40 hover:opacity-100 transition-opacity"
-                            style={{ color: isDark ? '#94A3B8' : '#64748B' }}
-                          >
-                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="pt-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setError(null);
-                            setLoginMode('token');
-                          }}
-                          className="text-xs font-medium inline-flex items-center gap-1.5"
-                          style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }}
-                        >
-                          <KeyRound size={12} />
-                          Prefer token login? Click here
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              )}
-
-              <motion.button suppressHydrationWarning type="submit"
-                disabled={!mounted || loading || tokenSending
-                  || (loginMode === 'token' && (!tokenStepVisible || !tokenSent || token.length !== 6))
-                  || (loginMode === 'password' && !passwordStepVisible)}
-                className="w-full py-3.5 rounded-xl font-bold text-sm relative overflow-hidden"
-                whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.98 }}
+          {/* Top Brand & Logo */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div
+                className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl lg:rounded-2xl flex items-center justify-center overflow-hidden shadow-lg shrink-0"
                 style={{
-                  backgroundImage: isDark ? 'linear-gradient(135deg, #00D9FF 0%, #0099BB 50%, #00D9FF 100%)' : 'linear-gradient(135deg, #0EA5E9 0%, #0284C7 50%, #0EA5E9 100%)',
-                  backgroundRepeat: 'no-repeat',
-                  backgroundPosition: 'center',
-                  color: isDark ? '#060B14' : '#FFFFFF',
-                  boxShadow: isDark ? '0 8px 32px rgba(0,217,255,0.35), inset 0 1px 0 rgba(255,255,255,0.2)' : '0 8px 32px rgba(14,165,233,0.35), inset 0 1px 0 rgba(255,255,255,0.3)',
-                  opacity: loading ? 0.7 : 1,
-                }}>
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    {loginMode === 'token' ? 'Verifying Token...' : 'Authenticating...'}
-                  </span>
-                ) : tokenSending ? (
-                  'Preparing token...'
-                ) : (loginMode === 'token' ? 'Verify & Access NEXUS' : 'Access NEXUS Terminal')}
-              </motion.button>
-            </motion.form>
-
-            {/* Footer */}
-            <div className="mt-6 pt-5 border-t text-center"
-              style={{ borderColor: isDark ? 'rgba(148,163,184,0.08)' : 'rgba(203,213,225,0.3)' }}>
-              <button 
-                type="button"
-                onClick={() => setShowForgotPassword(true)}
-                className="text-xs font-medium hover:opacity-80 transition-opacity"
-                style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }}
+                  background: 'rgba(255, 255, 255, 0.12)',
+                  border: '1px solid rgba(0, 217, 255, 0.35)',
+                }}
               >
-                Forgot your password?
-              </button>
-              <p className="text-[11px] font-medium mt-3" style={{ color: isDark ? '#334155' : '#CBD5E1' }}>
-                Secured by Supabase Auth · Powered by Gemini AI · Ghana 🇬🇭
-              </p>
+                <img src="/azzay-logo.png" alt="Azzay" className="w-7 h-7 sm:w-8 sm:h-8 object-contain" />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-base sm:text-xl font-black tracking-tight text-white flex items-center gap-1.5 leading-none">
+                  Azzay Pharmacy
+                </span>
+                <span className="text-[10px] sm:text-xs text-cyan-300 font-bold uppercase tracking-widest mt-0.5">
+                  Pro Edition
+                </span>
+              </div>
             </div>
+
+            {/* Theme Toggle */}
+            <button
+              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+              className="p-2 sm:p-2.5 rounded-lg lg:rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all border border-white/10"
+              title="Toggle Theme"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
           </div>
+
+          {/* Heading & Tagline */}
+          <div className="flex flex-col items-center lg:items-start space-y-2 sm:space-y-4 text-center lg:text-left flex-1 justify-center mt-8 lg:mt-0 mb-4 lg:mb-0">
+            <p className="hidden lg:block text-[11px] font-bold uppercase tracking-[0.2em] text-cyan-300/80">
+              System Access Portal
+            </p>
+            <h1 className="text-3xl sm:text-4xl lg:text-4xl xl:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-200 tracking-tight leading-[1.05] whitespace-nowrap">
+              NEXUS <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400">Terminal</span>
+            </h1>
+            <p className="text-[11px] sm:text-sm text-slate-300/80 leading-relaxed max-w-[280px] sm:max-w-sm mx-auto lg:mx-0">
+              Select your profile to authenticate and securely access pharmacy operations.
+            </p>
+          </div>
+
+        {/* Bottom Metadata */}
+        <div className="hidden lg:flex pt-6 border-t border-white/10 items-center justify-between text-xs text-slate-300/70 font-medium">
+          <span>NEXUS v2.0</span>
+          <span className="flex items-center gap-1.5 text-cyan-300">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            Online
+          </span>
         </div>
-      </motion.div>
+      </div>
 
-      {/* Password Change Modal */}
+      {/* ── RIGHT MAIN STAFF GRID AREA ── */}
+      <div className="relative z-10 flex-1 overflow-y-auto min-h-0 pt-5 pb-3 px-3 sm:p-6 lg:p-10 flex flex-col items-center justify-start">
+        <div className="w-full max-w-4xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-2 sm:mb-10 mt-4 sm:mt-0">
+            <motion.h2
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-lg sm:text-3xl lg:text-4xl font-bold tracking-tight mb-1 sm:mb-2"
+              style={{
+                color: isDark ? '#F8FAFC' : '#0F172A',
+                fontFamily: 'serif, ui-serif, Georgia',
+              }}
+            >
+              Who&apos;s clocking in?
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.1 }}
+              className="text-[10px] sm:text-sm font-semibold text-emerald-600 dark:text-emerald-400 tracking-wide"
+            >
+              Select your profile to continue
+            </motion.p>
+          </div>
+
+          {/* Grid of Staff Profiles */}
+          {loadingStaff && staff.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3">
+              <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              <p className="text-xs font-semibold opacity-60">Loading staff profiles...</p>
+            </div>
+          ) : (
+            <motion.div
+              initial="hidden"
+              animate="visible"
+              variants={{
+                hidden: { opacity: 0 },
+                visible: {
+                  opacity: 1,
+                  transition: {
+                    staggerChildren: 0.04,
+                  },
+                },
+              }}
+              className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5 lg:gap-6"
+            >
+              {staff.map((member) => {
+                const roleInfo = getRoleBadge(member.role, isDark);
+                const initials = getInitials(member.name);
+
+                return (
+                  <motion.div
+                    key={member.id}
+                    variants={{
+                      hidden: { opacity: 0, y: 30, scale: 0.9 },
+                      visible: { opacity: 1, y: 0, scale: 1 },
+                    }}
+                    whileHover={{ y: -8, scale: 1.04 }}
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => {
+                      setSelectedStaff(member);
+                      setPin('');
+                      setPassword('');
+                      setError(null);
+                      setAuthMode('pin');
+                    }}
+                    className="cursor-pointer group relative rounded-2xl sm:rounded-3xl p-4 sm:p-6 flex flex-col items-center text-center transition-all border backdrop-blur-2xl"
+                    style={{
+                      background: isDark
+                        ? 'linear-gradient(180deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.8) 100%)'
+                        : 'linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.9) 100%)',
+                      borderColor: isDark
+                        ? 'rgba(255, 255, 255, 0.1)'
+                        : 'rgba(0, 0, 0, 0.05)',
+                      boxShadow: isDark
+                        ? '0 20px 40px -10px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.1)'
+                        : '0 20px 40px -10px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,1)',
+                    }}
+                  >
+                    {/* Glowing card border/shadow on hover */}
+                    <div
+                      className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none"
+                      style={{
+                        boxShadow: `0 0 0 2px ${roleInfo.color}33, 0 20px 40px -10px ${roleInfo.color}40`,
+                      }}
+                    />
+
+                    {/* Circular Avatar / Initials */}
+                    <div className="relative mb-4 sm:mb-5">
+                      <div className="absolute inset-0 rounded-[22px] blur-md opacity-40 group-hover:opacity-70 transition-opacity duration-500" style={{ background: roleInfo.gradient }} />
+                      <div
+                        className="relative w-14 h-14 sm:w-16 sm:h-16 lg:w-20 lg:h-20 rounded-[20px] sm:rounded-[24px] flex items-center justify-center text-base sm:text-xl lg:text-2xl font-black text-white shadow-xl transition-transform duration-500 group-hover:scale-110 group-hover:rotate-3"
+                        style={{
+                          background: roleInfo.gradient,
+                          border: '2px solid rgba(255,255,255,0.25)',
+                          boxShadow: `0 10px 25px -5px ${roleInfo.color}66`,
+                        }}
+                      >
+                        {member.avatarUrl ? (
+                          <img
+                            src={member.avatarUrl}
+                            alt={member.name}
+                            className="w-full h-full object-cover rounded-[18px] sm:rounded-[22px]"
+                          />
+                        ) : (
+                          initials
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Staff Name */}
+                    <h3
+                      className="font-bold text-sm sm:text-base lg:text-lg tracking-tight mb-1 sm:mb-1.5 w-full truncate px-2"
+                      style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
+                      title={member.name}
+                    >
+                      {member.name}
+                    </h3>
+
+                    {/* Role Title */}
+                    <span
+                      className="text-[10px] sm:text-xs font-bold tracking-wider uppercase"
+                      style={{ color: roleInfo.color }}
+                    >
+                      {roleInfo.label}
+                    </span>
+
+                    {/* Branch subtle indicator */}
+                    {member.branch?.name && (
+                      <div className="mt-3 w-full flex justify-center">
+                        <span className="text-[9px] sm:text-[10px] font-semibold px-2.5 py-1 rounded-full text-slate-500 bg-slate-100 dark:text-slate-400 dark:bg-slate-800/50 truncate max-w-[90%] border border-slate-200 dark:border-slate-700/50 shadow-sm">
+                          {member.branch.name}
+                        </span>
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
+        </div>
+      </div>
+
+      {/* ── PIN CLOCK-IN KEYPAD MODAL ── */}
       <AnimatePresence>
-        {showPasswordChangeModal && (
-          <PasswordChangeModal 
-            show={showPasswordChangeModal}
-            onClose={() => {
-              setShowPasswordChangeModal(false);
-              setIsFirstTimeLogin(false);
-              // Sign out user if they cancel password change
-              if (isFirstTimeLogin) {
-                signOut();
+        {selectedStaff && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                if (!isVerifying) {
+                  setSelectedStaff(null);
+                  setPin('');
+                  setError(null);
+                }
+              }}
+              className="absolute inset-0 bg-black/65 backdrop-blur-md"
+            />
+
+            {/* Dialog Content */}
+            <motion.div
+              key={shakeKey}
+              initial={{ opacity: 0, scale: 0.92, y: 20 }}
+              animate={
+                error
+                  ? { opacity: 1, scale: 1, y: 0, x: [-8, 8, -6, 6, -3, 3, 0] }
+                  : { opacity: 1, scale: 1, y: 0, x: 0 }
               }
-            }}
-            email={email}
-            currentPassword={password}
-            isFirstTime={isFirstTimeLogin}
-            onSuccess={() => { window.location.href = '/dashboard'; }}
-            isDark={isDark}
-          />
-        )}
-      </AnimatePresence>
+              exit={{ opacity: 0, scale: 0.92, y: 20 }}
+              transition={{ duration: 0.3 }}
+              className="relative w-full max-w-sm rounded-[32px] overflow-hidden border p-6 sm:p-7 shadow-2xl"
+              style={{
+                background: isDark
+                  ? 'linear-gradient(165deg, rgba(15, 23, 42, 0.96) 0%, rgba(10, 15, 29, 0.98) 100%)'
+                  : 'linear-gradient(165deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%)',
+                borderColor: isDark ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.25)',
+                boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.55)',
+              }}
+            >
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  if (!isVerifying) {
+                    setSelectedStaff(null);
+                    setPin('');
+                    setError(null);
+                  }
+                }}
+                className="absolute right-5 top-5 p-2 rounded-full hover:bg-white/10 transition-colors"
+                style={{ color: isDark ? '#94A3B8' : '#64748B' }}
+              >
+                <X className="w-5 h-5" />
+              </button>
 
-      {/* Forgot Password Modal */}
-      <AnimatePresence>
-        {showForgotPassword && (
-          <ForgotPasswordModal 
-            show={showForgotPassword}
-            onClose={() => setShowForgotPassword(false)}
-            isDark={isDark}
-          />
+              {/* Staff Header */}
+              <div className="flex flex-col items-center text-center mb-6">
+                <div
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-[24px] flex items-center justify-center text-xl sm:text-2xl font-black text-white shadow-xl mb-3"
+                  style={{
+                    background: getRoleBadge(selectedStaff.role, isDark).gradient,
+                    border: '2px solid rgba(255,255,255,0.25)',
+                  }}
+                >
+                  {getInitials(selectedStaff.name)}
+                </div>
+                <h3
+                  className="font-bold text-lg tracking-tight"
+                  style={{ color: isDark ? '#F8FAFC' : '#0F172A' }}
+                >
+                  {selectedStaff.name}
+                </h3>
+                <p
+                  className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5"
+                >
+                  {getRoleBadge(selectedStaff.role, isDark).label}
+                  {selectedStaff.branch?.name ? ` • ${selectedStaff.branch.name}` : ''}
+                </p>
+              </div>
+
+              {/* Error Banner */}
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-4 p-2.5 rounded-xl text-xs font-semibold text-center bg-red-500/10 border border-red-500/30 text-red-500"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Mode: PIN Keypad */}
+              {authMode === 'pin' ? (
+                <div className="flex flex-col items-center">
+                  {/* PIN Dots Display */}
+                  <div className="flex items-center gap-3 mb-6 h-4">
+                    {[0, 1, 2, 3].map((index) => {
+                      const isFilled = pin.length > index;
+                      return (
+                        <motion.div
+                          key={index}
+                          animate={
+                            isVerifying
+                              ? {
+                                  scale: [1, 1.3, 1],
+                                  opacity: [0.3, 1, 0.3],
+                                  borderColor: '#10B981',
+                                }
+                              : {
+                                  scale: isFilled ? 1.15 : 1,
+                                  opacity: 1,
+                                  borderColor: isFilled
+                                    ? '#10B981'
+                                    : isDark
+                                    ? 'rgba(255,255,255,0.2)'
+                                    : 'rgba(0,0,0,0.2)',
+                                }
+                          }
+                          transition={
+                            isVerifying
+                              ? {
+                                  repeat: Infinity,
+                                  duration: 0.9,
+                                  delay: index * 0.15,
+                                  ease: 'easeInOut',
+                                }
+                              : { duration: 0.2 }
+                          }
+                          className="w-4 h-4 rounded-full border-2 flex items-center justify-center"
+                          style={{
+                            background: isFilled ? '#10B981' : 'transparent',
+                            boxShadow: isFilled ? '0 0 12px rgba(16,185,129,0.5)' : 'none',
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {/* Numpad 3x4 */}
+                  <div className="grid grid-cols-3 gap-2.5 w-full max-w-[260px] mb-5">
+                    {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                      <button
+                        key={digit}
+                        type="button"
+                        disabled={isVerifying}
+                        onClick={() => handlePinDigit(digit)}
+                        className="h-14 rounded-2xl font-bold text-xl flex items-center justify-center transition-all active:scale-95 border hover:bg-black/5 dark:hover:bg-white/10"
+                        style={{
+                          background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+                          borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                          color: isDark ? '#F8FAFC' : '#0F172A',
+                        }}
+                      >
+                        {digit}
+                      </button>
+                    ))}
+
+                    {/* Clear Button */}
+                    <button
+                      type="button"
+                      disabled={isVerifying}
+                      onClick={handlePinClear}
+                      className="h-14 rounded-2xl text-xs font-bold uppercase tracking-wider flex items-center justify-center transition-all active:scale-95 border opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10"
+                      style={{
+                        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+                        color: isDark ? '#94A3B8' : '#64748B',
+                      }}
+                    >
+                      Clear
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isVerifying}
+                      onClick={() => handlePinDigit('0')}
+                      className="h-14 rounded-2xl font-bold text-xl flex items-center justify-center transition-all active:scale-95 border hover:bg-black/5 dark:hover:bg-white/10"
+                      style={{
+                        background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+                        color: isDark ? '#F8FAFC' : '#0F172A',
+                      }}
+                    >
+                      0
+                    </button>
+
+                    {/* Backspace Button */}
+                    <button
+                      type="button"
+                      disabled={isVerifying}
+                      onClick={handlePinBackspace}
+                      className="h-14 rounded-2xl flex items-center justify-center transition-all active:scale-95 border opacity-70 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10"
+                      style={{
+                        background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+                        color: isDark ? '#94A3B8' : '#64748B',
+                      }}
+                    >
+                      <Delete className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Alternative: Password Switch */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setError(null);
+                      setAuthMode('password');
+                    }}
+                    className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    Use Password instead
+                  </button>
+                </div>
+              ) : (
+                /* Mode: Password Entry */
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    submitAuth();
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="relative">
+                    <input
+                      autoFocus
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                      required
+                      className="w-full px-4 py-3.5 rounded-2xl text-sm font-medium outline-none border transition-all"
+                      style={{
+                        background: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.03)',
+                        borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+                        color: isDark ? '#F8FAFC' : '#0F172A',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1.5 opacity-50 hover:opacity-100"
+                    >
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isVerifying || !password}
+                    className="w-full py-3.5 rounded-2xl font-bold text-sm text-white transition-all shadow-lg flex items-center justify-center gap-2"
+                    style={{
+                      background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)',
+                      opacity: isVerifying || !password ? 0.7 : 1,
+                    }}
+                  >
+                    {isVerifying ? (
+                      <span className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Authenticating...
+                      </span>
+                    ) : (
+                      <>
+                        Clock In
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError(null);
+                        setAuthMode('pin');
+                      }}
+                      className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                    >
+                      ← Back to PIN
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPassword(true)}
+                      className="text-xs font-medium opacity-60 hover:opacity-100"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
+                </form>
+              )}
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -1416,46 +1239,46 @@ export default function LoginPage() {
       <AnimatePresence>
         {isSuccessTransition && (
           <motion.div
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
-            transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed inset-0 z-[200] flex items-center justify-center shadow-2xl"
+            initial={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-6"
             style={{
               background: isDark
-                ? 'linear-gradient(180deg, #0A0E1A 0%, #00D9FF 100%)'
-                : 'linear-gradient(180deg, #F8FAFC 0%, #0EA5E9 100%)'
+                ? 'linear-gradient(135deg, #022c22 0%, #064e3b 50%, #022c22 100%)'
+                : 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 50%, #a7f3d0 100%)',
             }}
           >
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ delay: 0.3, duration: 0.5 }}
-              className="flex flex-col items-center gap-6"
-              style={{ color: isDark ? '#fff' : '#0F172A' }}
+            <motion.div
+              initial={{ scale: 0.8, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="flex flex-col items-center text-center gap-4"
             >
-              <div className="p-5 rounded-3xl" style={{ background: isDark ? 'rgba(0,217,255,0.2)' : 'rgba(14,165,233,0.1)' }}>
-                <Sparkles className="w-12 h-12" style={{ color: isDark ? '#00D9FF' : '#0EA5E9' }} />
+              <div className="w-20 h-20 rounded-3xl bg-emerald-500/20 border-2 border-emerald-400/40 flex items-center justify-center shadow-2xl">
+                <ShieldCheck className="w-10 h-10 text-emerald-400" />
               </div>
-              <div className="text-center">
-                <p className="text-sm font-medium uppercase tracking-widest mb-1 opacity-60">
-                  {new Date().getHours() < 12 ? 'Good Morning' : new Date().getHours() < 17 ? 'Good Afternoon' : 'Good Evening'}
+
+              <div>
+                <p className="text-xs font-bold uppercase tracking-widest text-emerald-400/80 mb-1">
+                  Access Granted • On Duty
                 </p>
-                <h2 className="text-3xl md:text-4xl font-bold font-display tracking-tight">
-                  {staff.find(s => s.email === email)?.name
-                    ? `Welcome, ${staff.find(s => s.email === email)!.name.split(' ')[0]}!`
-                    : 'Welcome to NEXUS'}
+                <h2
+                  className="text-3xl font-extrabold tracking-tight"
+                  style={{ color: isDark ? '#FFFFFF' : '#064E3B' }}
+                >
+                  Welcome, {selectedStaff?.name || 'Staff Member'}!
                 </h2>
-                <p className="text-sm opacity-50 mt-2">
-                  {staff.find(s => s.email === email)?.branch?.name || 'Branch not assigned'}
+                <p className="text-sm opacity-70 mt-1">
+                  {selectedStaff?.branch?.name || 'Azzay Pharmacy Pro NEXUS'}
                 </p>
               </div>
-              <div className="w-48 h-1 rounded-full overflow-hidden" style={{ background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}>
-                <motion.div 
+
+              <div className="w-48 h-1.5 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden mt-4">
+                <motion.div
                   initial={{ width: 0 }}
                   animate={{ width: '100%' }}
-                  transition={{ duration: 0.5, delay: 0.4 }}
-                  className="h-full rounded-full"
-                  style={{ background: isDark ? '#00D9FF' : '#0EA5E9' }}
+                  transition={{ duration: 0.65, ease: 'easeInOut' }}
+                  className="h-full bg-emerald-400 rounded-full"
                 />
               </div>
             </motion.div>
@@ -1463,6 +1286,144 @@ export default function LoginPage() {
         )}
       </AnimatePresence>
 
+      {/* PIN Change Modal */}
+      <AnimatePresence>
+        {showPinChangeModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowPinChangeModal(false);
+                setNewPin('');
+                setConfirmPin('');
+                setError(null);
+              }}
+              className="absolute inset-0 bg-black/70 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-sm rounded-3xl p-6 border shadow-2xl"
+              style={{
+                background: isDark ? '#0F172A' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+              }}
+            >
+              <h3 className="text-lg font-bold mb-1">Set your new PIN</h3>
+              <p className="text-xs opacity-70 mb-4 leading-relaxed">
+                Your manager gave you a temporary PIN. Please choose a new 4-6 digit PIN now.
+              </p>
+              <div className="space-y-3 mb-4">
+                <div>
+                  <label className="text-xs font-semibold opacity-70 mb-1.5 block">New PIN</label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={newPin}
+                    onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="4-6 digits"
+                    className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none border tracking-widest text-center"
+                    style={{
+                      background: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.03)',
+                      borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+                      color: isDark ? '#F8FAFC' : '#0F172A',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold opacity-70 mb-1.5 block">Confirm PIN</label>
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    value={confirmPin}
+                    onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Re-enter PIN"
+                    className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none border tracking-widest text-center"
+                    style={{
+                      background: isDark ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.03)',
+                      borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+                      color: isDark ? '#F8FAFC' : '#0F172A',
+                    }}
+                  />
+                </div>
+              </div>
+              {error && (
+                <div className="mb-4 p-2.5 rounded-xl text-xs font-semibold text-center bg-red-500/10 border border-red-500/30 text-red-500">
+                  {error}
+                </div>
+              )}
+              <button
+                onClick={async () => {
+                  setError(null);
+                  if (!/^\d{4,6}$/.test(newPin)) {
+                    setError('PIN must be 4 to 6 digits');
+                    return;
+                  }
+                  if (newPin !== confirmPin) {
+                    setError('PINs do not match');
+                    return;
+                  }
+                  try {
+                    await gql<{ setStaffPin: boolean }>(M_SET_STAFF_PIN, { userId: pinChangeUser?.id, pin: newPin });
+                    setIsSuccessTransition(true);
+                    setTimeout(() => {
+                      window.location.href = '/dashboard';
+                    }, 700);
+                  } catch (err: any) {
+                    setError(err?.message || 'Failed to set PIN. Please try again.');
+                  }
+                }}
+                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-white text-sm"
+              >
+                Save PIN & Continue
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Forgot Password Modal */}
+      <AnimatePresence>
+        {showForgotPassword && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowForgotPassword(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-sm rounded-3xl p-6 border shadow-2xl"
+              style={{
+                background: isDark ? '#0F172A' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+              }}
+            >
+              <h3 className="text-lg font-bold mb-2">Need help logging in?</h3>
+              <p className="text-xs opacity-70 mb-4 leading-relaxed">
+                Contact your store manager or administrator to reset your PIN or account credentials.
+              </p>
+              <button
+                onClick={() => setShowForgotPassword(false)}
+                className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-bold text-white text-xs"
+              >
+                Got it
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

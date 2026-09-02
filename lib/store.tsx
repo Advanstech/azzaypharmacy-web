@@ -535,7 +535,7 @@ interface StoreState {
     role: string;
     branchId: string;
     position?: string;
-  }) => Promise<boolean>;
+  }) => Promise<string>;
 
   updateStaffProfile: (args: {
     userId: string;
@@ -767,14 +767,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchSuppliers = useCallback(async () => {
     setLoadingSuppliers(true);
     try {
-      const data = await gql<{ suppliers: Supplier[] }>(Q_SUPPLIERS);
+      const data = await gql<{ suppliers: Supplier[] }>(Q_SUPPLIERS, { branchId: me?.branchId || undefined });
       setSuppliers(data.suppliers ?? []);
     } catch (e: any) {
       console.warn('[store] suppliers fetch failed:', e.message);
     } finally {
       setLoadingSuppliers(false);
     }
-  }, []);
+  }, [me?.branchId]);
 
   const refetchSales = useCallback(async (branchId?: string, dateFrom?: string, dateTo?: string) => {
     // Guard against out-of-order resolution: multiple pages/components can call
@@ -892,12 +892,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     try {
       // Fetch branchId directly from Q_ME rather than relying on `me` React state
       // (which may not have updated yet when called from refetchAll)
-      let effectiveBranchId = branchId || me?.branchId;
-      if (!effectiveBranchId) {
-        const meData = await gql<{ me: { branchId: string } }>(`query Me { me { branchId } }`);
-        effectiveBranchId = meData.me?.branchId;
+      // `null` = all branches; `undefined` = use current user's branch
+      let effectiveBranchId: string | null | undefined = branchId === undefined ? me?.branchId : branchId;
+      if (effectiveBranchId === undefined) {
+        const meData = await gql<{ me: { branchId: string | null } }>(`query Me { me { branchId } }`);
+        effectiveBranchId = meData.me?.branchId ?? null;
       }
-      if (!effectiveBranchId) {
+      if (effectiveBranchId === undefined) {
         console.warn('[store] refetchInvoices: no branchId — skipping');
         return;
       }
@@ -1379,8 +1380,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const createStaffAccount = useCallback(async (args: {
     email: string; password: string; name: string; role: string; branchId: string; position?: string;
-  }): Promise<boolean> => {
-    const data = await gql<{ createStaffAccount: boolean }>(M_CREATE_STAFF_ACCOUNT, args);
+  }): Promise<string> => {
+    const data = await gql<{ createStaffAccount: string }>(M_CREATE_STAFF_ACCOUNT, args);
     const result = data.createStaffAccount;
     if (result) {
       await refetchStaff();

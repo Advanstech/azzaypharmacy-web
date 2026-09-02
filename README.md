@@ -20,6 +20,37 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## PIN Management
+
+The application supports a staff clock-in PIN flow:
+
+### For Admins
+
+When creating a new staff account in **Admin → Staff** (or **Dashboard → Setup Staff**), the system:
+
+- Generates a random **4-6 digit initial PIN** for the staff member.
+- Displays that initial PIN in the success toast after account creation.
+- Emails the credentials (if email is configured).
+
+The admin must share the initial PIN with the staff member so they can clock in for the first time.
+
+### For Staff
+
+- Staff can log in by selecting their name and entering their **4-6 digit PIN** on the clock-in keypad at `/`.
+- On **first login**, the user is forced to change the PIN before entering the dashboard.
+- Staff can also generate a new PIN at any time from **Settings → Security → PIN Code** (`/dashboard/settings`).
+
+### For Developers
+
+Relevant files:
+
+- Login page with clock-in PIN pad: `app/page.tsx`
+- PIN change / first-login modal: `app/page.tsx`
+- PIN generation in settings: `app/dashboard/settings/page.tsx`
+- Staff account creation: `app/admin/staff/page.tsx`, `app/dashboard/setup-staff/page.tsx`
+- API mutation: `M_CREATE_STAFF_ACCOUNT` in `lib/gql.ts`
+- PIN GraphQL mutations: `M_LOGIN_WITH_PIN`, `M_SET_STAFF_PIN` in `lib/gql.ts`
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

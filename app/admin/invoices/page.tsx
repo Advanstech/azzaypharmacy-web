@@ -6,6 +6,7 @@ import { useStore } from '@/lib/store';
 import { useState, useMemo, useEffect } from 'react';
 import { useTheme } from 'next-themes';
 import Link from 'next/link';
+import { useBranch } from '@/lib/branch-context';
 import { gql, M_UPDATE_INVOICE_APPROVAL_STATUS } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
 
@@ -18,6 +19,7 @@ const APPROVAL_CONFIG: Record<string, { label: string; color: string; bg: string
 
 export default function SupplierInvoicesPage() {
   const { invoices, suppliers, recordSupplierPayment, deleteInvoice, me, refetchInvoices } = useStore() as any;
+  const { activeBranchId } = useBranch();
   const { theme, resolvedTheme } = useTheme();
   const isDark = resolvedTheme === 'dark' || theme === 'dark';
   const { addToast } = useToast();
@@ -32,6 +34,12 @@ export default function SupplierInvoicesPage() {
 
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 5;
+
+  // Reload invoices when the admin switches branch
+  useEffect(() => {
+    refetchInvoices(activeBranchId);
+    setCurrentPage(1);
+  }, [activeBranchId, refetchInvoices]);
 
   const pendingInvoices = useMemo(() => invoices.filter((inv: any) => inv.paymentStatus !== 'PAID'), [invoices]);
   const overdueInvoices = useMemo(() => pendingInvoices.filter((inv: any) => inv.dueDate && new Date(inv.dueDate) < new Date()), [pendingInvoices]);
@@ -54,6 +62,7 @@ export default function SupplierInvoicesPage() {
     if (!selectedInvoiceId || !paymentAmount) return;
     try {
       await recordSupplierPayment(selectedInvoiceId, parseFloat(paymentAmount), paymentMethod);
+      await refetchInvoices(activeBranchId);
       setPaymentModalOpen(false);
       setPaymentAmount('');
       setSelectedInvoiceId(null);
@@ -84,8 +93,8 @@ export default function SupplierInvoicesPage() {
         message: `Invoice status updated to ${APPROVAL_CONFIG[status].label}.`,
         duration: 4000,
       });
-      // Refetch invoices if available
-      if (typeof refetchInvoices === 'function') await refetchInvoices();
+      // Refetch invoices for the current branch view
+      if (typeof refetchInvoices === 'function') await refetchInvoices(activeBranchId);
     } catch (err: any) {
       addToast({ type: 'error', title: 'Action Failed', message: err?.message || 'Could not update approval status.', duration: 5000 });
     } finally {

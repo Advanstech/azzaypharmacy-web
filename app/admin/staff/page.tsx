@@ -167,7 +167,7 @@ export default function StaffIntelligencePage() {
     setOnboardError(null);
     setSubmittingOnboard(true);
     try {
-      const success = await createStaffAccount({
+      const result = await createStaffAccount({
         email: formEmail,
         password: formPassword,
         name: formName,
@@ -176,8 +176,10 @@ export default function StaffIntelligencePage() {
         position: formPosition || undefined,
       });
 
-      if (success) {
-        const credentials = `Staff account for ${formName} created successfully!\n\nEmail: ${formEmail}\nPassword: ${formPassword}\n\nPlease share these credentials with the new staff member.`;
+      if (result) {
+        const parsed = JSON.parse(result);
+        const initialPin = parsed.initialPin || 'N/A';
+        const credentials = `Staff account for ${formName} created successfully!\n\nEmail: ${formEmail}\nPassword: ${formPassword}\nInitial Clock-in PIN: ${initialPin}\n\nThe staff member will be asked to change their PIN on first login. Please share these credentials with the new staff member.`;
         addToast({
           type: 'success',
           title: 'Staff Account Created',

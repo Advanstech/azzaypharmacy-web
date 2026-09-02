@@ -20,6 +20,7 @@ import { useToast } from '@/components/pharma-toast';
 import { useBranchFilter, useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 import { ProductModalTabs } from '@/components/ProductModalTabs';
+import { Portal } from '@/components/portal';
 
 const STATUS_CONFIG = {
   OK: { label: 'In Stock', color: '#10B981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)' },
@@ -204,6 +205,7 @@ export default function InventoryPage() {
 
   // Upload Invoice / Receiving Wizard
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [invoiceBranchId, setInvoiceBranchId] = useState<string>('');
   const [invoiceStep, setInvoiceStep] = useState<'type' | 'upload' | 'verify' | 'terms'>('type');
   const [isAiMode, setIsAiMode] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -1267,7 +1269,7 @@ export default function InventoryPage() {
   };
 
   const handleReceiveInvoice = async () => {
-    const branchId = activeBranchId || me?.branchId || '';
+    const branchId = invoiceBranchId || activeBranchId || me?.branchId || '';
     if (!branchId) {
       addToast({
         type: 'error',
@@ -1322,7 +1324,7 @@ export default function InventoryPage() {
             stockQuantity: 0,
             supplierId: resolvedSupplierId,
             dosageForm: 'OTHER',
-            branchId: activeBranchId || me?.branchId || undefined,
+            branchId: invoiceBranchId || activeBranchId || me?.branchId || undefined,
           });
           resolvedItems.push({
             ...item,
@@ -1480,8 +1482,15 @@ export default function InventoryPage() {
             </button>
           )}
           {isManager && (
-            <>
-              <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button 
+                onClick={() => {
+                  setInvoiceBranchId(activeBranchId || me?.branchId || '');
+                  setShowUploadModal(true);
+                }} 
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm" 
+                style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}
+              >
                 <Upload size={16} />
                 Upload Invoice
               </button>
@@ -1490,7 +1499,7 @@ export default function InventoryPage() {
                 <Plus size={18} />
                 Add Product
               </button>
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -1994,8 +2003,9 @@ export default function InventoryPage() {
       )}
 
       {showAddModal && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-6xl h-[85vh] flex flex-col rounded-2xl border overflow-hidden shadow-2xl transition-all" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+        <Portal>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-0 sm:p-4 overflow-hidden" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(16px)' }}>
+          <div className="w-full h-full sm:h-[90vh] sm:max-h-[850px] max-w-6xl flex flex-col rounded-none sm:rounded-2xl border overflow-hidden shadow-2xl transition-all" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
             
             {/* Header */}
             <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: card.border, background: card.primaryBg }}>
@@ -2247,6 +2257,7 @@ export default function InventoryPage() {
             
           </div>
         </div>
+        </Portal>
       )}
       
       {/* Bulk Action Bar */}
@@ -2286,8 +2297,9 @@ export default function InventoryPage() {
 
       {/* Move Modal */}
       {showMoveModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 backdrop-blur-sm" style={{ background: 'rgba(0,0,0,0.6)' }}>
-          <div className="w-full max-w-sm rounded-2xl border p-6" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+        <Portal>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 backdrop-blur-md" style={{ background: 'rgba(0,0,0,0.75)' }}>
+          <div className="w-full max-w-sm rounded-2xl border p-6 shadow-2xl" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 rounded-lg bg-primary/10 text-primary">
                 <Move size={20} />
@@ -2333,12 +2345,14 @@ export default function InventoryPage() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {/* ── Edit Product Wizard Modal ─────────────────────────────────── */}
       {showEditModal && editingProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-6xl h-[85vh] flex flex-col rounded-2xl border overflow-hidden shadow-2xl" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+        <Portal>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-0 sm:p-4 overflow-hidden" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(16px)' }}>
+          <div className="w-full h-full sm:h-[90vh] sm:max-h-[850px] max-w-6xl flex flex-col rounded-none sm:rounded-2xl border overflow-hidden shadow-2xl" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
             
             {/* Header */}
             <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: card.border, background: card.primaryBg }}>
@@ -2527,112 +2541,135 @@ export default function InventoryPage() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {showUploadModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-hidden" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(20px)' }}>
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-screen h-screen max-w-none max-h-none rounded-none border shadow-2xl flex flex-col overflow-hidden" 
-            style={{ background: isDark ? '#0A0E1A' : '#fff', borderColor: card.border }}
-          >
+        <Portal>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-0 md:p-6 overflow-hidden" style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(24px)' }}>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.2 }}
+              className="w-full h-full md:w-[94vw] md:max-w-6xl md:h-[90vh] md:max-h-[860px] md:rounded-3xl border shadow-2xl flex flex-col overflow-hidden" 
+              style={{ background: isDark ? '#0A0E1A' : '#fff', borderColor: card.border }}
+            >
             {/* Header */}
-            <div className="p-8 border-b flex items-center justify-between bg-gradient-to-r from-primary/5 to-transparent" style={{ borderColor: card.border }}>
-              <div className="flex items-center gap-5">
-                <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-xl" style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}>
-                  <Upload size={28} />
+            <div className="px-5 py-4 sm:px-8 sm:py-5 border-b flex items-center justify-between bg-gradient-to-r from-primary/10 via-primary/5 to-transparent shrink-0" style={{ borderColor: card.border }}>
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shrink-0" style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}>
+                  <Upload size={22} className="sm:w-6 sm:h-6" />
                 </div>
-                <div>
-                  <h2 className="font-display text-2xl font-black tracking-tight" style={{ color: card.text }}>Smart Inventory Ingestion</h2>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-500" />
-                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-500">AI-Powered OCR Active</p>
+                <div className="min-w-0">
+                  <h2 className="font-ui text-lg sm:text-2xl font-black tracking-tight truncate" style={{ color: card.text }}>Smart Inventory Ingestion</h2>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="w-2 h-2 rounded-full animate-pulse bg-emerald-500 shrink-0" />
+                    <p className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-500 truncate">AI-Powered OCR Active</p>
                   </div>
                 </div>
               </div>
-              <button onClick={() => setShowUploadModal(false)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-red-500/10 text-red-500 transition-colors">
-                <X size={24} />
+              <button onClick={() => setShowUploadModal(false)} className="w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full hover:bg-red-500/10 text-red-500 transition-colors shrink-0">
+                <X size={20} className="sm:w-6 sm:h-6" />
               </button>
             </div>
 
             {/* Stepper */}
-            <div className="flex items-center justify-center gap-12 py-6 border-b" style={{ borderColor: card.border, background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
+            <div className="flex items-center justify-center gap-4 sm:gap-8 md:gap-12 py-3 sm:py-4 px-4 border-b shrink-0 overflow-x-auto" style={{ borderColor: card.border, background: isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)' }}>
               {[
                 { step: 'type', label: 'Method' },
                 { step: isAiMode ? 'upload' : 'verify', label: isAiMode ? 'Scan' : 'Add Items' },
                 { step: 'terms', label: 'Financials' }
               ].map((s, i) => (
-                <div key={s.step} className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${invoiceStep === s.step ? 'scale-125' : 'opacity-40'}`} 
+                <div key={s.step} className="flex items-center gap-2 sm:gap-3 shrink-0">
+                  <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs font-black transition-all ${invoiceStep === s.step ? 'scale-110 sm:scale-125' : 'opacity-40'}`} 
                     style={{ background: invoiceStep === s.step ? card.primary : card.muted, color: '#fff', boxShadow: invoiceStep === s.step ? `0 0 20px ${card.primary}60` : 'none' }}>
                     {i + 1}
                   </div>
-                  <span className={`text-[10px] font-black uppercase tracking-widest ${invoiceStep === s.step ? '' : 'opacity-30'}`} style={{ color: card.text }}>{s.label}</span>
+                  <span className={`text-[10px] sm:text-xs font-black uppercase tracking-wider ${invoiceStep === s.step ? '' : 'opacity-40'}`} style={{ color: card.text }}>{s.label}</span>
                 </div>
               ))}
             </div>
 
             {/* Content Body */}
-            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 custom-scrollbar">
               
               {/* STEP 1: Choice & Initial Details */}
               {invoiceStep === 'type' && (
-                <div className="space-y-8 animate-in fade-in zoom-in-95 duration-500">
-                  <div className="grid grid-cols-2 gap-8 py-4">
+                <div className="space-y-6 max-w-4xl mx-auto py-4 sm:py-8 animate-in fade-in zoom-in-95 duration-500">
+                  <div className="text-center mb-6">
+                    <p className="text-xs sm:text-sm font-bold opacity-60 uppercase tracking-widest" style={{ color: card.text }}>Select Ingestion Channel</p>
+                    <h3 className="text-xl sm:text-2xl font-black mt-1" style={{ color: card.text }}>How would you like to receive this invoice?</h3>
+                  </div>
+
+                  {canSwitchBranch && (
+                    <div className="max-w-md mx-auto mb-8 space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block text-center">Receiving Branch *</label>
+                      <select 
+                        value={invoiceBranchId}
+                        onChange={(e) => setInvoiceBranchId(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl text-sm font-bold focus:outline-none text-center appearance-none cursor-pointer" 
+                        style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${card.border}`, color: card.text }}
+                      >
+                        <option value="">Select Branch...</option>
+                        {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <button 
                       onClick={() => { setIsAiMode(true); setInvoiceStep('upload'); }}
-                      className="group p-8 rounded-[32px] border-2 border-dashed transition-all hover:border-primary hover:bg-primary/5 text-center flex flex-col items-center gap-6"
+                      className="group p-6 sm:p-8 rounded-2xl sm:rounded-3xl border-2 border-dashed transition-all hover:border-primary hover:bg-primary/5 text-center flex flex-col items-center gap-4 sm:gap-6"
                       style={{ borderColor: card.border }}
                     >
-                      <div className="w-20 h-20 rounded-3xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Sparkles size={40} />
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
+                        <Sparkles size={32} className="sm:w-10 sm:h-10" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold mb-2" style={{ color: card.text }}>AI Vision Scan</h3>
-                        <p className="text-[10px] font-black leading-relaxed opacity-40 uppercase tracking-widest" style={{ color: card.text }}>Extract from PDF / PNG / JPEG</p>
+                        <h3 className="text-lg sm:text-xl font-bold mb-1.5" style={{ color: card.text }}>AI Vision Scan</h3>
+                        <p className="text-[10px] sm:text-xs font-black leading-relaxed opacity-40 uppercase tracking-widest" style={{ color: card.text }}>Extract from PDF / PNG / JPEG</p>
                       </div>
                     </button>
 
                     <button 
                       onClick={() => { setIsAiMode(false); setInvoiceStep('verify'); }}
-                      className="group p-8 rounded-[32px] border-2 border-dashed transition-all hover:border-emerald-500 hover:bg-emerald-500/5 text-center flex flex-col items-center gap-6"
+                      className="group p-6 sm:p-8 rounded-2xl sm:rounded-3xl border-2 border-dashed transition-all hover:border-emerald-500 hover:bg-emerald-500/5 text-center flex flex-col items-center gap-4 sm:gap-6"
                       style={{ borderColor: card.border }}
                     >
-                      <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Edit2 size={40} />
+                      <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm">
+                        <Edit2 size={32} className="sm:w-10 sm:h-10" />
                       </div>
                       <div>
-                        <h3 className="text-xl font-bold mb-2" style={{ color: card.text }}>Manual Ledger</h3>
-                        <p className="text-[10px] font-black leading-relaxed opacity-40 uppercase tracking-widest" style={{ color: card.text }}>Draft manual receiving report</p>
+                        <h3 className="text-lg sm:text-xl font-bold mb-1.5" style={{ color: card.text }}>Manual Ledger</h3>
+                        <p className="text-[10px] sm:text-xs font-black leading-relaxed opacity-40 uppercase tracking-widest" style={{ color: card.text }}>Draft manual receiving report</p>
                       </div>
                     </button>
                   </div>
-
                 </div>
               )}
 
               {/* STEP 2 (AI): Upload */}
               {invoiceStep === 'upload' && (
-                <div className="flex flex-col items-center justify-center py-12 gap-8 animate-in fade-in slide-in-from-bottom-4">
+                <div className="flex flex-col items-center justify-center py-6 sm:py-12 gap-6 animate-in fade-in slide-in-from-bottom-4">
                    <div 
                       onDragOver={handleDragOver}
                       onDragLeave={handleDragLeave}
                       onDrop={handleDrop}
-                      className={`relative w-[450px] h-[350px] rounded-[40px] border-4 border-dashed flex flex-col items-center justify-center transition-all ${isScanning ? 'border-primary shadow-2xl scale-105' : isDragging ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg' : 'hover:border-primary/50'}`} 
+                      className={`relative w-full max-w-lg h-[280px] sm:h-[340px] rounded-3xl sm:rounded-[36px] border-4 border-dashed flex flex-col items-center justify-center transition-all ${isScanning ? 'border-primary shadow-2xl scale-[1.01]' : isDragging ? 'border-primary bg-primary/5 scale-[1.02] shadow-lg' : 'hover:border-primary/50'}`} 
                       style={{ borderColor: isDragging ? card.primary : card.border }}
                     >
                       {isScanning ? (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 overflow-hidden rounded-[36px] bg-slate-900/10 backdrop-blur-md">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 sm:gap-6 overflow-hidden rounded-[28px] sm:rounded-[32px] bg-slate-900/10 backdrop-blur-md p-4">
                            {filePreview ? (
                              <img src={filePreview} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-20" />
                            ) : (
                              <div className="absolute inset-0 flex items-center justify-center opacity-10">
-                                <FileText size={200} />
+                                <FileText size={160} />
                              </div>
                            )}
                            <motion.div 
-                             animate={{ y: [-150, 150, -150] }}
+                             animate={{ y: [-120, 120, -120] }}
                              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
                              className="absolute top-0 left-0 right-0 h-1.5 z-10"
                              style={{ 
@@ -2640,42 +2677,42 @@ export default function InventoryPage() {
                                boxShadow: `0 0 30px ${card.primary}` 
                              }}
                            />
-                           <div className="w-24 h-24 rounded-3xl bg-primary/20 flex items-center justify-center animate-bounce z-20">
-                              <Sparkles size={40} className="text-primary" />
+                           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-primary/20 flex items-center justify-center animate-bounce z-20">
+                              <Sparkles size={32} className="text-primary" />
                            </div>
                            <div className="text-center z-20">
-                             <p className="text-base font-black tracking-widest text-primary">AI NEURAL SCANNING...</p>
-                             <p className="text-[10px] font-bold opacity-80 mt-1 uppercase tracking-tighter" style={{ color: card.text }}>Processing High-Res Image/PDF Metadata</p>
+                             <p className="text-sm sm:text-base font-black tracking-widest text-primary">AI NEURAL SCANNING...</p>
+                             <p className="text-[10px] sm:text-xs font-bold opacity-80 mt-1 uppercase tracking-wider" style={{ color: card.text }}>Processing High-Res Document Data</p>
                            </div>
                         </div>
                       ) : (
-                        <div className="text-center p-12">
-                           <div className="w-24 h-24 rounded-[32px] bg-slate-500/5 flex items-center justify-center mx-auto mb-8 border border-dashed border-slate-500/20">
-                              <Upload size={40} className="opacity-20" style={{ color: card.text }} />
+                        <div className="text-center p-6 sm:p-10">
+                           <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl bg-slate-500/5 flex items-center justify-center mx-auto mb-4 sm:mb-6 border border-dashed border-slate-500/20">
+                              <Upload size={32} className="opacity-30" style={{ color: card.text }} />
                            </div>
-                           <h3 className="text-lg font-black mb-2" style={{ color: card.text }}>
+                           <h3 className="text-base sm:text-lg font-black mb-1" style={{ color: card.text }}>
                              {isDragging ? 'Drop Invoice Here' : 'Ready for Intelligent Ingestion'}
                            </h3>
-                           <p className="text-xs font-bold opacity-40 mb-8 max-w-[280px] mx-auto uppercase tracking-wider" style={{ color: card.text }}>Supports PDF, PNG, JPG, JPEG & Batch Scans</p>
+                           <p className="text-[10px] sm:text-xs font-bold opacity-50 mb-6 max-w-[280px] mx-auto uppercase tracking-wider" style={{ color: card.text }}>Supports PDF, PNG, JPG, JPEG & Scans</p>
                            
-                           <label className="cursor-pointer group/btn relative overflow-hidden">
+                           <label className="cursor-pointer group/btn relative overflow-hidden inline-block">
                              <input type="file" className="hidden" accept=".pdf,image/*" onChange={handleFileChange} />
                              <div 
-                               className="px-12 py-5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-white shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-3 animate-pulse"
-                               style={{ backgroundColor: card.primary, boxShadow: `0 20px 40px -10px ${card.primary}40` }}
+                               className="px-8 py-3.5 sm:px-10 sm:py-4 rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-[0.15em] text-white shadow-xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2.5"
+                               style={{ backgroundColor: card.primary, boxShadow: `0 15px 30px -10px ${card.primary}40` }}
                              >
                                <Sparkles size={16} /> 
                                Upload Supplier Invoice
                              </div>
                            </label>
                            
-                           <div className="mt-8 flex items-center justify-center gap-6 opacity-30">
+                           <div className="mt-6 flex items-center justify-center gap-6 opacity-40">
                               <div className="flex flex-col items-center gap-1">
-                                 <FileText size={20} />
+                                 <FileText size={18} />
                                  <span className="text-[8px] font-black">PDF</span>
                               </div>
                               <div className="flex flex-col items-center gap-1">
-                                 <div className="w-5 h-5 rounded bg-current" />
+                                 <div className="w-4 h-4 rounded bg-current" />
                                  <span className="text-[8px] font-black">IMAGE</span>
                               </div>
                            </div>
@@ -2688,7 +2725,7 @@ export default function InventoryPage() {
               {/* STEP 2 (Universal): Verification / Add Items */}
               {invoiceStep === 'verify' && (
                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-                  <div className="grid grid-cols-2 gap-8 p-6 rounded-[24px] border mb-6" style={{ background: card.inputBg, borderColor: card.border }}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border mb-6" style={{ background: card.inputBg, borderColor: card.border }}>
                     <div className="space-y-3">
                        <label className="text-[10px] font-black uppercase tracking-widest opacity-40 block">Primary Supplier</label>
                        <select 
@@ -2714,7 +2751,7 @@ export default function InventoryPage() {
                             className="w-full px-4 py-3 rounded-xl text-sm font-bold focus:outline-none"
                             style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${card.border}`, color: card.text }}
                           />
-                          <label className="flex items-center gap-2 text-xs font-bold" style={{ color: card.muted }}>
+                          <label className="flex items-center gap-2 text-xs font-bold cursor-pointer" style={{ color: card.muted }}>
                             <input
                               type="checkbox"
                               checked={createSupplierOnConfirm}
@@ -2761,7 +2798,7 @@ export default function InventoryPage() {
                          )}
                        </div>
                        {invoiceDuplicateStatus === 'duplicate' && (
-                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 mt-1">
+                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 mt-2">
                            <span className="text-red-500 text-lg leading-none">⚠</span>
                            <div>
                              <p className="text-xs font-black text-red-500">Invoice already uploaded!</p>
@@ -2771,14 +2808,14 @@ export default function InventoryPage() {
                        )}
                     </div>
                   </div>
-                  <div className="flex items-center justify-between mb-4">
-                     <h3 className="text-sm font-black uppercase tracking-widest" style={{ color: card.primary }}>Line Item Verification</h3>
-                     <div className="relative w-[460px]" ref={invoiceSearchRef}>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                     <h3 className="text-xs sm:text-sm font-black uppercase tracking-widest" style={{ color: card.primary }}>Line Item Verification</h3>
+                     <div className="relative w-full sm:w-[340px] md:w-[420px]" ref={invoiceSearchRef}>
                         <Search size={14} className="absolute left-4 top-1/2 -translate-y-1/2 opacity-40" style={{ color: card.text }} />
                         <input 
                           type="text" 
-                          placeholder="Search product name, brand, generic or category..." 
-                          className="w-full pl-12 pr-4 py-3 rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                          placeholder="Search product name, brand, generic..." 
+                          className="w-full pl-12 pr-4 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                           style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }}
                           value={invoiceSearchQuery}
                           onFocus={() => setShowSearchDropdown(true)}
@@ -2792,7 +2829,7 @@ export default function InventoryPage() {
                               initial={{ opacity: 0, y: 10 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 10 }}
-                              className="absolute top-full left-0 right-0 mt-3 rounded-[24px] border shadow-2xl z-50 overflow-hidden"
+                              className="absolute top-full left-0 right-0 mt-3 rounded-2xl border shadow-2xl z-50 overflow-hidden"
                               style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}
                             >
                                <div className="max-h-64 overflow-y-auto p-2 custom-scrollbar">
@@ -2801,7 +2838,7 @@ export default function InventoryPage() {
                                       <button 
                                         key={p.id}
                                         onMouseDown={(e) => { e.preventDefault(); addProductToInvoice(p); }}
-                                        className="w-full text-left p-4 rounded-xl hover:bg-primary/5 flex items-center justify-between group transition-colors"
+                                        className="w-full text-left p-3.5 rounded-xl hover:bg-primary/5 flex items-center justify-between group transition-colors"
                                       >
                                         <div>
                                           <p className="text-xs font-black" style={{ color: card.text }}>{p.name}</p>
@@ -2811,8 +2848,8 @@ export default function InventoryPage() {
                                       </button>
                                     ))
                                   ) : (
-                                    <div className="p-8 text-center">
-                                      <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-4">Product "{invoiceSearchQuery}" not found</p>
+                                    <div className="p-6 text-center">
+                                      <p className="text-[10px] font-black opacity-30 uppercase tracking-widest mb-3">Product "{invoiceSearchQuery}" not found</p>
                                       <button 
                                         onMouseDown={(e) => {
                                           e.preventDefault();
@@ -2821,7 +2858,7 @@ export default function InventoryPage() {
                                           setShowAddModal(true);
                                           setShowSearchDropdown(false);
                                         }}
-                                        className="px-6 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-white shadow-lg shadow-emerald-500/20"
+                                        className="px-5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest text-white shadow-lg shadow-emerald-500/20"
                                         style={{ backgroundColor: card.success }}
                                       >
                                         Create New & Add
@@ -2835,27 +2872,27 @@ export default function InventoryPage() {
                      </div>
                   </div>
 
-                  <div className="rounded-3xl border overflow-hidden" style={{ borderColor: card.border }}>
+                  <div className="rounded-2xl sm:rounded-3xl border overflow-hidden" style={{ borderColor: card.border }}>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left min-w-[900px]">
+                      <table className="w-full text-left min-w-[760px]">
                         <thead style={{ background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)' }}>
                           <tr>
                             {['Product Name', 'Batch No', 'Expiry', 'Qty', 'Unit Cost (GH₵)', 'Sell Price (GH₵)', 'Total', ''].map(h => (
-                              <th key={h} className="px-6 py-4 text-[10px] font-black uppercase tracking-widest opacity-40" style={{ color: card.text }}>{h}</th>
+                              <th key={h} className="px-5 py-3.5 text-[10px] font-black uppercase tracking-widest opacity-40" style={{ color: card.text }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody className="divide-y" style={{ borderColor: card.border }}>
                           {invoiceItems.map((item, idx) => (
                             <tr key={item.id} className="group hover:bg-primary/5 transition-colors">
-                              <td className="px-6 py-4 min-w-[200px]">
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold ${item.exists ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
-                                    {item.exists ? <Check size={14} /> : <Plus size={14} />}
+                              <td className="px-5 py-3.5 min-w-[180px]">
+                                <div className="flex items-center gap-2.5">
+                                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold shrink-0 ${item.exists ? 'bg-emerald-500/10 text-emerald-500' : 'bg-red-500/10 text-red-500'}`}>
+                                    {item.exists ? <Check size={13} /> : <Plus size={13} />}
                                   </div>
-                                  <div>
+                                  <div className="min-w-0 flex-1">
                                     <input 
-                                      className="bg-transparent font-bold text-sm focus:outline-none w-full" 
+                                      className="bg-transparent font-bold text-xs sm:text-sm focus:outline-none w-full" 
                                       style={{ color: card.text }}
                                       value={item.name}
                                       onChange={(e) => {
@@ -2868,9 +2905,9 @@ export default function InventoryPage() {
                                         setInvoiceItems(newItems);
                                       }}
                                     />
-                                    <div className="flex items-center gap-2 mt-1">
-                                      <p className="text-[9px] font-bold uppercase tracking-wider opacity-50" style={{ color: item.exists ? '#10B981' : (item.suggestions?.length ? '#F59E0B' : '#EF4444') }}>
-                                        {item.exists ? 'Found in Catalog' : item.suggestions?.length ? `${item.suggestions.length} possible match${item.suggestions.length > 1 ? 'es' : ''}` : 'New Product'}
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <p className="text-[9px] font-bold uppercase tracking-wider opacity-60" style={{ color: item.exists ? '#10B981' : (item.suggestions?.length ? '#F59E0B' : '#EF4444') }}>
+                                        {item.exists ? 'Found in Catalog' : item.suggestions?.length ? `${item.suggestions.length} match(es)` : 'New Product'}
                                       </p>
                                       {!item.exists && (
                                         <div className="relative">
@@ -2878,10 +2915,10 @@ export default function InventoryPage() {
                                             type="button"
                                             onClick={() => setOpenSuggestionItemId(openSuggestionItemId === item.id ? null : item.id)}
                                             disabled={creatingInvoiceProductId === item.id}
-                                            className="px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-1"
+                                            className="px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest transition-all disabled:opacity-50 flex items-center gap-1"
                                             style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primaryBorder}` }}
                                           >
-                                            {creatingInvoiceProductId === item.id ? 'Creating...' : item.suggestions?.length ? 'Match Product' : 'Create New'}
+                                            {creatingInvoiceProductId === item.id ? 'Creating...' : item.suggestions?.length ? 'Match' : 'Create'}
                                           </button>
                                           {openSuggestionItemId === item.id && (
                                             <div className="absolute top-full left-0 mt-2 w-72 rounded-2xl border shadow-2xl z-50 overflow-hidden" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
@@ -2892,7 +2929,7 @@ export default function InventoryPage() {
                                                       key={p.id}
                                                       type="button"
                                                       onClick={() => linkInvoiceItemToProduct(item.id, p)}
-                                                      className="w-full text-left p-3 rounded-xl hover:bg-primary/5 transition-colors"
+                                                      className="w-full text-left p-2.5 rounded-xl hover:bg-primary/5 transition-colors"
                                                     >
                                                       <p className="text-xs font-black" style={{ color: card.text }}>{p.name}</p>
                                                       <p className="text-[9px] font-bold opacity-50 uppercase tracking-wider">
@@ -2923,11 +2960,11 @@ export default function InventoryPage() {
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-5 py-3.5">
                                  <input 
                                    type="text" 
                                    placeholder="Batch #"
-                                   className="w-24 bg-transparent font-mono text-xs font-bold focus:outline-none p-1 rounded hover:bg-slate-500/10" 
+                                   className="w-20 bg-transparent font-mono text-xs font-bold focus:outline-none p-1 rounded hover:bg-slate-500/10" 
                                    style={{ color: card.text }}
                                    value={item.batchNo || ''}
                                    onChange={(e) => {
@@ -2937,7 +2974,7 @@ export default function InventoryPage() {
                                    }}
                                  />
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-5 py-3.5">
                                  <input 
                                    type="date" 
                                    className="bg-transparent font-mono text-[10px] font-bold focus:outline-none p-1 rounded hover:bg-slate-500/10" 
@@ -2950,10 +2987,10 @@ export default function InventoryPage() {
                                    }}
                                  />
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-5 py-3.5">
                                  <input 
                                    type="number" 
-                                   className="w-16 bg-transparent font-mono text-sm font-bold focus:outline-none" 
+                                   className="w-14 bg-transparent font-mono text-xs sm:text-sm font-bold focus:outline-none" 
                                    style={{ color: card.text }}
                                    value={item.quantity}
                                    onChange={(e) => {
@@ -2963,10 +3000,10 @@ export default function InventoryPage() {
                                    }}
                                  />
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-5 py-3.5">
                                  <input 
                                    type="number" 
-                                   className="w-24 bg-transparent font-mono text-sm font-bold focus:outline-none" 
+                                   className="w-20 bg-transparent font-mono text-xs sm:text-sm font-bold focus:outline-none" 
                                    style={{ color: card.text }}
                                    value={item.unitCost}
                                    onChange={(e) => {
@@ -2976,10 +3013,10 @@ export default function InventoryPage() {
                                    }}
                                  />
                               </td>
-                              <td className="px-6 py-4">
+                              <td className="px-5 py-3.5">
                                  <input 
                                    type="number" 
-                                   className="w-24 bg-transparent font-mono text-sm font-bold focus:outline-none" 
+                                   className="w-20 bg-transparent font-mono text-xs sm:text-sm font-bold focus:outline-none" 
                                    style={{ color: card.success }}
                                    placeholder="Sell Price"
                                    value={item.sellingPrice || ''}
@@ -2990,13 +3027,13 @@ export default function InventoryPage() {
                                    }}
                                  />
                               </td>
-                              <td className="px-6 py-4 font-mono text-sm font-bold" style={{ color: card.text }}>
+                              <td className="px-5 py-3.5 font-mono text-xs sm:text-sm font-bold" style={{ color: card.text }}>
                                  GH₵ {(item.quantity * item.unitCost).toFixed(2)}
                               </td>
-                              <td className="px-6 py-4 text-right">
+                              <td className="px-5 py-3.5 text-right">
                                  <button 
                                    onClick={() => setInvoiceItems(invoiceItems.filter(i => i.id !== item.id))}
-                                   className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                                   className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
                                  >
                                    <Trash2 size={14} />
                                  </button>
@@ -3005,9 +3042,9 @@ export default function InventoryPage() {
                           ))}
                           {invoiceItems.length === 0 && (
                             <tr>
-                              <td colSpan={8} className="py-24 text-center">
-                                 <div className="w-16 h-16 rounded-full bg-slate-500/5 flex items-center justify-center mx-auto mb-4">
-                                    <Package size={32} className="opacity-10" />
+                              <td colSpan={8} className="py-16 sm:py-24 text-center">
+                                 <div className="w-14 h-14 rounded-full bg-slate-500/5 flex items-center justify-center mx-auto mb-3">
+                                    <Package size={28} className="opacity-10" />
                                  </div>
                                  <p className="text-[10px] font-black uppercase tracking-widest opacity-30" style={{ color: card.text }}>Start by searching for products above</p>
                               </td>
@@ -3018,21 +3055,21 @@ export default function InventoryPage() {
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-center bg-primary/5 rounded-[24px] p-6 border border-primary/20">
-                     <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-xl text-white" style={{ backgroundColor: card.primary }}>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-primary/5 rounded-2xl sm:rounded-3xl p-4 sm:p-6 border border-primary/20">
+                     <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="p-3 rounded-xl text-white shrink-0" style={{ backgroundColor: card.primary }}>
                            <CreditCard size={20} />
                         </div>
                         <div>
                            <p className="text-[10px] font-black uppercase tracking-widest opacity-40" style={{ color: card.text }}>Subtotal Payable</p>
-                           <p className="text-3xl font-display font-black" style={{ color: card.primary }}>
+                           <p className="text-2xl sm:text-3xl font-display font-black" style={{ color: card.primary }}>
                              GH₵ {invoiceItems.reduce((acc, i) => acc + (i.quantity * i.unitCost), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                            </p>
                         </div>
                      </div>
                      <button 
                        onClick={() => setShowAddModal(true)}
-                       className="flex items-center gap-2 px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white shadow-xl hover:scale-105 active:scale-95 transition-all"
+                       className="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-xl sm:rounded-2xl text-[10px] font-black uppercase tracking-widest text-white shadow-xl hover:scale-105 active:scale-95 transition-all"
                        style={{ backgroundColor: card.success, boxShadow: `0 10px 30px -5px ${card.success}40` }}
                      >
                        <Plus size={16} /> Bulk Add New
@@ -3043,17 +3080,17 @@ export default function InventoryPage() {
 
               {/* STEP 3: Terms & Logistics */}
               {invoiceStep === 'terms' && (
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8 animate-in fade-in zoom-in-95 duration-500">
+                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8 animate-in fade-in zoom-in-95 duration-500">
                   <div className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Invoice Date</label>
-                        <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                        <input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                       </div>
                       <div>
                         <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Payment Due Date</label>
                         <div className="relative">
-                          <input type="date" value={invoiceDueDate} onChange={e => setInvoiceDueDate(e.target.value)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
+                          <input type="date" value={invoiceDueDate} onChange={e => setInvoiceDueDate(e.target.value)} className="w-full px-4 py-3 rounded-xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} />
                         </div>
                       </div>
                     </div>
@@ -3063,7 +3100,7 @@ export default function InventoryPage() {
                     <div>
                       <label className="text-[10px] font-black uppercase tracking-widest mb-2 block" style={{ color: card.subtle }}>Receiving Notes (Narration)</label>
                       <div className="relative">
-                        <textarea rows={4} value={invoiceNotes} onChange={e => setInvoiceNotes(e.target.value)} onFocus={() => setShowNoteSuggestions(true)} onBlur={() => setShowNoteSuggestions(false)} className="w-full px-5 py-4 rounded-2xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} placeholder="e.g. Paid 500 GHS in cash, balance 200 via Momo. Handled by Kwame." />
+                        <textarea rows={3} value={invoiceNotes} onChange={e => setInvoiceNotes(e.target.value)} onFocus={() => setShowNoteSuggestions(true)} onBlur={() => setShowNoteSuggestions(false)} className="w-full px-4 py-3 rounded-xl text-sm font-bold" style={{ background: card.inputBg, border: `1px solid ${card.border}`, color: card.text }} placeholder="e.g. Paid 500 GHS in cash, balance 200 via Momo. Handled by Kwame." />
                         {showNoteSuggestions && (
                           <div className="absolute z-10 mt-2 left-0 right-0 max-h-48 overflow-y-auto rounded-2xl border p-2 shadow-lg space-y-1" style={{ background: card.bg, borderColor: card.border }}>
                             {RECEIVING_NOTE_SUGGESTIONS.map(note => (
@@ -3076,15 +3113,15 @@ export default function InventoryPage() {
                       </div>
                     </div>
 
-                    <div className="p-6 rounded-[32px] border-2 border-dashed flex flex-col items-center justify-center gap-3 text-center" style={{ borderColor: card.border, background: card.inputBg }}>
-                       <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                          <CheckCircle size={24} />
+                    <div className="p-5 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 text-center" style={{ borderColor: card.border, background: card.inputBg }}>
+                       <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                          <CheckCircle size={20} />
                        </div>
-                       <p className="text-xs font-bold leading-relaxed" style={{ color: card.muted }}>Confirming this invoice will instantly sync stock levels and log the liability in the accounts payable ledger.</p>
+                       <p className="text-xs font-bold leading-relaxed" style={{ color: card.muted }}>Confirming this invoice will instantly sync stock levels and log the liability in accounts payable.</p>
                     </div>
                   </div>
 
-                  <div className="space-y-4 p-6 rounded-[24px] border" style={{ borderColor: card.border, background: card.inputBg }}>
+                  <div className="space-y-4 p-5 rounded-2xl border" style={{ borderColor: card.border, background: card.inputBg }}>
                     <h4 className="text-[10px] font-black uppercase tracking-widest" style={{ color: card.primary }}>Final Review</h4>
                     <div className="space-y-2 text-xs font-bold" style={{ color: card.text }}>
                       <p>Supplier: {invoiceSupplier ? (suppliers.find(s => s.id === invoiceSupplier)?.name || 'Selected supplier') : (invoiceSupplierDraft || 'Not set')}</p>
@@ -3122,7 +3159,7 @@ export default function InventoryPage() {
             </div>
 
             {/* Footer */}
-            <div className="p-8 border-t flex items-center justify-between bg-slate-50 dark:bg-slate-900/40" style={{ borderColor: card.border }}>
+            <div className="px-5 py-4 sm:px-8 sm:py-5 border-t flex items-center justify-between bg-slate-50 dark:bg-slate-900/40 shrink-0" style={{ borderColor: card.border }}>
                <button 
                  onClick={() => {
                    if (invoiceStep === 'upload') setInvoiceStep('type');
@@ -3130,13 +3167,13 @@ export default function InventoryPage() {
                    else if (invoiceStep === 'terms') setInvoiceStep('verify');
                    else setShowUploadModal(false);
                  }}
-                 className="px-8 py-3 rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
+                 className="px-5 py-2.5 sm:px-7 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-black uppercase tracking-wider hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
                  style={{ color: card.text }}
                >
                  {invoiceStep === 'type' ? 'Cancel' : 'Back'}
                </button>
 
-               <div className="flex gap-4">
+               <div className="flex gap-3 sm:gap-4">
                  {invoiceStep !== 'terms' ? (
                    <button 
                      onClick={() => {
@@ -3147,7 +3184,7 @@ export default function InventoryPage() {
                        (invoiceStep === 'verify' && invoiceItems.length === 0) ||
                        (invoiceStep === 'upload' && (isScanning || !invoiceFile))
                      }
-                     className="px-10 py-3 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                     className="px-6 py-2.5 sm:px-10 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-black uppercase tracking-wider shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                      style={{ background: card.primary, color: isDark ? '#060B14' : '#fff' }}
                    >
                      {invoiceStep === 'upload' && isScanning ? 'Scanning...' : 'Continue'}
@@ -3156,27 +3193,29 @@ export default function InventoryPage() {
                    <button 
                      onClick={handleReceiveInvoice}
                      disabled={isSaving || !hasResolvableSupplier || !invoiceNumber || invoiceDuplicateStatus === 'duplicate'}
-                     className="px-12 py-3 rounded-2xl text-sm font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+                     className="px-6 py-2.5 sm:px-10 sm:py-3 rounded-xl sm:rounded-2xl text-xs sm:text-sm font-black uppercase tracking-wider shadow-xl shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
                      style={{ background: card.success, color: '#fff' }}
                    >
-                     {isSaving ? <Loader2 size={20} className="animate-spin" /> : 'Confirm & Sync Stock'}
+                     {isSaving ? <Loader2 size={18} className="animate-spin" /> : 'Confirm & Sync Stock'}
                    </button>
                  )}
                </div>
             </div>
           </motion.div>
-        </div>
+          </div>
+        </Portal>
       )}
 
 
 
       {confirmDelete && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)' }}>
-          <div className="w-full max-w-sm rounded-2xl border p-6 text-center" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
+        <Portal>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(16px)' }}>
+          <div className="w-full max-w-sm rounded-2xl border p-6 text-center shadow-2xl" style={{ background: isDark ? '#0F172A' : '#fff', borderColor: card.border }}>
             <div className="w-16 h-16 rounded-full bg-red-500/10 text-red-500 flex items-center justify-center mx-auto mb-4">
               <Trash2 size={32} />
             </div>
-            <h3 className="font-display text-xl font-bold mb-2" style={{ color: card.text }}>Delete Product?</h3>
+            <h3 className="font-ui text-xl font-bold mb-2" style={{ color: card.text }}>Delete Product?</h3>
             <p className="text-sm mb-6" style={{ color: card.muted }}>This action is permanent and will remove this product from all inventory records.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)} disabled={deleting} className="flex-1 py-3 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: card.inputBg, color: card.text }}>Cancel</button>
@@ -3187,6 +3226,7 @@ export default function InventoryPage() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

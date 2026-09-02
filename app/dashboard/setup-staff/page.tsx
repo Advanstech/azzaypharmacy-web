@@ -71,7 +71,7 @@ export default function SetupStaffPage() {
     setMessage(null);
     
     try {
-      const result = await gql<{ createStaffAccount?: boolean }>(M_CREATE_STAFF_ACCOUNT, {
+      const result = await gql<{ createStaffAccount?: string }>(M_CREATE_STAFF_ACCOUNT, {
         email: formData.email,
         password: formData.password,
         name: formData.name,
@@ -81,9 +81,10 @@ export default function SetupStaffPage() {
       });
       
       if (result?.createStaffAccount) {
+        const parsed = JSON.parse(result.createStaffAccount);
         setMessage({
           type: 'success',
-          text: `Account created for ${formData.name}! They can now login with their email and password.`
+          text: `Account created for ${formData.name}! Initial PIN: ${parsed.initialPin}. Share this PIN with the staff member — they will be asked to change it on first login.`
         });
         setFormData({
           email: '',

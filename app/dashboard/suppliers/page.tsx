@@ -395,6 +395,11 @@ export default function SuppliersPage() {
                       <div>
                         <p className="text-sm font-semibold" style={{ color: c.text }}>{s.name}</p>
                         <p className="text-[11px]" style={{ color: c.subtle }}>{s.contact || 'No Contact'}</p>
+                        {(s as any).branches && (s as any).branches.length > 0 && (
+                          <p className="text-[10px] mt-0.5 line-clamp-1 opacity-70 font-bold" style={{ color: c.primary }}>
+                            📍 {(s as any).branches.map((b: any) => b.name).join(', ')}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </td>

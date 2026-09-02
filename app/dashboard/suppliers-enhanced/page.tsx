@@ -472,6 +472,11 @@ export default function EnhancedSuppliersPage() {
                         <div>
                           <h3 className="font-display font-bold text-base" style={{ color: card.text }}>{supplier.name}</h3>
                           <p className="text-[10px]" style={{ color: card.subtle }}>{supplier.contact || 'No contact'}</p>
+                          {(supplier as any).branches && (supplier as any).branches.length > 0 && (
+                            <p className="text-[9px] mt-1 line-clamp-1 opacity-70 font-bold" style={{ color: card.primary }}>
+                              📍 {(supplier as any).branches.map((b: any) => b.name).join(', ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="text-right">

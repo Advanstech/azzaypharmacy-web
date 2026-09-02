@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sun, Moon, Monitor, Shield, Building, Globe, Zap, Bell, Palette, Lock, Eye, EyeOff, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { gql, M_CHANGE_PASSWORD } from '@/lib/gql';
+import { Sun, Moon, Monitor, Shield, Building, Globe, Zap, Bell, Palette, Lock, Eye, EyeOff, X, CheckCircle, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { gql, M_CHANGE_PASSWORD, M_SET_STAFF_PIN } from '@/lib/gql';
+import { useCustomAuth } from '@/lib/custom-auth';
 
 export default function SettingsPage() {
   const { setTheme, theme, resolvedTheme } = useTheme();
+  const { user } = useCustomAuth();
   const [mounted, setMounted] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -19,6 +21,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [newPin, setNewPin] = useState('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinSaved, setPinSaved] = useState(false);
   
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
@@ -172,7 +179,10 @@ export default function SettingsPage() {
                 <button key={item}
                   className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all text-left"
                   style={{ color: card.text }}
-                  onClick={() => item === 'Change Password' && setShowPasswordModal(true)}
+                  onClick={() => {
+                    if (item === 'Change Password') setShowPasswordModal(true);
+                    if (item === 'PIN Code') setShowPinModal(true);
+                  }}
                   onMouseEnter={e => (e.currentTarget.style.background = isDark ? 'rgba(0,217,255,0.04)' : 'rgba(14,165,233,0.04)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                   <span>{item}</span>
@@ -337,6 +347,130 @@ export default function SettingsPage() {
                     {loading ? 'Updating...' : 'Change Password'}
                   </button>
                 </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* PIN Change Modal */}
+      <AnimatePresence>
+        {showPinModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => {
+                setShowPinModal(false);
+                setNewPin('');
+                setPinError(null);
+                setPinSaved(false);
+              }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-md"
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md rounded-2xl overflow-hidden border"
+              style={{
+                background: card.bg,
+                borderColor: card.border,
+                boxShadow: card.shadow
+              }}
+            >
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold" style={{ color: card.text }}>
+                      Generate New PIN
+                    </h2>
+                    <p className="text-sm opacity-60" style={{ color: card.muted }}>
+                      Set a new 4-6 digit clock-in PIN
+                    </p>
+                  </div>
+                  <button onClick={() => { setShowPinModal(false); setNewPin(''); setPinError(null); setPinSaved(false); }} className="p-2 rounded-full hover:bg-white/10 transition-colors">
+                    <X className="w-6 h-6" style={{ color: card.text }} />
+                  </button>
+                </div>
+
+                {pinSaved ? (
+                  <div className="p-3 rounded-lg flex items-center gap-3 mb-4"
+                    style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981' }}>
+                    <CheckCircle className="w-5 h-5" />
+                    <span className="font-medium">PIN updated successfully.</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-4">
+                      <label className="block text-xs font-semibold mb-2 uppercase tracking-wider" style={{ color: card.muted }}>New PIN</label>
+                      <input
+                        type="tel"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        value={newPin}
+                        onChange={(e) => setNewPin(e.target.value.replace(/\D/g, ''))}
+                        placeholder="4-6 digits"
+                        className="w-full px-4 py-3 rounded-xl text-sm font-medium outline-none border tracking-widest text-center"
+                        style={{
+                          background: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.03)',
+                          borderColor: card.border,
+                          color: card.text,
+                          border: '1px solid'
+                        }}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const generated = String(Math.floor(1000 + Math.random() * 9000));
+                          setNewPin(generated);
+                        }}
+                        className="flex-1 py-3 rounded-xl font-bold text-sm border flex items-center justify-center gap-2"
+                        style={{
+                          background: card.sectionBg,
+                          borderColor: card.border,
+                          color: card.text,
+                        }}
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Generate
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!/\d{4,6}/.test(newPin)}
+                        onClick={async () => {
+                          setPinError(null);
+                          try {
+                            await gql<{ setStaffPin: boolean }>(M_SET_STAFF_PIN, { userId: user?.id, pin: newPin });
+                            setPinSaved(true);
+                          } catch (err: any) {
+                            setPinError(err?.message || 'Failed to update PIN.');
+                          }
+                        }}
+                        className="flex-[2] py-3 rounded-xl font-bold text-sm"
+                        style={{
+                          background: card.primary,
+                          color: isDark ? '#0A0E1A' : '#fff',
+                          opacity: !/\d{4,6}/.test(newPin) ? 0.6 : 1
+                        }}
+                      >
+                        Save PIN
+                      </button>
+                    </div>
+
+                    {pinError && (
+                      <div className="mt-4 p-3 rounded-lg flex items-center gap-3"
+                        style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#EF4444' }}>
+                        <AlertCircle className="w-5 h-5" />
+                        <span className="font-medium">{pinError}</span>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             </motion.div>
           </div>
