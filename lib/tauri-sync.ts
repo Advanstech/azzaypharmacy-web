@@ -112,8 +112,32 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
         // Reconstruct the createSale mutation variables from cached data
         // Note: Items should have productId, not name. If using name, we need to look up the product first
         const result = await gql<any>(`
-          mutation SyncSale($userId: String!, $branchId: String!, $items: [SaleItemInput!]!, $paymentMethod: PaymentMethod!, $amountPaid: Float!) {
-            createSale(userId: $userId, branchId: $branchId, items: $items, paymentMethod: $paymentMethod, amountPaid: $amountPaid) {
+          mutation SyncSale(
+            $userId: String!,
+            $branchId: String!,
+            $items: [SaleItemInput!]!,
+            $paymentMethod: PaymentMethod!,
+            $amountPaid: Float!,
+            $customerId: String,
+            $customerName: String,
+            $customerPhone: String,
+            $customerEmail: String,
+            $cashAmount: Float,
+            $momoAmount: Float
+          ) {
+            createSale(
+              userId: $userId,
+              branchId: $branchId,
+              items: $items,
+              paymentMethod: $paymentMethod,
+              amountPaid: $amountPaid,
+              customerId: $customerId,
+              customerName: $customerName,
+              customerPhone: $customerPhone,
+              customerEmail: $customerEmail,
+              cashAmount: $cashAmount,
+              momoAmount: $momoAmount
+            ) {
               id receiptNo totalAmount
             }
           }
@@ -121,11 +145,17 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
           userId: (sale as any).cashier_id || 'unknown',
           branchId: (sale as any).branch_id || 'unknown',
           items: sale.items.map((item: any) => ({ 
-            productId: item.productId || item.id || item.name, // Try productId first, then id, then name as fallback
+            productId: item.productId || item.id || item.name,
             quantity: item.qty || item.quantity 
           })),
           paymentMethod: sale.payment_method.toUpperCase(),
           amountPaid: sale.total,
+          customerId: sale.customerId || undefined,
+          customerName: sale.customerName || undefined,
+          customerPhone: sale.customerPhone || undefined,
+          customerEmail: sale.customerEmail || undefined,
+          cashAmount: sale.cashAmount || undefined,
+          momoAmount: sale.momoAmount || undefined,
         });
 
         if (result) {

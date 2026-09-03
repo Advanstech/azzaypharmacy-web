@@ -116,13 +116,20 @@ export async function getFromCache(storeName: string): Promise<any[]> {
 // Pending sale queue management
 export interface PendingSale {
   id: string;
-  items: Array<{ name: string; qty: number; price: number }>;
+  items: Array<{ name: string; qty: number; price: number; productId?: string }>;
   total: number;
   payment_method: string;
   cashier_name: string;
   cashier_id?: string;
   branch_name: string;
   branch_id?: string;
+  customerId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  cashAmount?: number;
+  momoAmount?: number;
+  notes?: string;
   timestamp: number;
 }
 

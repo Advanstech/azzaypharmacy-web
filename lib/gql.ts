@@ -44,6 +44,7 @@ async function diagnoseApiReachability(apiUrl: string): Promise<string> {
 }
 
 const API_CANDIDATES = buildApiCandidates(API);
+let currentActiveApi: string = API_CANDIDATES[0] || API;
 
 // Token can be set externally by the StoreProvider once auth is ready
 let _token: string | null = null;
@@ -82,24 +83,28 @@ export async function gql<T = unknown>(
     }
 
     let res: Response | null = null;
-    let usedApi = API;
+    let usedApi = currentActiveApi;
 
-    const candidatePromises = API_CANDIDATES.map((candidate) =>
-      fetch(candidate, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query, variables }),
-        signal: AbortSignal.timeout(90_000),
-      }).then((r) => ({ res: r, candidate }))
-    );
+    // Single request to active candidate with sequential fallback on network failure
+    const candidatesToTry = [
+      currentActiveApi,
+      ...API_CANDIDATES.filter((c) => c !== currentActiveApi),
+    ];
 
-    try {
-      const winner = await Promise.any(candidatePromises);
-      res = winner.res;
-      usedApi = winner.candidate;
-    } catch {
-      for (const candidate of API_CANDIDATES) {
-        console.warn(`[gql] [${queryName}] Network failed on ${candidate}`);
+    for (const candidate of candidatesToTry) {
+      try {
+        const response = await fetch(candidate, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ query, variables }),
+          signal: AbortSignal.timeout(30_000),
+        });
+        res = response;
+        usedApi = candidate;
+        currentActiveApi = candidate; // Stick with working endpoint
+        break;
+      } catch (err: any) {
+        console.warn(`[gql] [${queryName}] Attempt on ${candidate} failed: ${err?.message || err}`);
       }
     }
 

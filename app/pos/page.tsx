@@ -18,6 +18,7 @@ import { manualSync } from '@/lib/tauri-sync';
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI, Q_SALES } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
 import { PharmaProductImage } from '@/components/PharmaProductImage';
+import { useToast } from '@/components/pharma-toast';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -72,6 +73,7 @@ function POSInner() {
     refetchProducts,
     refetchAll
   } = useStore();
+  const { addToast } = useToast();
 
   const liveProducts = useMemo(() => {
     // Backend already filters products by branchId for non-global roles (PHARMACIST, CASHIER, etc.)
@@ -610,7 +612,19 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       
       if (!isSynced) {
         console.warn('⚠️ Sale is OFFLINE - not sent to server yet');
-        alert('⚠️ WARNING: Sale saved OFFLINE\n\nYour device is offline. Sale will sync when connection is restored.\n\nReceipt ID: ' + sale.id);
+        addToast({
+          type: 'warning',
+          title: 'Offline Sale Saved',
+          message: `Your device is offline. Sale saved locally (Receipt #${sale.id.slice(-8).toUpperCase()}) and will sync automatically once connected.`,
+          duration: 7000,
+        });
+      } else {
+        addToast({
+          type: 'success',
+          title: 'Sale Completed',
+          message: `Sale #${sale.receiptNo || sale.id.slice(-6)} processed successfully.`,
+          duration: 4000,
+        });
       }
       
       setCompletedSale({ 
@@ -628,7 +642,12 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       setSelectedCustomer(null);
     } catch (err: any) {
       console.error('❌ Sale creation failed:', err);
-      alert(`❌ SALE FAILED\n\n${err?.message || 'Unknown error. Check your connection and try again.'}\n\nPlease try again or contact support.`);
+      addToast({
+        type: 'error',
+        title: 'Sale Failed',
+        message: err?.message || 'Transaction could not be completed. Check your connection and try again.',
+        duration: 8000,
+      });
     } finally {
       setSubmitting(false);
       // Release lock after a short delay to prevent rapid retries
@@ -655,10 +674,20 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       setCart([]);
       setTendered('');
       setSelectedCustomer(null);
-      alert(`✅ Sale held successfully\n\nReceipt: ${sale.receiptNo}\nTotal: GH₵ ${Number(sale.totalAmount).toFixed(2)}\n\nYou can resume this sale from the Pending Sales panel.`);
+      addToast({
+        type: 'success',
+        title: 'Cart Placed on Hold',
+        message: `Sale held successfully (${sale.receiptNo || 'Held'}). You can resume it anytime from Pending Sales.`,
+        duration: 6000,
+      });
     } catch (err: any) {
       console.error('❌ Hold sale failed:', err);
-      alert(`❌ HOLD SALE FAILED\n\n${err?.message || 'Unknown error. Please try again.'}`);
+      addToast({
+        type: 'error',
+        title: 'Hold Sale Failed',
+        message: err?.message || 'Failed to place cart on hold. Please try again.',
+        duration: 6000,
+      });
     } finally {
       setSubmitting(false);
       fetchPendingSales();
@@ -691,10 +720,21 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         setTendered('');
         setSelectedCustomer(null);
       }
+      addToast({
+        type: 'info',
+        title: 'Pending Sale Cancelled',
+        message: 'Held sale has been removed.',
+        duration: 4000,
+      });
       fetchPendingSales();
     } catch (err: any) {
       console.error('Cancel pending sale failed:', err);
-      alert(`Failed to cancel pending sale: ${err.message || 'Unknown error'}`);
+      addToast({
+        type: 'error',
+        title: 'Cancellation Failed',
+        message: `Failed to cancel pending sale: ${err.message || 'Unknown error'}`,
+        duration: 6000,
+      });
     }
   };
 
@@ -1782,7 +1822,12 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                   <button
                     onClick={async () => {
                       if (!newCustomer.name.trim()) {
-                        alert('Please enter customer name');
+                        addToast({
+                          type: 'warning',
+                          title: 'Name Required',
+                          message: 'Please enter a customer name.',
+                          duration: 4000,
+                        });
                         return;
                       }
                       try {
@@ -1797,8 +1842,19 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                         setShowCreateCustomer(false);
                         setShowCustomerSearch(false);
                         setCustomerSearchQuery('');
+                        addToast({
+                          type: 'success',
+                          title: 'Customer Added',
+                          message: `${customer.name} was created and attached to this cart.`,
+                          duration: 4000,
+                        });
                       } catch (err: any) {
-                        alert(`Failed to create customer: ${err?.message || 'Unknown error'}`);
+                        addToast({
+                          type: 'error',
+                          title: 'Customer Creation Failed',
+                          message: err?.message || 'Failed to create customer.',
+                          duration: 6000,
+                        });
                       }
                     }}
                     disabled={!newCustomer.name.trim()}

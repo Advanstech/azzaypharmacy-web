@@ -1021,25 +1021,22 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
       setSyncStatus('idle');
 
-      // ── Phase 2: ERP modules — deferred to background ──────────────
-      // These are not needed for initial dashboard render; load quietly.
-      setTimeout(() => {
-        Promise.all([
-          refetchSuppliers(),
-          refetchCustomers(),
-          refetchPrescriptions(),
-          refetchPurchases(),
-          refetchInvoices(),
-        ]).then(() =>
-          Promise.all([
-            refetchExpenses(),
+      // ── Phase 2: ERP modules — staggered background loading to avoid DB pool spikes ──
+      setTimeout(async () => {
+        try {
+          await Promise.all([refetchSuppliers(), refetchCustomers()]);
+          await Promise.all([refetchPrescriptions(), refetchPurchases()]);
+          await Promise.all([refetchInvoices(), refetchExpenses()]);
+          await Promise.all([
             refetchShiftReconciliations(),
             refetchExpenseCategories(),
             refetchLedger(),
             refetchRefundRequests(),
-          ])
-        ).catch(err => console.warn('[store] Background ERP sync failed:', err));
-      }, 0);
+          ]);
+        } catch (err) {
+          console.warn('[store] Background ERP sync failed:', err);
+        }
+      }, 150);
     } catch (err) {
       console.error('[store] Sync failed:', err);
       setSyncStatus('error');
@@ -1163,10 +1160,21 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         console.error('[store] ❌ Online sale failed:', {
           error: err?.message,
           status: err?.status,
-          response: err?.response,
-          stack: err?.stack
         });
-        throw err; // Re-throw to prevent generating a fake offline receipt
+        const isNetworkErr =
+          err?.message?.includes('NetworkError') ||
+          err?.message?.includes('fetch') ||
+          err?.message?.includes('unreachable') ||
+          err?.message?.includes('Failed to fetch') ||
+          !isOnline();
+
+        if (isNetworkErr) {
+          console.warn('[store] 📶 Network error detected — queuing sale locally in IndexedDB for automatic background sync.');
+          isSynced = false;
+        } else {
+          // If server rejected business logic or validation, pass error up
+          throw err;
+        }
       }
     }
 
@@ -1192,7 +1200,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         }))
       };
 
-      // Save to IndexedDB with proper PendingSale structure for tauri-sync
+      // Save to IndexedDB with full customer and split payment data for tauri-sync
       await savePendingSale({
         id: newSale.id,
         items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
@@ -1202,6 +1210,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         cashier_id: me?.id,
         branch_name: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
         branch_id: me?.branchId,
+        customerId: args.customerId,
+        customerName: args.customerName,
+        customerPhone: args.customerPhone,
+        customerEmail: args.customerEmail,
+        cashAmount: args.cashAmount,
+        momoAmount: args.momoAmount,
         timestamp: Date.now()
       });
 
@@ -1278,6 +1292,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (!me) throw new Error('Not authenticated');
     if (args.items.length === 0) throw new Error('Cannot hold an empty cart');
 
+    const totalAmount = args.items.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0);
+
     const variables = {
       userId: me.id,
       branchId: me.branchId || '',
@@ -1288,19 +1304,53 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       customerEmail: args.customerEmail,
     };
 
-    console.log('[store] 📤 Sending createPendingSale mutation...', variables);
-    const data = await gql<{ createPendingSale: Sale }>(M_CREATE_PENDING_SALE, variables);
-    const newSale = data.createPendingSale;
-    console.log('[store] ✅ Pending sale created!', { id: newSale.id, total: newSale.totalAmount });
+    let newSale: Sale | null = null;
+    let isSynced = false;
 
-    (newSale as any)._isSynced = true;
+    if (isOnline()) {
+      try {
+        console.log('[store] 📤 Sending createPendingSale mutation...', variables);
+        const data = await gql<{ createPendingSale: Sale }>(M_CREATE_PENDING_SALE, variables);
+        newSale = data.createPendingSale;
+        isSynced = true;
+        console.log('[store] ✅ Pending sale created!', { id: newSale.id, total: newSale.totalAmount });
+      } catch (err: any) {
+        console.warn('[store] Online pending sale creation failed, storing locally:', err);
+      }
+    }
+
+    if (!newSale) {
+      newSale = {
+        id: `held-${Date.now()}`,
+        totalAmount,
+        amountPaid: 0,
+        change: 0,
+        status: 'PENDING',
+        paymentMethod: 'CASH',
+        customerName: args.customerName || 'Walk-in',
+        createdAt: new Date().toISOString(),
+        user: me ? { id: me.id, name: me.name, role: me.role } : undefined,
+        items: args.items.map(i => ({
+          id: `item-${Date.now()}-${i.product.id}`,
+          quantity: i.quantity,
+          unitPrice: i.product.sellingPrice,
+          total: i.product.sellingPrice * i.quantity,
+          batchNo: 'HELD',
+          product: { id: i.product.id, name: i.product.name, category: i.product.category },
+        })),
+      };
+    }
+
+    (newSale as any)._isSynced = isSynced;
     (newSale as any)._syncStatus = 'PENDING';
 
-    setSales(prev => [newSale, ...prev]);
+    setSales(prev => [newSale!, ...prev]);
 
-    setTimeout(() => {
-      refetchSales().catch(() => { });
-    }, 500);
+    if (isSynced) {
+      setTimeout(() => {
+        refetchSales().catch(() => { });
+      }, 500);
+    }
 
     return newSale;
   }, [me, refetchSales]);
