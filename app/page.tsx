@@ -1371,7 +1371,7 @@ export default function LoginPage() {
                     return;
                   }
                   try {
-                    await gql<{ setStaffPin: boolean }>(M_SET_STAFF_PIN, { userId: pinChangeUser?.id, pin: newPin });
+                    await gql<{ setStaffPin: boolean }>(M_SET_STAFF_PIN, { userId: pinChangeUser?.id, pin: newPin, forceChange: false });
                     setIsSuccessTransition(true);
                     setTimeout(() => {
                       window.location.href = '/dashboard';

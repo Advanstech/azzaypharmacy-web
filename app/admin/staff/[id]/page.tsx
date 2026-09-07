@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useTheme } from 'next-themes';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/store';
 import { useToast } from '@/components/pharma-toast';
-import { gql, Q_BRANCHES, Q_STAFF_ACTIVITIES } from '@/lib/gql';
+import { gql, Q_BRANCHES, Q_STAFF_ACTIVITIES, M_SET_STAFF_PIN } from '@/lib/gql';
 import { 
   ArrowLeft, Mail, Phone, MapPin, Calendar, Award, Briefcase, Shield,
   Clock, Activity, Package, ShoppingCart, DollarSign, UserCheck,
@@ -257,6 +258,10 @@ export default function StaffDetailPage() {
   
   const [generatingPassword, setGeneratingPassword] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [resettingPin, setResettingPin] = useState(false);
+  const [resetPinResult, setResetPinResult] = useState<string | null>(null);
+  const [showResetPinConfirm, setShowResetPinConfirm] = useState(false);
+  const [resetPinError, setResetPinError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -280,6 +285,22 @@ export default function StaffDetailPage() {
       addToast({ type: 'error', title: 'Failed', message: err.message || 'Could not generate password', duration: 5000 });
     } finally {
       setGeneratingPassword(false);
+    }
+  };
+
+  const handleResetPin = async () => {
+    setResettingPin(true);
+    setResetPinResult(null);
+    setResetPinError(null);
+    try {
+      const newPin = String(Math.floor(100000 + Math.random() * 900000));
+      await gql(M_SET_STAFF_PIN, { userId: staffId, pin: newPin, forceChange: true });
+      setResetPinResult(newPin);
+      setShowResetPinConfirm(false);
+    } catch (err: any) {
+      setResetPinError(err.message || 'Could not reset PIN. Please try again.');
+    } finally {
+      setResettingPin(false);
     }
   };
 
@@ -645,6 +666,16 @@ export default function StaffDetailPage() {
               {generatingPassword ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
               Generate Password
             </button>
+            {me?.id !== staffId && ['OWNER', 'ROOT', 'SE_ADMIN', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '') && (
+              <button
+                onClick={() => { setResetPinError(null); setShowResetPinConfirm(true); }}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: `1px solid rgba(245,158,11,0.3)` }}
+              >
+                <Key size={14} />
+                Reset PIN
+              </button>
+            )}
             {me?.id !== staffId && (
               <button
                 onClick={() => {
@@ -676,6 +707,26 @@ export default function StaffDetailPage() {
               <p className="text-sm mb-3" style={{ color: card.text }}>Please securely share this temporary password with {getFullName(staff)}. They will be prompted to change it upon next login.</p>
               <div className="px-4 py-3 rounded-lg inline-flex items-center gap-3 border border-blue-500/30" style={{ background: card.bg }}>
                 <code className="text-xl font-mono font-bold tracking-wider" style={{ color: card.text }}>{tempPassword}</code>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {resetPinResult && (
+        <div className="p-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 relative backdrop-blur-xl">
+          <button onClick={() => setResetPinResult(null)} className="absolute top-4 right-4 text-amber-500 hover:text-amber-600 transition-colors">
+            <X size={20} />
+          </button>
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-full bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+              <Key size={24} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-amber-500 mb-1">PIN Reset Successful</h3>
+              <p className="text-sm mb-3" style={{ color: card.text }}>Share this temporary PIN with {getFullName(staff)}. They must change it the next time they log in.</p>
+              <div className="px-4 py-3 rounded-lg inline-flex items-center gap-3 border border-amber-500/30" style={{ background: card.bg }}>
+                <code className="text-xl font-mono font-bold tracking-wider" style={{ color: card.text }}>{resetPinResult}</code>
               </div>
             </div>
           </div>
@@ -1206,6 +1257,76 @@ export default function StaffDetailPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Reset PIN Confirmation Modal */}
+      {mounted && showResetPinConfirm && createPortal(
+        <AnimatePresence>
+          <motion.div
+            key="reset-pin-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="fixed inset-0 z-[200] flex items-start sm:items-center justify-center overflow-y-auto p-3 sm:p-4"
+            style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(16px)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) setShowResetPinConfirm(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 20 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl sm:rounded-3xl border shadow-2xl flex flex-col my-4 sm:my-0 max-h-[90vh]"
+              style={{ background: isDark ? '#0D1424' : '#ffffff', borderColor: card.border }}
+            >
+              <div className="flex-1 p-5 sm:px-6 sm:py-6 overflow-y-auto">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4 sm:mb-5">
+                  <Key size={24} className="sm:hidden" />
+                  <Key size={28} className="hidden sm:block" />
+                </div>
+                <h2 className="text-lg sm:text-xl font-black tracking-tight mb-2" style={{ color: card.text }}>
+                  Reset Staff PIN
+                </h2>
+                <p className="text-sm leading-relaxed mb-1" style={{ color: card.muted }}>
+                  Are you sure you want to reset the PIN for <strong style={{ color: card.text }}>{getFullName(staff)}</strong>? This will:
+                </p>
+                <ul className="text-sm list-disc list-inside mb-4" style={{ color: card.muted }}>
+                  <li>Generate a new temporary PIN</li>
+                  <li>Require them to create a new PIN on next login</li>
+                  <li>Keep their account and history unchanged</li>
+                </ul>
+                <p className="text-xs font-bold" style={{ color: '#F59E0B' }}>Share the temporary PIN with them securely.</p>
+                {resetPinError && (
+                  <div className="mt-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2 text-sm text-red-500">
+                    <AlertCircle size={16} />
+                    {resetPinError}
+                  </div>
+                )}
+              </div>
+              <div className="p-5 sm:px-6 sm:py-5 border-t flex flex-col sm:flex-row gap-3 shrink-0" style={{ borderColor: card.border }}>
+                <button
+                  onClick={() => setShowResetPinConfirm(false)}
+                  disabled={resettingPin}
+                  className="w-full sm:flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all hover:opacity-90 order-2 sm:order-1"
+                  style={{ color: card.muted, border: `1.5px solid ${card.border}` }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleResetPin}
+                  disabled={resettingPin}
+                  className="w-full sm:flex-[2] py-3 rounded-2xl text-sm font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all hover:opacity-90 active:scale-95 disabled:opacity-40 bg-amber-500 text-white order-1 sm:order-2"
+                >
+                  {resettingPin ? <Loader2 size={16} className="animate-spin" /> : <Key size={16} />}
+                  {resettingPin ? 'Resetting…' : 'Reset PIN'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }

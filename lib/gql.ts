@@ -254,8 +254,8 @@ export const M_LOGIN_WITH_PIN = `
 `;
 
 export const M_SET_STAFF_PIN = `
-  mutation SetStaffPin($userId: String!, $pin: String!) {
-    setStaffPin(userId: $userId, pin: $pin)
+  mutation SetStaffPin($userId: String!, $pin: String!, $forceChange: Boolean) {
+    setStaffPin(userId: $userId, pin: $pin, forceChange: $forceChange)
   }
 `;
 
