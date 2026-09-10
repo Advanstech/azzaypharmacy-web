@@ -126,7 +126,7 @@ function POSInner() {
     }
   }, [cart]);
 
-  const [activeCategory, setActiveCategory] = useState('All');
+  const [activeCategory, setActiveCategory] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
   const [tendered, setTendered] = useState('');
   const [splitCash, setSplitCash] = useState('');
@@ -545,10 +545,11 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     // Use search results (local or server) when searching
     if (q) {
       const base = searchResults.length > 0 ? searchResults : liveProducts;
-      if (activeCategory === 'All') return base;
+      if (activeCategory === 'All' || activeCategory === '') return base;
       return base.filter(p => p.category === activeCategory);
     }
-    // Default: show first 60 products so POS feels alive immediately
+    // Default: show empty when no category is selected yet
+    if (activeCategory === '') return [];
     if (activeCategory === 'All') return liveProducts.slice(0, 60);
     return liveProducts.filter(p => p.category === activeCategory);
   }, [search, activeCategory, liveProducts, searchResults]);
