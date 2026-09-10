@@ -90,9 +90,12 @@ function POSInner() {
     loadingProducts,
     loadingCustomers,
     error: storeError,
-    refetchProducts,
+    refetchProducts: refetchProductsFull,
+    refetchProductsPOS,
     refetchAll
   } = useStore();
+  // POS uses the lean fetch (no stockItems payload); fall back to full if lean unavailable
+  const refetchProducts = refetchProductsPOS || refetchProductsFull;
   const { addToast } = useToast();
 
   const liveProducts = useMemo(() => {
@@ -135,6 +138,7 @@ function POSInner() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const searchRequestIdRef = useRef(0);
+  const searchAbortRef = useRef<AbortController | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -488,42 +492,64 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     return ['All', ...Array.from(cats).sort()];
   }, [liveProducts]);
 
-  // Server-side product search (debounced + request cancellation)
+  // Hybrid product search: instant local filter + debounced server query.
+  // Local results paint immediately; server results replace them when ready.
   useEffect(() => {
     const q = search.trim();
     if (!q) {
       setSearchResults([]);
+      setSearching(false);
       return;
     }
+
+    // ── Instant local filter (no delay) ──────────────────────────────
+    const ql = q.toLowerCase();
+    const localMatches = liveProducts.filter(p =>
+      (p.name || '').toLowerCase().includes(ql) ||
+      (p.genericName || '').toLowerCase().includes(ql) ||
+      (p.brand || '').toLowerCase().includes(ql) ||
+      (p.category || '').toLowerCase().includes(ql)
+    ).slice(0, 50);
+    setSearchResults(localMatches);
+
+    // ── Debounced server search (400ms) ──────────────────────────────
     setSearching(true);
     const requestId = ++searchRequestIdRef.current;
+
+    // Cancel any in-flight server request
+    if (searchAbortRef.current) searchAbortRef.current.abort();
+
     const timer = setTimeout(async () => {
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
       try {
         const data = await gql<{ searchProducts: any[] }>(Q_SEARCH_PRODUCTS, { query: q, limit: 50 });
-        // Only apply results if this is still the latest search —
-        // prevents an older slow response from overwriting a newer one
-        if (requestId !== searchRequestIdRef.current) return;
+        if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
         setSearchResults(data.searchProducts || []);
-      } catch (e) {
+      } catch (e: any) {
         if (requestId !== searchRequestIdRef.current) return;
-        console.warn('[POS] Search failed:', e);
+        // On server failure, keep the local results already displayed
+        console.warn('[POS] Server search failed, using local results:', e?.message);
       } finally {
         if (requestId === searchRequestIdRef.current) setSearching(false);
       }
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [search]);
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      if (searchAbortRef.current) searchAbortRef.current.abort();
+    };
+  }, [search, liveProducts]);
 
   const filteredProducts = useMemo(() => {
     const q = search.toLowerCase().trim();
-    // Use server results when searching
+    // Use search results (local or server) when searching
     if (q) {
       const base = searchResults.length > 0 ? searchResults : liveProducts;
       if (activeCategory === 'All') return base;
       return base.filter(p => p.category === activeCategory);
     }
-    // Default: show empty when no category and no search
-    if (activeCategory === 'All') return [];
+    // Default: show first 60 products so POS feels alive immediately
+    if (activeCategory === 'All') return liveProducts.slice(0, 60);
     return liveProducts.filter(p => p.category === activeCategory);
   }, [search, activeCategory, liveProducts, searchResults]);
 
@@ -959,11 +985,17 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </button>
             </div>
           </div>
-          {searchResults.length > 0 && (
-            <div className="px-6">
+          {search && (
+            <div className="px-6 flex items-center gap-2">
               <p className="text-xs font-medium" style={{ color: c.muted }}>
-                {searchResults.length} products found
+                {searchResults.length > 0 ? `${searchResults.length} products found` : 'No results'}
               </p>
+              {searching && (
+                <div className="flex items-center gap-1.5" style={{ color: c.muted }}>
+                  <div className="w-3 h-3 border-2 border-current border-t-transparent animate-spin rounded-full"></div>
+                  <span className="text-[10px]">refining…</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1053,11 +1085,11 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
           {/* Grid */}
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-            {loadingProducts || searching ? (
+            {loadingProducts && filteredProducts.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center gap-3">
                 <div className="w-8 h-8 border-4 border-primary border-t-transparent animate-spin rounded-full"></div>
                 <p className="text-xs font-medium" style={{ color: c.muted }}>
-                  {searching ? 'Searching products...' : 'Syncing inventory...'}
+                  Syncing inventory...
                 </p>
               </div>
             ) : filteredProducts.length === 0 ? (

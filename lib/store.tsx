@@ -11,7 +11,7 @@ import {
 } from 'react';
 import {
   gql, setAuthToken,
-  Q_PRODUCTS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_SALES_PAGINATED_LEGACY, Q_STAFF, Q_ME, Q_CUSTOMERS,
+  Q_PRODUCTS, Q_PRODUCTS_POS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_SALES_PAGINATED_LEGACY, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_FINANCIAL_SUMMARY, Q_BUDGETS, Q_BUDGET_VS_ACTUAL, Q_INVOICES, Q_REFUND_REQUESTS, Q_ALL_SHIFT_RECONCILIATIONS,
   M_CREATE_SALE, M_CREATE_PENDING_SALE, M_COMPLETE_PENDING_SALE, M_CANCEL_PENDING_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
   M_CREATE_BUDGET, M_UPDATE_BUDGET, M_DELETE_BUDGET,
@@ -471,6 +471,7 @@ interface StoreState {
 
   // Refetch helpers
   refetchProducts: (branchId?: string) => Promise<void>;
+  refetchProductsPOS: (branchId?: string) => Promise<void>;
   refetchSuppliers: () => Promise<void>;
   refetchSales: (branchId?: string, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchStaff: () => Promise<void>;
@@ -756,6 +757,30 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
     } catch (e: any) {
       console.warn('[store] products fetch failed:', e.message);
+      if (e.message.includes('Unauthorized')) {
+        setError('Session expired. Please log out and back in to sync NEXUS data.');
+      }
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, [me?.branchId]);
+
+  // Lean POS product fetch — skips stockItems relation for faster payload
+  const refetchProductsPOS = useCallback(async (branchId?: string) => {
+    setLoadingProducts(true);
+    try {
+      const cached = await getFromCache('products_cache');
+      const cacheScopeBranchId = branchId || me?.branchId;
+      const scopedCached = cacheScopeBranchId ? cached.filter((p: any) => p.branchId === cacheScopeBranchId) : cached;
+      if (scopedCached?.length) setProducts(scopedCached);
+
+      const data = await gql<{ products: Product[] }>(Q_PRODUCTS_POS, { branchId: branchId || undefined });
+      if (data.products) {
+        setProducts(data.products);
+        await saveToCache('products_cache', data.products);
+      }
+    } catch (e: any) {
+      console.warn('[store] products (POS) fetch failed:', e.message);
       if (e.message.includes('Unauthorized')) {
         setError('Session expired. Please log out and back in to sync NEXUS data.');
       }
@@ -1774,7 +1799,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       error, syncStatus,
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
-      refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers,
+      refetchProducts, refetchProductsPOS, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers,
       refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
       createSale, createPendingSale, completePendingSale, cancelPendingSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, bulkUpdateProductPrices, updateProductFull,

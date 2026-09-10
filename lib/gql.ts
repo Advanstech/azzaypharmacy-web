@@ -188,6 +188,19 @@ export const Q_PRODUCTS = `
   }
 `;
 
+// Lightweight version for POS — omits stockItems rows (heavy payload).
+// POS only needs the computed stockQuantity, not individual batch details.
+export const Q_PRODUCTS_POS = `
+  query GetProducts($branchId: String) {
+    products(branchId: $branchId) {
+      id name genericName brand category sellingPrice costPrice branchId
+      stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
+      updatedAt
+      supplier { id name }
+    }
+  }
+`;
+
 export const Q_PRODUCTS_BY_SUPPLIER = `
   query GetProductsBySupplier($supplierId: String!, $branchId: String) {
     productsBySupplier(supplierId: $supplierId, branchId: $branchId) {
