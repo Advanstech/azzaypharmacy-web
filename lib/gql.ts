@@ -797,7 +797,6 @@ export const Q_SEARCH_PRODUCTS = `
       strength dosageForm sellingPrice costPrice
       stockQuantity supplierId imageUrl
       barcode nafdacNo requiresRx isControlled isActive
-      stockItems { id batchNo expiryDate quantity costPrice receivedAt isExpired }
     }
   }
 `;

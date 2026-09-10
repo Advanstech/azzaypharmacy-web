@@ -134,6 +134,7 @@ function POSInner() {
   const submissionLockRef = useRef(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
+  const searchRequestIdRef = useRef(0);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -487,7 +488,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
     return ['All', ...Array.from(cats).sort()];
   }, [liveProducts]);
 
-  // Server-side product search (debounced)
+  // Server-side product search (debounced + request cancellation)
   useEffect(() => {
     const q = search.trim();
     if (!q) {
@@ -495,16 +496,21 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       return;
     }
     setSearching(true);
+    const requestId = ++searchRequestIdRef.current;
     const timer = setTimeout(async () => {
       try {
         const data = await gql<{ searchProducts: any[] }>(Q_SEARCH_PRODUCTS, { query: q, limit: 50 });
+        // Only apply results if this is still the latest search —
+        // prevents an older slow response from overwriting a newer one
+        if (requestId !== searchRequestIdRef.current) return;
         setSearchResults(data.searchProducts || []);
       } catch (e) {
+        if (requestId !== searchRequestIdRef.current) return;
         console.warn('[POS] Search failed:', e);
       } finally {
-        setSearching(false);
+        if (requestId === searchRequestIdRef.current) setSearching(false);
       }
-    }, 300);
+    }, 200);
     return () => clearTimeout(timer);
   }, [search]);
 
