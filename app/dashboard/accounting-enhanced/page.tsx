@@ -106,8 +106,11 @@ export default function EnhancedAccountingPage() {
 
   // Enhanced financial data - using real data from store
   const financialData = useMemo(() => {
-    // Use real sales data for revenue
-    const salesRevenue = branchSales.reduce((sum, sale) => sum + ((sale as any).total || 0), 0);
+    // Use real sales data for revenue — only count COMPLETED sales
+    // (refunded/voided sales keep positive totalAmount but money was returned)
+    const salesRevenue = branchSales
+      .filter((sale: any) => sale.status !== 'REFUNDED' && sale.status !== 'VOIDED')
+      .reduce((sum, sale: any) => sum + (sale.totalAmount || 0), 0);
     
     // Use real purchases for COGS
     const purchasesCost = purchases.reduce((sum, p) => sum + (p.total || 0), 0);

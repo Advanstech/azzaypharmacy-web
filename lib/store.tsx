@@ -791,12 +791,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       const cached = await getKV(cacheKey);
       if (cached?.length && requestId === salesRequestIdRef.current) setSales(cached);
 
-      // NOTE: previously requested up to 10,000 sales with nested items+product
-      // on every load — a huge payload that froze the browser and hammered the
-      // API/DB. Capped to a safer window; long-term this should be true
-      // server-side pagination (page size 50–100) with a totalCount.
+      // No cap — return all sales in the requested range. Revenue totals
+      // are computed from this list, so capping it undercounts long ranges.
+      // Server-side aggregation (salesSummary query) is used for KPIs on
+      // the sales page; this list is for the transactions table.
       const variables = {
-        limit: dateFrom || dateTo ? 2000 : 500,
+        limit: undefined,
         offset: 0,
         branchId: branchId ?? undefined,
         dateFrom: dateFrom ?? undefined,
@@ -918,7 +918,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchExpenses = useCallback(async () => {
     setLoadingExpenses(true);
     try {
-      const data = await gql<{ expenses: { items: Expense[] } }>(Q_EXPENSES);
+      const data = await gql<{ expenses: { items: Expense[] } }>(Q_EXPENSES, { page: 1, limit: 10000 });
       setExpenses(data.expenses?.items ?? []);
     } catch (e: any) {
       console.warn('[store] expenses fetch failed:', e.message);
@@ -1108,8 +1108,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   // as that causes data integrity issues (yesterday's sales labelled as "Today").
   const todayStr = new Date().toDateString();
   const todaySales = sales.filter(s => new Date(s.createdAt).toDateString() === todayStr);
-  const todayRevenue = todaySales.reduce((sum, s) => sum + s.totalAmount, 0);
-  const todayTransactions = todaySales.length;
+  // Exclude refunded/voided sales from revenue — they still have positive
+  // totalAmount but the money was returned to the customer.
+  const todayRevenue = todaySales
+    .filter(s => (s as any).status !== 'REFUNDED' && (s as any).status !== 'VOIDED')
+    .reduce((sum, s) => sum + s.totalAmount, 0);
+  const todayTransactions = todaySales.filter(s => (s as any).status !== 'REFUNDED' && (s as any).status !== 'VOIDED').length;
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 

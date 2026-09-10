@@ -13,7 +13,7 @@ import { useCustomAuth } from '@/lib/custom-auth';
 import { useMemo, useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/pharma-toast';
-import { gql, M_ASK_NEXUS_AI } from '@/lib/gql';
+import { gql, M_ASK_NEXUS_AI, Q_DASHBOARD_STATS } from '@/lib/gql';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
@@ -53,6 +53,8 @@ export default function AdminDashboardPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightText, setInsightText] = useState("Loading AI analytical forecast based on live database data...");
+  const [rangeStats, setRangeStats] = useState<any>(null);
+  const [loadingRangeStats, setLoadingRangeStats] = useState(false);
 
   // Chart Metric Toggle
   const [activeMetric, setActiveMetric] = useState<'revenue' | 'sales'>('revenue');
@@ -69,11 +71,11 @@ export default function AdminDashboardPage() {
     const end = new Date();
     const start = new Date();
     switch (dateRange) {
-      case 'today': start.setHours(0, 0, 0, 0); break;
-      case '7d': start.setDate(start.getDate() - 7); break;
-      case '30d': start.setDate(start.getDate() - 30); break;
-      case '90d': start.setDate(start.getDate() - 90); break;
-      case '1y': start.setFullYear(start.getFullYear() - 1); break;
+      case 'today': start.setHours(0, 0, 0, 0); end.setHours(23, 59, 59, 999); break;
+      case '7d': start.setDate(start.getDate() - 7); end.setHours(23, 59, 59, 999); break;
+      case '30d': start.setDate(start.getDate() - 30); end.setHours(23, 59, 59, 999); break;
+      case '90d': start.setDate(start.getDate() - 90); end.setHours(23, 59, 59, 999); break;
+      case '1y': start.setFullYear(start.getFullYear() - 1); end.setHours(23, 59, 59, 999); break;
       case 'custom': return { start: new Date(customFrom + 'T00:00:00'), end: new Date(customTo + 'T23:59:59') };
     }
     return { start, end };
@@ -126,15 +128,61 @@ export default function AdminDashboardPage() {
       if (products.length === 0) await refetchProducts();
       if (customers.length === 0) await refetchCustomers();
       if (allExpenses.length === 0) await refetchExpenses();
-      
+
+      // Fetch server-aggregated stats for the selected date range —
+      // avoids the 2,000 row cap and gives accurate 1Y/90D/Custom numbers.
+      setLoadingRangeStats(true);
+      try {
+        const stats = await gql<{ dashboardStats: any }>(
+          Q_DASHBOARD_STATS,
+          { branchId: activeBranchId ?? undefined, dateFrom: rangeBounds.start.toISOString(), dateTo: rangeBounds.end.toISOString() },
+        );
+        setRangeStats(stats?.dashboardStats || null);
+      } catch (e) {
+        console.error('Failed to load range dashboard stats', e);
+      } finally {
+        setLoadingRangeStats(false);
+      }
+
       setTimeout(() => {
         fetchAiInsight();
       }, 1500);
     };
     if (mounted && session?.access_token) loadData();
-  }, [mounted, rangeBounds.start, rangeBounds.end, session?.access_token]);
+  }, [mounted, rangeBounds.start, rangeBounds.end, session?.access_token, activeBranchId]);
+
+  // Real KPIs calculation
+  const pendingInvoices = useMemo(() => invoices.filter(i => i.paymentStatus !== 'PAID').length, [invoices]);
+  const activeStaffCount = useMemo(() => staff.filter(s => s.isActive).length, [staff]);
+  const staffOnDuty = useMemo(() => staff.filter(s => s.isOnDuty).length, [staff]);
+  const stockValue = useMemo(() => products.reduce((acc, p) => acc + (p.stockQuantity * (p.costPrice || p.sellingPrice || 0)), 0), [products]);
+
+  const criticalStock = useMemo(() => products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 5), [products]);
+  const outOfStock = useMemo(() => products.filter(p => p.stockQuantity === 0), [products]);
+  const expiringIn30 = useMemo(() => {
+    const soon = new Date();
+    soon.setDate(soon.getDate() + 30);
+    return products.filter(p => p.stockItems?.some((item: any) => item.expiryDate && new Date(item.expiryDate) <= soon && new Date(item.expiryDate) > new Date()));
+  }, [products]);
+
+  // Metrics that respond to Date Range
+  const periodSalesData = useMemo(() => sales.filter(s => inRange(s.createdAt)), [sales, inRange]);
+  // Use server-aggregated range stats when available, otherwise fall back to client-side sales
+  const periodRevenue = useMemo(() => {
+    if (rangeStats?.rangeRevenue != null) return Number(rangeStats.rangeRevenue);
+    return periodSalesData.reduce((acc, sale) => acc + (sale.totalAmount || 0), 0);
+  }, [rangeStats, periodSalesData]);
+
+  const periodTransactions = useMemo(() => {
+    if (rangeStats?.rangeTransactions != null) return Number(rangeStats.rangeTransactions);
+    return periodSalesData.length;
+  }, [rangeStats, periodSalesData]);
 
   const timeSeriesData = useMemo(() => {
+    if (rangeStats?.rangeTimeSeries?.length > 0) {
+      return rangeStats.rangeTimeSeries.map((p: any) => ({ label: p.label, revenue: p.revenue, sales: p.sales }));
+    }
+
     const days = Math.max(1, Math.round((rangeBounds.end.getTime() - rangeBounds.start.getTime()) / (1000 * 60 * 60 * 24)));
     const useWeekly = days > 35 && days <= 180;
     const useMonthly = days > 180;
@@ -171,30 +219,12 @@ export default function AdminDashboardPage() {
       revenue: revenueMap.get(label) || 0,
       sales: salesVolumeMap.get(label) || 0,
     }));
-  }, [sales, rangeBounds, inRange]);
+  }, [sales, rangeBounds, inRange, rangeStats]);
 
   const chartSeries = useMemo(() => [
-    { key: 'sales', name: 'Sales Volume', color: '#00D9FF', data: timeSeriesData.map(d => ({ label: d.label, value: d.sales })) },
-    { key: 'revenue', name: 'Financial Revenue', color: '#A855F7', data: timeSeriesData.map(d => ({ label: d.label, value: d.revenue })) },
+    { key: 'sales', name: 'Sales Volume', color: '#00D9FF', data: timeSeriesData.map((d: any) => ({ label: d.label, value: d.sales })) },
+    { key: 'revenue', name: 'Financial Revenue', color: '#A855F7', data: timeSeriesData.map((d: any) => ({ label: d.label, value: d.revenue })) },
   ], [timeSeriesData]);
-
-  // Real KPIs calculation
-  const pendingInvoices = useMemo(() => invoices.filter(i => i.paymentStatus !== 'PAID').length, [invoices]);
-  const activeStaffCount = useMemo(() => staff.filter(s => s.isActive).length, [staff]);
-  const staffOnDuty = useMemo(() => staff.filter(s => s.isOnDuty).length, [staff]);
-  const stockValue = useMemo(() => products.reduce((acc, p) => acc + (p.stockQuantity * (p.costPrice || p.sellingPrice || 0)), 0), [products]);
-
-  const criticalStock = useMemo(() => products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 5), [products]);
-  const outOfStock = useMemo(() => products.filter(p => p.stockQuantity === 0), [products]);
-  const expiringIn30 = useMemo(() => {
-    const soon = new Date();
-    soon.setDate(soon.getDate() + 30);
-    return products.filter(p => p.stockItems?.some((item: any) => item.expiryDate && new Date(item.expiryDate) <= soon && new Date(item.expiryDate) > new Date()));
-  }, [products]);
-
-  // Metrics that respond to Date Range
-  const periodSalesData = useMemo(() => sales.filter(s => inRange(s.createdAt)), [sales, inRange]);
-  const periodRevenue = useMemo(() => periodSalesData.reduce((acc, sale) => acc + (sale.totalAmount || 0), 0), [periodSalesData]);
 
   const topProductPeriod = useMemo(() => {
     const counts: Record<string, { name: string; qty: number; revenue: number }> = {};
@@ -376,8 +406,8 @@ export default function AdminDashboardPage() {
           <div className="relative z-10">
             <PharmaChart 
               data={activeMetric === 'revenue' 
-                ? timeSeriesData.map(d => ({ day: d.label, amount: d.revenue }))
-                : timeSeriesData.map(d => ({ day: d.label, amount: d.sales }))
+                ? timeSeriesData.map((d: any) => ({ day: d.label, amount: d.revenue }))
+                : timeSeriesData.map((d: any) => ({ day: d.label, amount: d.sales }))
               } 
               isDark={isDark} 
               accent={activeMetric === 'revenue' ? '#10B981' : '#0EA5E9'} 
@@ -392,7 +422,7 @@ export default function AdminDashboardPage() {
         {/* 4 Primary KPIs in a Column/Grid */}
         <div className="grid grid-cols-2 lg:grid-cols-1 gap-4">
           {[
-            { label: 'Revenue', value: formatCurrency(periodRevenue), sub: `${periodSalesData.length} transactions in ${dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}`, icon: DollarSign, color: '#10B981', gradient: 'from-emerald-500/20 to-teal-500/5', route: '/admin/reports/sales' },
+            { label: 'Revenue', value: formatCurrency(periodRevenue), sub: `${periodTransactions} transactions in ${dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}`, icon: DollarSign, color: '#10B981', gradient: 'from-emerald-500/20 to-teal-500/5', route: '/admin/reports/sales' },
             { label: 'Expenses', value: formatCurrency(periodExpenses), sub: `${expenses.filter(e => inRange(e.date || e.createdAt)).length} records in ${dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}`, icon: TrendingDown, color: '#0EA5E9', gradient: 'from-sky-500/20 to-cyan-500/5', route: '/admin/reports/financial/expenses' },
             { label: 'Staff On Duty', value: `${staffOnDuty} / ${activeStaffCount}`, sub: 'active staff members', icon: UserCheck, color: '#8B5CF6', gradient: 'from-violet-500/20 to-purple-500/5', route: '/admin/staff' },
             { label: 'Stock Value', value: formatCurrency(stockValue), sub: `${products.length} products`, icon: Package, color: '#F59E0B', gradient: 'from-amber-500/20 to-orange-500/5', route: '/dashboard/inventory' },
@@ -556,7 +586,7 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
               </div>
-              <p className="text-xs mt-4 text-center font-medium" style={{ color: cardStyle.muted }}>Based on {periodSalesData.length} transactions in {dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}</p>
+              <p className="text-xs mt-4 text-center font-medium" style={{ color: cardStyle.muted }}>Based on {periodTransactions} transactions in {dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}</p>
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: cardStyle.muted }}>

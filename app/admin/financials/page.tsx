@@ -65,11 +65,11 @@ export default function FinancialsPage() {
     const end = new Date();
     const start = new Date();
     switch (dateRange) {
-      case 'today': start.setHours(0, 0, 0, 0); break;
-      case '7d': start.setDate(start.getDate() - 7); break;
-      case '30d': start.setDate(start.getDate() - 30); break;
-      case '90d': start.setDate(start.getDate() - 90); break;
-      case '1y': start.setFullYear(start.getFullYear() - 1); break;
+      case 'today': start.setHours(0, 0, 0, 0); end.setHours(23, 59, 59, 999); break;
+      case '7d': start.setDate(start.getDate() - 7); end.setHours(23, 59, 59, 999); break;
+      case '30d': start.setDate(start.getDate() - 30); end.setHours(23, 59, 59, 999); break;
+      case '90d': start.setDate(start.getDate() - 90); end.setHours(23, 59, 59, 999); break;
+      case '1y': start.setFullYear(start.getFullYear() - 1); end.setHours(23, 59, 59, 999); break;
       case 'custom': return { start: new Date(customFrom + 'T00:00:00'), end: new Date(customTo + 'T23:59:59') };
     }
     return { start, end };

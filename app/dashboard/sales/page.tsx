@@ -18,6 +18,7 @@ import { usePagination } from '@/hooks/use-pagination';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
+import { gql, Q_SALES_SUMMARY } from '@/lib/gql';
 
 const PAYMENT_METHODS = {
   CASH: { label: 'Cash', color: '#10B981', icon: '💵' },
@@ -49,6 +50,8 @@ export default function EnhancedSalesPage() {
 
   const [search, setSearch] = useState('');
   const effectiveDay = useMemo(() => getEffectiveToday(), []);
+  const [salesSummary, setSalesSummary] = useState<any>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 7);
     return d.toISOString().split('T')[0];
@@ -63,6 +66,18 @@ export default function EnhancedSalesPage() {
   // misses older sales, making "This Year" / 90-day totals incorrect.
   useEffect(() => {
     refetchSales(activeBranchId ?? undefined, dateFrom, dateTo);
+
+    // Fetch server-aggregated summary for accurate KPIs — the raw sales list
+    // is capped at 2000 rows, so client-side sums undercount long ranges.
+    setLoadingSummary(true);
+    gql<{ salesSummary: any }>(Q_SALES_SUMMARY, {
+      branchId: activeBranchId ?? undefined,
+      dateFrom,
+      dateTo,
+    })
+      .then(res => setSalesSummary(res?.salesSummary ?? null))
+      .catch(e => { console.error('Failed to load sales summary', e); setSalesSummary(null); })
+      .finally(() => setLoadingSummary(false));
   }, [activeBranchId, dateFrom, dateTo, refetchSales]);
 
   // Metric-period buttons control the date range used for both KPIs and table.
@@ -637,20 +652,36 @@ export default function EnhancedSalesPage() {
       }
     });
 
-    const totalRevenue = periodSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-    const totalProfit = periodSales.reduce((sum, sale) => sum + (sale.profit || 0), 0);
-    const totalTransactions = periodSales.length;
-    const averageTransaction = totalTransactions > 0 ? totalRevenue / totalTransactions : 0;
-    
-    // Payment method breakdown (split shown as its own method)
-    const paymentBreakdown = periodSales.reduce((acc, sale) => {
-      if (sale.paymentMethod === 'SPLIT') {
-        acc['SPLIT'] = (acc['SPLIT'] || 0) + sale.totalAmount;
-      } else {
-        acc[sale.paymentMethod] = (acc[sale.paymentMethod] || 0) + sale.totalAmount;
-      }
-      return acc;
-    }, {} as Record<string, number>);
+    // Revenue should only count COMPLETED sales — refunded/voided sales
+    // still have positive totalAmount in the DB but the money was returned.
+    // This matches how the accounting/financials page calculates revenue.
+    const revenueSales = periodSales.filter(s => (s as any).status !== 'REFUNDED' && (s as any).status !== 'VOIDED');
+
+    // Use server-aggregated totals when available — the raw sales list is
+    // capped at 2000 rows, so client-side sums undercount long ranges.
+    const totalRevenue = salesSummary?.totalRevenue != null ? Number(salesSummary.totalRevenue) : revenueSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+    const totalProfit = salesSummary?.totalProfit != null ? Number(salesSummary.totalProfit) : revenueSales.reduce((sum, sale) => sum + (sale.profit || 0), 0);
+    const totalTransactions = salesSummary?.totalTransactions != null ? Number(salesSummary.totalTransactions) : revenueSales.length;
+    const averageTransaction = salesSummary?.averageTransaction != null ? Number(salesSummary.averageTransaction) : (totalTransactions > 0 ? totalRevenue / totalTransactions : 0);
+
+    // Payment method breakdown — prefer server-aggregated data
+    let paymentBreakdown: Record<string, number>;
+    if (salesSummary?.paymentBreakdown?.length > 0) {
+      paymentBreakdown = {};
+      salesSummary.paymentBreakdown.forEach((p: any) => {
+        const key = p.label === 'Cash' ? 'CASH' : p.label === 'MoMo' ? 'MOMO' : p.label === 'Card' ? 'CARD' : p.label === 'NHIS' ? 'NHIS' : p.label === 'Credit' ? 'CREDIT' : 'SPLIT';
+        paymentBreakdown[key] = p.amount;
+      });
+    } else {
+      paymentBreakdown = revenueSales.reduce((acc, sale) => {
+        if (sale.paymentMethod === 'SPLIT') {
+          acc['SPLIT'] = (acc['SPLIT'] || 0) + sale.totalAmount;
+        } else {
+          acc[sale.paymentMethod] = (acc[sale.paymentMethod] || 0) + sale.totalAmount;
+        }
+        return acc;
+      }, {} as Record<string, number>);
+    }
 
     // Top products
     const productSales = periodSales.flatMap(sale => sale.items || []);
@@ -683,52 +714,57 @@ export default function EnhancedSalesPage() {
       };
     });
 
-    // Revenue trajectory: bucket granularity must match the selected metric
-    // period, otherwise switching Today/Week/Month/Year filters just re-sums
-    // the same 7 weekday buckets and the chart appears unresponsive.
-    const trendNow = new Date();
+    // Revenue trajectory: prefer server-aggregated time series when available.
+    // Otherwise bucket granularity must match the selected metric period,
+    // otherwise switching Today/Week/Month/Year filters just re-sums the
+    // same 7 weekday buckets and the chart appears unresponsive.
     let trendData: { day: string; amount: number }[];
-    if (metricPeriod === 'DAILY') {
-      // Hourly buckets across typical trading hours
-      trendData = hourlySales
-        .filter(h => h.hour >= 6 && h.hour <= 22)
-        .map(h => ({ day: `${h.hour}:00`, amount: h.revenue }));
-    } else if (metricPeriod === 'WEEKLY') {
-      // Chronological daily buckets for the last 7 days
-      trendData = Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(trendNow);
-        d.setDate(d.getDate() - (6 - i));
-        const dayStr = d.toISOString().split('T')[0];
-        const amount = periodSales
-          .filter(sale => new Date(sale.createdAt).toISOString().split('T')[0] === dayStr)
-          .reduce((sum, sale) => sum + sale.totalAmount, 0);
-        return { day: d.toLocaleDateString('en-GB', { weekday: 'short' }), amount };
-      });
-    } else if (metricPeriod === 'MONTHLY') {
-      // Daily buckets across the current calendar month
-      const daysInMonth = new Date(trendNow.getFullYear(), trendNow.getMonth() + 1, 0).getDate();
-      trendData = Array.from({ length: daysInMonth }, (_, i) => {
-        const day = i + 1;
-        const amount = periodSales
-          .filter(sale => {
-            const d = new Date(sale.createdAt);
-            return d.getDate() === day && d.getMonth() === trendNow.getMonth() && d.getFullYear() === trendNow.getFullYear();
-          })
-          .reduce((sum, sale) => sum + sale.totalAmount, 0);
-        return { day: String(day), amount };
-      });
+    if (salesSummary?.timeSeries?.length > 0) {
+      trendData = salesSummary.timeSeries.map((p: any) => ({ day: p.label, amount: p.revenue }));
     } else {
-      // YEARLY: monthly buckets across the current calendar year
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      trendData = months.map((label, idx) => {
-        const amount = periodSales
-          .filter(sale => {
-            const d = new Date(sale.createdAt);
-            return d.getMonth() === idx && d.getFullYear() === trendNow.getFullYear();
-          })
-          .reduce((sum, sale) => sum + sale.totalAmount, 0);
-        return { day: label, amount };
-      });
+      const trendNow = new Date();
+      if (metricPeriod === 'DAILY') {
+        // Hourly buckets across typical trading hours
+        trendData = hourlySales
+          .filter(h => h.hour >= 6 && h.hour <= 22)
+          .map(h => ({ day: `${h.hour}:00`, amount: h.revenue }));
+      } else if (metricPeriod === 'WEEKLY') {
+        // Chronological daily buckets for the last 7 days
+        trendData = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(trendNow);
+          d.setDate(d.getDate() - (6 - i));
+          const dayStr = d.toISOString().split('T')[0];
+          const amount = periodSales
+            .filter(sale => new Date(sale.createdAt).toISOString().split('T')[0] === dayStr)
+            .reduce((sum, sale) => sum + sale.totalAmount, 0);
+          return { day: d.toLocaleDateString('en-GB', { weekday: 'short' }), amount };
+        });
+      } else if (metricPeriod === 'MONTHLY') {
+        // Daily buckets across the current calendar month
+        const daysInMonth = new Date(trendNow.getFullYear(), trendNow.getMonth() + 1, 0).getDate();
+        trendData = Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const amount = periodSales
+            .filter(sale => {
+              const d = new Date(sale.createdAt);
+              return d.getDate() === day && d.getMonth() === trendNow.getMonth() && d.getFullYear() === trendNow.getFullYear();
+            })
+            .reduce((sum, sale) => sum + sale.totalAmount, 0);
+          return { day: String(day), amount };
+        });
+      } else {
+        // YEARLY: monthly buckets across the current calendar year
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        trendData = months.map((label, idx) => {
+          const amount = periodSales
+            .filter(sale => {
+              const d = new Date(sale.createdAt);
+              return d.getMonth() === idx && d.getFullYear() === trendNow.getFullYear();
+            })
+            .reduce((sum, sale) => sum + sale.totalAmount, 0);
+          return { day: label, amount };
+        });
+      }
     }
 
     return {
@@ -742,7 +778,7 @@ export default function EnhancedSalesPage() {
       trendData,
       profitMargin: totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0,
     };
-  }, [filteredSales, metricPeriod]);
+  }, [filteredSales, metricPeriod, salesSummary]);
 
   const {
     currentPage,

@@ -92,20 +92,30 @@ export async function gql<T = unknown>(
     ];
 
     for (const candidate of candidatesToTry) {
-      try {
-        const response = await fetch(candidate, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ query, variables }),
-          signal: AbortSignal.timeout(30_000),
-        });
-        res = response;
-        usedApi = candidate;
-        currentActiveApi = candidate; // Stick with working endpoint
-        break;
-      } catch (err: any) {
-        console.warn(`[gql] [${queryName}] Attempt on ${candidate} failed: ${err?.message || err}`);
+      // Retry each candidate up to 2 times — handles brief API restarts
+      // and transient network blips without flooding the console with errors.
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await fetch(candidate, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ query, variables }),
+            signal: AbortSignal.timeout(30_000),
+          });
+          res = response;
+          usedApi = candidate;
+          currentActiveApi = candidate; // Stick with working endpoint
+          break;
+        } catch (err: any) {
+          const isLastAttempt = attempt === 2;
+          if (isLastAttempt) {
+            console.warn(`[gql] [${queryName}] Attempt on ${candidate} failed: ${err?.message || err}`);
+          } else {
+            await new Promise(r => setTimeout(r, 500));
+          }
+        }
       }
+      if (res) break;
     }
 
     if (!res) {
@@ -352,12 +362,15 @@ export const Q_CUSTOMERS = `
 `;
 
 export const Q_DASHBOARD_STATS = `
-  query GetDashboardStats($branchId: String) {
-    dashboardStats(branchId: $branchId) {
+  query GetDashboardStats($branchId: String, $dateFrom: String, $dateTo: String) {
+    dashboardStats(branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
       todayRevenue
       todayTransactions
       weekRevenue
       weekTransactions
+      rangeRevenue
+      rangeTransactions
+      rangeTimeSeries { label revenue sales }
       outOfStock
       lowStock
       totalProducts
@@ -367,6 +380,19 @@ export const Q_DASHBOARD_STATS = `
       paymentMix { label pct amount }
       topProducts { name revenue qty }
       staffSales { name revenue count }
+    }
+  }
+`;
+
+export const Q_SALES_SUMMARY = `
+  query GetSalesSummary($branchId: String, $dateFrom: String, $dateTo: String) {
+    salesSummary(branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo) {
+      totalRevenue
+      totalTransactions
+      averageTransaction
+      totalProfit
+      paymentBreakdown { label pct amount }
+      timeSeries { label revenue sales }
     }
   }
 `;
@@ -797,8 +823,8 @@ export const Q_PURCHASES = `
 `;
 
 export const Q_EXPENSES = `
-  query GetExpenses {
-    expenses {
+  query GetExpenses($page: Int, $limit: Int) {
+    expenses(page: $page, limit: $limit) {
       items {
         id amount description date receiptUrl status createdAt branchId
         category { id name }
