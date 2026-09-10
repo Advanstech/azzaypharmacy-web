@@ -53,6 +53,26 @@ interface CartItem {
 
 type PaymentMethod = 'Cash' | 'MoMo' | 'Card' | 'NHIS' | 'SPLIT';
 
+// Isolated 1Hz clock so the ticking interval only re-renders this tiny
+// component, not the entire POS tree (products, cart, etc.) every second.
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div className="text-right flex flex-col items-end">
+      <p className="font-mono font-bold text-xs sm:text-sm leading-none">
+        {now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+      </p>
+      <p className="hidden sm:block text-[10px] opacity-80 mt-0.5">
+        {now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+      </p>
+    </div>
+  );
+}
+
 function POSInner() {
   const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
@@ -83,13 +103,6 @@ function POSInner() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme ?? theme) === 'dark';
-
-  // Clock
-  const [now, setNow] = useState(new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   // POS state
   const [search, setSearch] = useState('');
@@ -877,10 +890,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </span>
             )}
           </button>
-          <div className="text-right flex flex-col items-end">
-            <p className="font-mono font-bold text-xs sm:text-sm leading-none">{formatTime(now)}</p>
-            <p className="hidden sm:block text-[10px] opacity-80 mt-0.5">{now.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}</p>
-          </div>
+          <LiveClock />
         </div>
       </header>
 

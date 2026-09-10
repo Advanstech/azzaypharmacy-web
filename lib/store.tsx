@@ -791,8 +791,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       const cached = await getKV(cacheKey);
       if (cached?.length && requestId === salesRequestIdRef.current) setSales(cached);
 
+      // NOTE: previously requested up to 10,000 sales with nested items+product
+      // on every load — a huge payload that froze the browser and hammered the
+      // API/DB. Capped to a safer window; long-term this should be true
+      // server-side pagination (page size 50–100) with a totalCount.
       const variables = {
-        limit: dateFrom || dateTo ? 10000 : 500,
+        limit: dateFrom || dateTo ? 2000 : 500,
         offset: 0,
         branchId: branchId ?? undefined,
         dateFrom: dateFrom ?? undefined,
