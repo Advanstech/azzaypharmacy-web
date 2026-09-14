@@ -56,7 +56,11 @@ export interface Product {
   dosageForm?: string;
   requiresRx?: boolean;
   isControlled?: boolean;
+  isActive?: boolean;
   branchId?: string;
+  barcode?: string;
+  nafdacNo?: string;
+  manufacturer?: string;
   stockItems?: StockItem[];
 }
 

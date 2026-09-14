@@ -181,6 +181,7 @@ export const Q_PRODUCTS = `
     products(branchId: $branchId) {
       id name genericName brand category sellingPrice costPrice branchId
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
+      barcode nafdacNo manufacturer isActive
       updatedAt
       supplier { id name }
       stockItems { id branchId batchNo expiryDate quantity costPrice receivedAt isExpired }
@@ -195,6 +196,7 @@ export const Q_PRODUCTS_POS = `
     products(branchId: $branchId) {
       id name genericName brand category sellingPrice costPrice branchId
       stockQuantity supplierId imageUrl strength dosageForm requiresRx isControlled
+      barcode nafdacNo manufacturer isActive
       updatedAt
       supplier { id name }
     }
@@ -809,7 +811,7 @@ export const Q_SEARCH_PRODUCTS = `
       id name genericName brand category
       strength dosageForm sellingPrice costPrice
       stockQuantity supplierId imageUrl
-      barcode nafdacNo requiresRx isControlled isActive
+      barcode nafdacNo manufacturer requiresRx isControlled isActive
     }
   }
 `;

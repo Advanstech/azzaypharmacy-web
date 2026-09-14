@@ -508,7 +508,11 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       (p.name || '').toLowerCase().includes(ql) ||
       (p.genericName || '').toLowerCase().includes(ql) ||
       (p.brand || '').toLowerCase().includes(ql) ||
-      (p.category || '').toLowerCase().includes(ql)
+      (p.category || '').toLowerCase().includes(ql) ||
+      (p.barcode || '').toLowerCase().includes(ql) ||
+      (p.nafdacNo || '').toLowerCase().includes(ql) ||
+      (p.strength || '').toLowerCase().includes(ql) ||
+      (p.manufacturer || '').toLowerCase().includes(ql)
     ).slice(0, 50);
     setSearchResults(localMatches);
 
@@ -542,11 +546,13 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
   const filteredProducts = useMemo(() => {
     const q = search.toLowerCase().trim();
-    // Use search results (local or server) when searching
+    // When searching, NEVER fall back to the unfiltered catalog —
+    // rendering all ~1800 products floods the DOM and freezes the POS.
+    // searchResults already contains local matches (instant) or server
+    // results (400ms later). Empty means genuinely no matches.
     if (q) {
-      const base = searchResults.length > 0 ? searchResults : liveProducts;
-      if (activeCategory === 'All' || activeCategory === '') return base;
-      return base.filter(p => p.category === activeCategory);
+      if (activeCategory === 'All' || activeCategory === '') return searchResults;
+      return searchResults.filter(p => p.category === activeCategory);
     }
     // Default: show empty when no category is selected yet
     if (activeCategory === '') return [];
