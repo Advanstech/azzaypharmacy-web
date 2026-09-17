@@ -780,8 +780,22 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
       const data = await gql<{ products: Product[] }>(Q_PRODUCTS_POS, { branchId: branchId || undefined });
       if (data.products) {
-        setProducts(data.products);
-        await saveToCache('products_cache', data.products);
+        // The lean payload omits stockItems. If a detail view (e.g. inventory)
+        // already loaded batch rows, carry them forward so this refresh doesn't
+        // wipe them. The cache write uses the same merge so offline inventory
+        // keeps batch detail too.
+        const fetched = data.products;
+        const preserveBatches = (prev: Product[] | undefined) => {
+          if (!prev?.length) return fetched;
+          const byId = new Map(prev.map(p => [p.id, p]));
+          return fetched.map(p => {
+            const old = byId.get(p.id);
+            return old?.stockItems?.length ? { ...p, stockItems: old.stockItems } : p;
+          });
+        };
+        setProducts(prev => preserveBatches(prev));
+        const cachedNow = await getFromCache('products_cache');
+        await saveToCache('products_cache', preserveBatches(cachedNow));
       }
     } catch (e: any) {
       console.warn('[store] products (POS) fetch failed:', e.message);
@@ -1050,7 +1064,18 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       // ── Phase 1: Dashboard-critical — all fired simultaneously ─────
       // Staff, products and sales launch together. me?.branchId-dependent
       // calls (invoices, ledger) are deferred to phase 2.
-      await Promise.all([refetchStaff(), refetchProducts(), refetchSales()]);
+      // Products uses the lean POS payload (no stockItems — inventory and
+      // other detail pages self-fetch the full query on mount), and sales is
+      // a rolling 30-day window that covers dashboard/end-of-day needs;
+      // pages needing deeper history (refunds, accounting, sales report)
+      // fetch their own range.
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+      const now = new Date().toISOString();
+      await Promise.all([
+        refetchStaff(),
+        refetchProductsPOS(),
+        refetchSales(undefined, thirtyDaysAgo, now),
+      ]);
 
       setSyncStatus('idle');
 
@@ -1074,7 +1099,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       console.error('[store] Sync failed:', err);
       setSyncStatus('error');
     }
-  }, [refetchProducts, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchRefundRequests]);
+  }, [refetchProductsPOS, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchRefundRequests]);
 
   // Track previous token to only fetch on null→token transitions, not on every refresh
   const prevTokenRef = useRef<string | null | undefined>(undefined);

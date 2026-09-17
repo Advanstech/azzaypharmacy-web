@@ -61,7 +61,33 @@ function resolveAuthToken(): string | null {
   return _token;
 }
 
-export async function gql<T = unknown>(
+// ── In-flight query dedup ────────────────────────────────────────────────────
+// The store's refetchAll, dashboard layout effects, and page-level effects can
+// all fire the same read query within the same tick (e.g. on login or branch
+// switch). Sharing the in-flight promise collapses those into ONE HTTP request
+// instead of 2-3 identical ones — critical on slow connections where the
+// doubled multi-MB payloads were saturating the link.
+// Mutations are NEVER deduped: two identical mutations are intentional.
+const inflightQueries = new Map<string, Promise<unknown>>();
+
+export function gql<T = unknown>(
+  query: string,
+  variables?: Record<string, unknown>
+): Promise<T> {
+  if (!/^\s*query\b/.test(query)) {
+    return executeGql<T>(query, variables);
+  }
+  const key = `${resolveAuthToken() ?? ''}|${query}|${JSON.stringify(variables ?? {})}`;
+  const existing = inflightQueries.get(key);
+  if (existing) return existing as Promise<T>;
+  const p = executeGql<T>(query, variables).finally(() => {
+    if (inflightQueries.get(key) === p) inflightQueries.delete(key);
+  });
+  inflightQueries.set(key, p);
+  return p;
+}
+
+async function executeGql<T = unknown>(
   query: string,
   variables?: Record<string, unknown>
 ): Promise<T> {
@@ -837,7 +863,7 @@ export const Q_PURCHASES = `
 `;
 
 export const Q_EXPENSES = `
-  query GetExpenses($page: Int, $limit: Int) {
+  query GetExpenses($page: Float, $limit: Float) {
     expenses(page: $page, limit: $limit) {
       items {
         id amount description date receiptUrl status createdAt branchId

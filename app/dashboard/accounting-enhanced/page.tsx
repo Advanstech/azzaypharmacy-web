@@ -35,7 +35,7 @@ const REPORT_TYPES = {
 export default function EnhancedAccountingPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const { sales, products, ledger, purchases, refetchLedger, me } = useStore();
+  const { sales, products, ledger, purchases, refetchLedger, refetchSales, refetchPurchases, me } = useStore();
   const branchFilter = useBranchFilter();
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
   const branchProducts = useMemo(() => branchFilter(products), [branchFilter, products]);
@@ -68,7 +68,13 @@ export default function EnhancedAccountingPage() {
   });
 
   useEffect(() => setMounted(true), []);
-  useEffect(() => { refetchLedger(); }, [refetchLedger]);
+  // This page totals revenue/COGS over the full history — the shared store's
+  // initial sync is a rolling 30-day window, so fetch the complete datasets.
+  useEffect(() => {
+    refetchLedger();
+    refetchSales();
+    refetchPurchases();
+  }, [refetchLedger, refetchSales, refetchPurchases]);
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 

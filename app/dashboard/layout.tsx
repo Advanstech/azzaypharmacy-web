@@ -3,7 +3,7 @@
 import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { PageTransition } from '@/components/page-transition';
@@ -53,7 +53,7 @@ const navItems = [
 
 function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
   const { user, session, loading, signOut } = useCustomAuth();
-  const { me, refetchSales, refetchProducts, refetchExpenses, refetchPurchases, refetchInvoices, refetchLedger, refetchTransfers, refetchShiftReconciliations, refetchStaff } = useStore();
+  const { me, refetchSales, refetchProductsPOS, refetchExpenses, refetchPurchases, refetchInvoices, refetchLedger, refetchStaff } = useStore();
   const { activeBranchId } = useBranch();
   const router = useRouter();
   const pathname = usePathname();
@@ -66,19 +66,28 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     setMounted(true);
   }, []);
 
+  // refetchAll() performs the initial sync when the auth token arrives, so
+  // firing nine more queries here on mount doubled the login payload. This
+  // effect only refreshes branch-scoped data when the user actually switches
+  // branches afterwards. Transfers/shift-reconciliations were dropped — no
+  // dashboard page consumes them (their admin pages self-fetch).
+  const didInitFetchRef = useRef(false);
   useEffect(() => {
-    if (mounted && me?.id) {
-      refetchSales(activeBranchId ?? undefined);
-      refetchProducts(activeBranchId ?? undefined);
-      refetchExpenses();
-      refetchPurchases();
-      refetchInvoices(activeBranchId ?? undefined);
-      refetchLedger(activeBranchId ?? undefined);
-      refetchTransfers(activeBranchId ?? undefined);
-      refetchShiftReconciliations(activeBranchId ?? undefined);
-      refetchStaff();
+    if (!mounted || !me?.id) return;
+    if (!didInitFetchRef.current) {
+      didInitFetchRef.current = true;
+      return;
     }
-  }, [activeBranchId, me?.id, mounted, refetchSales, refetchProducts, refetchExpenses, refetchPurchases, refetchInvoices, refetchLedger, refetchTransfers, refetchShiftReconciliations, refetchStaff]);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
+    const now = new Date().toISOString();
+    refetchSales(activeBranchId ?? undefined, thirtyDaysAgo, now);
+    refetchProductsPOS(activeBranchId ?? undefined);
+    refetchExpenses();
+    refetchPurchases();
+    refetchInvoices(activeBranchId ?? undefined);
+    refetchLedger(activeBranchId ?? undefined);
+    refetchStaff();
+  }, [activeBranchId, me?.id, mounted, refetchSales, refetchProductsPOS, refetchExpenses, refetchPurchases, refetchInvoices, refetchLedger, refetchStaff]);
 
   useEffect(() => {
     console.log(`[DASHBOARD] auth check: loading=${loading} user=${user?.email ?? 'null'}`);

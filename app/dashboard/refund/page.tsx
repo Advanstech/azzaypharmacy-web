@@ -18,7 +18,7 @@ export default function RefundPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests, refetchRefundRequests } = useStore();
+  const { sales, me, requestRefund, approveRefund, rejectRefund, refundRequests, refetchRefundRequests, refetchSales } = useStore();
   const role = me?.role || user?.role || user?.user_metadata?.role;
   const isManager = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
 
@@ -27,7 +27,10 @@ export default function RefundPage() {
 
   useEffect(() => {
     refetchRefundRequests(activeBranchId ?? null);
-  }, [activeBranchId, refetchRefundRequests]);
+    // Refund candidates can be older than the shared store's 30-day sync
+    // window — load the branch's full sales history for receipt lookup.
+    refetchSales(activeBranchId ?? undefined);
+  }, [activeBranchId, refetchRefundRequests, refetchSales]);
   const branchSales = branchFilter(sales);
 
   const branchRefundRequests = activeBranchId
