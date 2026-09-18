@@ -14,6 +14,10 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { manualSync } from '@/lib/tauri-sync';
+import { tryThermalPrint } from '@/lib/print';
+import { isTauri } from '@/lib/tauri-native';
+import { PrinterSettings } from '@/components/printer-settings';
+import { SyncStatusPill } from '@/components/sync-status-pill';
 
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI, Q_SALES } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
@@ -154,8 +158,14 @@ function POSInner() {
   const [resumedPendingId, setResumedPendingId] = useState<string | null>(null);
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
-  // Thermal Receipt Print Function
-  const handlePrintReceipt = (sale: any) => {
+  // Thermal Receipt Print Function — silent ESC/POS via native layer in the
+  // desktop app (works fully offline), HTML print dialog fallback elsewhere.
+  const handlePrintReceipt = async (sale: any) => {
+    const printed = await tryThermalPrint(sale, { cashier: me?.name });
+    if (printed) {
+      addToast({ type: 'success', title: 'Receipt printed', message: 'Sent to thermal printer.', duration: 2500 });
+      return;
+    }
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
@@ -856,7 +866,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
   return (
     <div className="flex flex-col h-screen overflow-hidden" style={{ background: c.bg, color: c.text }}>
       {/* Custom Header - EXACT Match */}
-      <header className="flex items-center justify-between px-4 h-14 shrink-0 z-10 text-white"
+      <header className="flex items-center justify-between px-4 h-14 shrink-0 z-[60] relative text-white"
         style={{ background: '#059669' }}>
         
         <div className="flex items-center gap-4">
@@ -893,12 +903,11 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         </div>
 
         <div className="flex items-center gap-4">
-          <button 
-            onClick={async () => {
+          <SyncStatusPill
+            onSyncClick={async () => {
               setSyncStatus('syncing');
               try {
                 await refetchAll();
-                // Also flush any offline pending sales in the background
                 manualSync().catch(() => {});
               } catch (err) {
                 console.error('[POS] Sync failed:', err);
@@ -906,16 +915,9 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                 setSyncStatus('synced');
               }
             }}
-            disabled={syncStatus === 'syncing'}
-            className={`flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border transition-colors text-[10px] sm:text-xs font-medium ${
-              syncStatus === 'syncing' 
-                ? 'border-white/50 bg-white/5 cursor-not-allowed opacity-70' 
-                : 'border-white/30 hover:bg-white/10'
-            }`}
-          >
-            <RefreshCw size={14} className={syncStatus === 'syncing' ? 'animate-spin' : ''} />
-            <span className="hidden sm:inline">{syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}</span>
-          </button>
+          />
+
+          <PrinterSettings buttonClass="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-white/30 hover:bg-white/10 transition-colors text-[10px] sm:text-xs font-medium" />
 
           <button 
             onClick={() => setShowPendingPanel(true)}

@@ -23,8 +23,10 @@ import {
   M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND,
   Q_STOCK_TRANSFERS
 } from './gql';
-import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, isOnline } from './offline';
+import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, getPendingSales, deletePendingSale } from './offline';
 import { initTauriSync, manualSync } from './tauri-sync';
+import { getConnectivity, isApiReachable } from './connectivity';
+import { isTauri, nativeEnqueueSale, nativeSetSyncAuth, nativeListQueue, nativeRemoveFromQueue } from './tauri-native';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,6 +89,7 @@ export interface SaleItem {
 
 export interface Sale {
   id: string;
+  clientRef?: string;
   totalAmount: number;
   amountPaid: number;
   change: number;
@@ -810,14 +813,40 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchSuppliers = useCallback(async () => {
     setLoadingSuppliers(true);
     try {
+      const cached = await getKV('suppliers_cache');
+      if (cached?.length) setSuppliers(cached);
       const data = await gql<{ suppliers: Supplier[] }>(Q_SUPPLIERS, { branchId: me?.branchId || undefined });
       setSuppliers(data.suppliers ?? []);
+      await saveKV('suppliers_cache', data.suppliers ?? []);
     } catch (e: any) {
       console.warn('[store] suppliers fetch failed:', e.message);
     } finally {
       setLoadingSuppliers(false);
     }
   }, [me?.branchId]);
+
+  // Re-inject locally-held sales that haven't synced yet, and retire
+  // placeholders whose clientRef now exists server-side (synced PENDING sale).
+  const mergeHeldSales = async (serverSales: Sale[]): Promise<Sale[]> => {
+    try {
+      const held = ((await getKV('held_sales')) || {}) as Record<string, { sale: Sale; variables: any }>;
+      const entries = Object.values(held);
+      if (entries.length === 0) return serverSales;
+      const serverRefs = new Set(serverSales.map(s => s.clientRef).filter(Boolean));
+      const remaining: typeof entries = [];
+      let changed = false;
+      for (const h of entries) {
+        if (h.sale.clientRef && serverRefs.has(h.sale.clientRef)) changed = true;
+        else remaining.push(h);
+      }
+      if (changed) {
+        await saveKV('held_sales', Object.fromEntries(remaining.map(h => [h.sale.clientRef!, h])));
+      }
+      return [...remaining.map(h => h.sale), ...serverSales];
+    } catch {
+      return serverSales;
+    }
+  };
 
   const refetchSales = useCallback(async (branchId?: string, dateFrom?: string, dateTo?: string) => {
     // Guard against out-of-order resolution: multiple pages/components can call
@@ -832,7 +861,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       const rangeKey = dateFrom || dateTo ? `${dateFrom}_${dateTo}` : '';
       const cacheKey = ['sales_cache', branchId || '', rangeKey].filter(Boolean).join('_');
       const cached = await getKV(cacheKey);
-      if (cached?.length && requestId === salesRequestIdRef.current) setSales(cached);
+      if (cached?.length && requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(cached));
 
       // No cap — return all sales in the requested range. Revenue totals
       // are computed from this list, so capping it undercounts long ranges.
@@ -860,7 +889,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
 
       if (data?.sales) {
-        if (requestId === salesRequestIdRef.current) setSales(data.sales);
+        if (requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(data.sales));
         await saveKV(cacheKey, data.sales);
       }
     } catch (e: any) {
@@ -873,11 +902,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchStaff = useCallback(async () => {
     setLoadingStaff(true);
     try {
-      const [staffCached] = await Promise.all([
+      const [staffCached, meCached] = await Promise.all([
         getFromCache('staff_cache'),
-        // No explicit cache for 'me' yet, but we could add it
+        getKV('me'),
       ]);
       if (staffCached?.length) setStaff(staffCached);
+      // Hydrate `me` from cache immediately — lets the app boot offline with the
+      // last known session identity before the network call resolves (or fails).
+      if (meCached) setMe(meCached);
 
       const [staffData, meData] = await Promise.all([
         gql<{ staff: StaffMember[] }>(Q_STAFF),
@@ -888,6 +920,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         await saveToCache('staff_cache', staffData.staff);
       }
       setMe(meData.me ?? null);
+      if (meData.me) await saveKV('me', meData.me);
     } catch (e: any) {
       console.warn('[store] staff fetch failed:', e.message);
       if (e.message.includes('Unauthorized') || e.message.includes('not authenticated')) {
@@ -901,8 +934,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchCustomers = useCallback(async () => {
     setLoadingCustomers(true);
     try {
+      const cached = await getKV('customers_cache');
+      if (cached?.length) setCustomers(cached);
       const data = await gql<{ customers: Customer[] }>(Q_CUSTOMERS);
       setCustomers(data.customers ?? []);
+      await saveKV('customers_cache', data.customers ?? []);
     } catch (e: any) {
       console.warn('[store] customers fetch failed:', e.message);
     } finally {
@@ -925,8 +961,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchPurchases = useCallback(async () => {
     setLoadingPurchases(true);
     try {
+      const cached = await getKV('purchases_cache');
+      if (cached?.length) setPurchases(cached);
       const data = await gql<{ purchases: Purchase[] }>(Q_PURCHASES);
       setPurchases(data.purchases ?? []);
+      await saveKV('purchases_cache', data.purchases ?? []);
     } catch (e: any) {
       console.warn('[store] purchases fetch failed:', e.message);
     } finally {
@@ -1184,11 +1223,18 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }): Promise<Sale> => {
     if (!me) throw new Error('Not authenticated');
 
-    // Check if online before attempting API call
-    const online = isOnline();
+    // Real API reachability (probe-based), not just navigator.onLine.
+    // PROBING counts as "try online" — the sale queues safely if the fetch fails.
+    const conn = getConnectivity();
+    const online = conn === 'ONLINE' || (conn === 'PROBING' && navigator.onLine !== false);
     if (!online) {
-      console.warn('[store] ⚠️ Device is offline - saving sale locally');
+      console.warn('[store] ⚠️ API unreachable — saving sale locally');
     }
+
+    // Stable idempotency key for THIS sale — sent to the server on every attempt.
+    // If a response is lost mid-request, the retry dedupes server-side instead of
+    // creating a duplicate sale + double stock decrement.
+    const clientRef = `sale-${crypto.randomUUID()}`;
 
     const variables = {
       userId: me.id,
@@ -1202,6 +1248,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       customerName: args.customerName,
       customerPhone: args.customerPhone,
       customerEmail: args.customerEmail,
+      clientRef,
     };
 
     let newSale: Sale | undefined;
@@ -1214,7 +1261,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (online) {
       try {
         console.log('[store] 📤 Sending createSale mutation...', variables);
-        const data = await gql<{ createSale: Sale }>(M_CREATE_SALE, variables);
+        const data = await gql<{ createSale: Sale }>(M_CREATE_SALE, variables, { timeout: 8000 });
         newSale = data.createSale;
         isSynced = true;
         console.log('[store] ✅ Sale synced to backend!', { id: newSale.id, total: newSale.totalAmount });
@@ -1228,7 +1275,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           err?.message?.includes('fetch') ||
           err?.message?.includes('unreachable') ||
           err?.message?.includes('Failed to fetch') ||
-          !isOnline();
+          err?.message?.includes('Premature close') ||
+          err?.message?.includes('timed out') ||
+          !isApiReachable();
 
         if (isNetworkErr) {
           console.warn('[store] 📶 Network error detected — queuing sale locally in IndexedDB for automatic background sync.');
@@ -1242,9 +1291,10 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
     // If offline or API failed, create offline sale
     if (!isSynced) {
-      // Create a mock sale for immediate UI
+      // Create a mock sale for immediate UI — the id IS the clientRef, so the
+      // sync engine's retry sends the same idempotency key the original attempt used.
       newSale = {
-        id: `offline-${Date.now()}`,
+        id: clientRef,
         totalAmount,
         amountPaid: args.amountPaid,
         change: Math.max(0, args.amountPaid - totalAmount),
@@ -1262,27 +1312,50 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         }))
       };
 
-      // Save to IndexedDB with full customer and split payment data for tauri-sync
-      await savePendingSale({
-        id: newSale.id,
-        items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
-        total: totalAmount,
-        payment_method: args.paymentMethod,
-        cashier_name: me?.name || 'Unknown',
-        cashier_id: me?.id,
-        branch_name: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
-        branch_id: me?.branchId,
-        customerId: args.customerId,
-        customerName: args.customerName,
-        customerPhone: args.customerPhone,
-        customerEmail: args.customerEmail,
-        cashAmount: args.cashAmount,
-        momoAmount: args.momoAmount,
-        timestamp: Date.now()
-      });
+      // Queue for sync — SQLite outbox owned by the native daemon in Tauri,
+      // IndexedDB in the browser. The id IS the clientRef sent in `variables`,
+      // so retries dedupe server-side either way.
+      if (isTauri()) {
+        await nativeEnqueueSale(clientRef, variables);
+      } else {
+        await savePendingSale({
+          id: clientRef,
+          items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
+          total: totalAmount,
+          payment_method: args.paymentMethod,
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
+          branch_id: me?.branchId,
+          customerId: args.customerId,
+          customerName: args.customerName,
+          customerPhone: args.customerPhone,
+          customerEmail: args.customerEmail,
+          cashAmount: args.cashAmount,
+          momoAmount: args.momoAmount,
+          timestamp: Date.now()
+        });
+      }
 
-      // Trigger manual sync immediately if online; otherwise it will sync when connection is restored
-      if (isOnline()) {
+      // Persist the stock decrement into products_cache too, so a restart shows
+      // the correct offline-adjusted stock (in-memory decrement alone is lost on reload).
+      try {
+        const cached = await getFromCache('products_cache');
+        if (cached.length) {
+          const adjusted = cached.map((p: any) => {
+            const soldItem = args.items.find(i => i.product.id === p.id);
+            return soldItem
+              ? { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 0) - soldItem.quantity) }
+              : p;
+          });
+          await saveToCache('products_cache', adjusted);
+        }
+      } catch (e) {
+        console.warn('[store] Failed to persist offline stock adjustment:', e);
+      }
+
+      // Flush immediately if the API is actually reachable right now
+      if (isApiReachable()) {
         manualSync().catch(err => console.warn('[store] Manual offline sync failed:', err));
       }
 
@@ -1355,6 +1428,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (args.items.length === 0) throw new Error('Cannot hold an empty cart');
 
     const totalAmount = args.items.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0);
+    const clientRef = crypto.randomUUID();
 
     const variables = {
       userId: me.id,
@@ -1364,12 +1438,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       customerName: args.customerName,
       customerPhone: args.customerPhone,
       customerEmail: args.customerEmail,
+      clientRef,
     };
 
     let newSale: Sale | null = null;
     let isSynced = false;
 
-    if (isOnline()) {
+    const conn = getConnectivity();
+    if (conn === 'ONLINE' || (conn === 'PROBING' && navigator.onLine !== false)) {
       try {
         console.log('[store] 📤 Sending createPendingSale mutation...', variables);
         const data = await gql<{ createPendingSale: Sale }>(M_CREATE_PENDING_SALE, variables);
@@ -1383,7 +1459,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
     if (!newSale) {
       newSale = {
-        id: `held-${Date.now()}`,
+        id: `held-${clientRef}`,
+        clientRef,
         totalAmount,
         amountPaid: 0,
         change: 0,
@@ -1401,6 +1478,41 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           product: { id: i.product.id, name: i.product.name, category: i.product.category },
         })),
       };
+
+      // Durable held sale — survives reload and syncs to the server as a
+      // PENDING sale at the next opportunity (clientRef dedupes retries).
+      try {
+        const held = ((await getKV('held_sales')) || {}) as Record<string, any>;
+        held[clientRef] = { sale: newSale, variables };
+        await saveKV('held_sales', held);
+
+        if (isTauri()) {
+          await nativeEnqueueSale(clientRef, variables, M_CREATE_PENDING_SALE);
+        } else {
+          await savePendingSale({
+            id: clientRef,
+            items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
+            total: totalAmount,
+            payment_method: 'CASH',
+            cashier_name: me?.name || 'Unknown',
+            cashier_id: me?.id,
+            branch_name: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
+            branch_id: me?.branchId,
+            customerId: args.customerId,
+            customerName: args.customerName,
+            customerPhone: args.customerPhone,
+            customerEmail: args.customerEmail,
+            timestamp: Date.now(),
+            op: { mutation: M_CREATE_PENDING_SALE, variables },
+          });
+        }
+      } catch (e) {
+        console.warn('[store] Failed to persist held sale:', e);
+      }
+
+      if (isApiReachable()) {
+        manualSync().catch(() => { });
+      }
     }
 
     (newSale as any)._isSynced = isSynced;
@@ -1425,6 +1537,58 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     momoAmount?: number;
   }): Promise<Sale> => {
     if (!me) throw new Error('Not authenticated');
+
+    // ── Locally-held sale (held-<clientRef>) — never hit the server yet ──────
+    if (args.saleId.startsWith('held-')) {
+      const clientRef = args.saleId.slice(5);
+
+      // Already synced? The server copy exists under a real id — use it.
+      const synced = sales.find(s => s.clientRef === clientRef && s.status === 'PENDING');
+      if (synced) {
+        args = { ...args, saleId: synced.id };
+      } else {
+        // Still queued → swap the createPendingSale op for a real offline sale
+        // so the cart doesn't sync twice (once held, once completed).
+        if (isTauri()) {
+          const q = await nativeListQueue('pending').catch(() => [] as any[]);
+          if (q.some((r: any) => r.id === clientRef)) {
+            await nativeRemoveFromQueue(clientRef).catch(() => { });
+          }
+        } else {
+          const q = await getPendingSales().catch(() => [] as any[]);
+          if (q.some((r: any) => r.id === clientRef)) {
+            await deletePendingSale(clientRef).catch(() => { });
+          }
+        }
+
+        const held = ((await getKV('held_sales').catch(() => null)) || {}) as Record<string, any>;
+        const heldSale: Sale | undefined = held[clientRef]?.sale ?? sales.find(s => s.id === args.saleId);
+        delete held[clientRef];
+        await saveKV('held_sales', held).catch(() => { });
+
+        if (!heldSale) {
+          await refetchSales().catch(() => { });
+          throw new Error('Held sale not found locally — it may already be synced. Please retry from the refreshed list.');
+        }
+
+        // Convert to a completed sale through the normal (offline-capable) path
+        const cartItems = heldSale.items.map(it => ({
+          product: { ...it.product, sellingPrice: it.unitPrice } as Product,
+          quantity: it.quantity,
+        }));
+        setSales(prev => prev.filter(s => s.id !== args.saleId));
+        return createSale({
+          items: cartItems,
+          paymentMethod: args.paymentMethod,
+          amountPaid: args.amountPaid,
+          cashAmount: args.cashAmount,
+          momoAmount: args.momoAmount,
+          customerId: (heldSale as any).customerId,
+          customerName: heldSale.customerName,
+          customerPhone: heldSale.customerPhone,
+        });
+      }
+    }
 
     const variables = {
       saleId: args.saleId,
@@ -1452,10 +1616,25 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }, 500);
 
     return sale;
-  }, [me, refetchSales, refetchProducts, refetchLedger]);
+  }, [me, sales, createSale, refetchSales, refetchProducts, refetchLedger]);
 
   const cancelPendingSale = useCallback(async (saleId: string): Promise<boolean> => {
     if (!me) throw new Error('Not authenticated');
+
+    // Locally-held sale — just drop the queued op + local record, no server call
+    if (saleId.startsWith('held-')) {
+      const clientRef = saleId.slice(5);
+      if (isTauri()) {
+        await nativeRemoveFromQueue(clientRef).catch(() => { });
+      } else {
+        await deletePendingSale(clientRef).catch(() => { });
+      }
+      const held = ((await getKV('held_sales').catch(() => null)) || {}) as Record<string, any>;
+      delete held[clientRef];
+      await saveKV('held_sales', held).catch(() => { });
+      setSales(prev => prev.filter(s => s.id !== saleId));
+      return true;
+    }
 
     await gql<{ cancelPendingSale: boolean }>(M_CANCEL_PENDING_SALE, { saleId });
 
@@ -1548,17 +1727,54 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const bulkUpdateProductPrices = useCallback(async (
     updates: Array<{ productId: string; costPrice: number; sellingPrice: number }>
   ): Promise<Product[]> => {
-    const data = await gql<{ bulkUpdateProductPrices: Product[] }>(
-      M_BULK_UPDATE_PRODUCT_PRICES, { updates: JSON.stringify(updates) }
-    );
-    const updated = data.bulkUpdateProductPrices;
-    setProducts(prev => prev.map(p => {
-      const u = updated.find(u => u.id === p.id);
-      return u ? { ...p, ...u } : p;
+    const applyLocally = () => setProducts(prev => prev.map(p => {
+      const u = updates.find(u => u.productId === p.id);
+      return u ? { ...p, costPrice: u.costPrice, sellingPrice: u.sellingPrice } : p;
     }));
-    await Promise.all([refetchProducts(), refetchPurchases(), refetchInvoices(), refetchLedger()]);
-    return updated;
-  }, [refetchProducts, refetchPurchases, refetchInvoices, refetchLedger]);
+
+    try {
+      const data = await gql<{ bulkUpdateProductPrices: Product[] }>(
+        M_BULK_UPDATE_PRODUCT_PRICES, { updates: JSON.stringify(updates) }
+      );
+      const updated = data.bulkUpdateProductPrices;
+      setProducts(prev => prev.map(p => {
+        const u = updated.find(u => u.id === p.id);
+        return u ? { ...p, ...u } : p;
+      }));
+      await Promise.all([refetchProducts(), refetchPurchases(), refetchInvoices(), refetchLedger()]);
+      return updated;
+    } catch (err: any) {
+      // Offline → queue the op. Absolute price sets are idempotent — a retry
+      // applies the same values, so no clientRef dedupe is needed.
+      const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
+      if (!isNetworkishError(err)) throw err;
+      const clientRef = crypto.randomUUID();
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_BULK_UPDATE_PRODUCT_PRICES,
+        variables: { updates: JSON.stringify(updates) },
+        flat: {
+          items: updates.map(u => ({ productId: u.productId, name: products.find(p => p.id === u.productId)?.name || u.productId, qty: 1, price: u.sellingPrice })),
+          total: 0,
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: `Price Update (${updates.length})`,
+          branch_id: me?.branchId,
+        },
+      });
+      applyLocally();
+      try {
+        const cached = await getFromCache('products_cache');
+        if (cached.length) {
+          await saveToCache('products_cache', cached.map((p: any) => {
+            const u = updates.find(u => u.productId === p.id);
+            return u ? { ...p, costPrice: u.costPrice, sellingPrice: u.sellingPrice } : p;
+          }));
+        }
+      } catch { /* best-effort */ }
+      return updates.map(u => products.find(p => p.id === u.productId)).filter(Boolean) as Product[];
+    }
+  }, [me, products, refetchProducts, refetchPurchases, refetchInvoices, refetchLedger]);
 
   const updateProductSupplier = useCallback(async (productId: string, supplierId: string) => {
     try {
@@ -1680,15 +1896,48 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, [me?.branchId]);
 
   const adjustProductStock = useCallback(async (productId: string, quantity: number, reason: string): Promise<void> => {
-    const data = await gql<{ updateProductStock: Product }>(M_UPDATE_PRODUCT_STOCK, { productId, quantity, reason });
-    const updated = data.updateProductStock;
-    setProducts(prev => prev.map(p => p.id === productId ? { ...p, stockQuantity: updated.stockQuantity } : p));
+    const clientRef = crypto.randomUUID();
+    const variables = { productId, quantity, reason, clientRef };
+
+    try {
+      const data = await gql<{ updateProductStock: Product }>(M_UPDATE_PRODUCT_STOCK, variables);
+      const updated = data.updateProductStock;
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, stockQuantity: updated.stockQuantity } : p));
+    } catch (err: any) {
+      // Offline → queue the delta; server dedupes retries on clientRef so the
+      // adjustment can't double-apply.
+      const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
+      if (!isNetworkishError(err)) throw err;
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_UPDATE_PRODUCT_STOCK,
+        variables,
+        flat: {
+          items: [{ productId, name: products.find(p => p.id === productId)?.name || productId, qty: Math.abs(quantity), price: 0 }],
+          total: 0,
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: `Stock Adjust: ${reason}`,
+          branch_id: me?.branchId,
+        },
+      });
+      // Optimistic local apply so the UI reflects the adjustment immediately
+      setProducts(prev => prev.map(p => p.id === productId ? { ...p, stockQuantity: Math.max(0, p.stockQuantity + quantity) } : p));
+      try {
+        const cached = await getFromCache('products_cache');
+        if (cached.length) {
+          await saveToCache('products_cache', cached.map((p: any) =>
+            p.id === productId ? { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 0) + quantity) } : p
+          ));
+        }
+      } catch { /* cache update best-effort */ }
+    }
     const product = products.find(p => p.id === productId);
     const supplier = suppliers.find(s => s.id === product?.supplierId);
     setStockMovements(prev => [{
       id: `mv-${Date.now()}`,
       productId,
-      productName: updated.name,
+      productName: product?.name || productId,
       type: (quantity >= 0 ? 'in' : 'out') as 'in' | 'out',
       quantity: Math.abs(quantity),
       reason,

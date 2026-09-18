@@ -55,6 +55,12 @@ export function setAuthToken(token: string | null) {
   } else {
     console.log('[gql] Auth token cleared');
   }
+  // Feed the native sync daemon (Tauri only — no-op in browser)
+  if (typeof window !== 'undefined' && '__TAURI__' in window) {
+    import('./tauri-native')
+      .then(m => m.nativeSetSyncAuth(API, token))
+      .catch(() => {});
+  }
 }
 
 function resolveAuthToken(): string | null {
@@ -72,24 +78,48 @@ const inflightQueries = new Map<string, Promise<unknown>>();
 
 export function gql<T = unknown>(
   query: string,
-  variables?: Record<string, unknown>
+  variables?: Record<string, unknown>,
+  options?: { timeout?: number }
 ): Promise<T> {
   if (!/^\s*query\b/.test(query)) {
-    return executeGql<T>(query, variables);
+    return executeGql<T>(query, variables, options);
   }
   const key = `${resolveAuthToken() ?? ''}|${query}|${JSON.stringify(variables ?? {})}`;
   const existing = inflightQueries.get(key);
   if (existing) return existing as Promise<T>;
-  const p = executeGql<T>(query, variables).finally(() => {
+  const p = executeGql<T>(query, variables, options).finally(() => {
     if (inflightQueries.get(key) === p) inflightQueries.delete(key);
   });
   inflightQueries.set(key, p);
   return p;
 }
 
-async function executeGql<T = unknown>(
+// Older API builds don't know the clientRef idempotency field — when the
+// server rejects it with a validation error, strip it and retry once so the
+// app keeps working against both old and new schemas.
+function isClientRefUnsupported(text: string): boolean {
+  return /Cannot query field "clientRef"|Unknown argument "clientRef"/.test(text);
+}
+
+function stripClientRef(
   query: string,
   variables?: Record<string, unknown>
+): { query: string; variables?: Record<string, unknown> } {
+  const q = query
+    .replace(/,\s*\$clientRef\s*:\s*String!?/g, '')
+    .replace(/\$clientRef\s*:\s*String!?\s*,\s*/g, '')
+    .replace(/,\s*clientRef\s*:\s*\$clientRef/g, '')
+    .replace(/clientRef\s*:\s*\$clientRef\s*,?\s*/g, '')
+    .replace(/\bclientRef\b(?!\s*:)/g, '');
+  const v = variables ? { ...variables } : undefined;
+  if (v) delete v.clientRef;
+  return { query: q, variables: v };
+}
+
+async function executeGql<T = unknown>(
+  query: string,
+  variables?: Record<string, unknown>,
+  options?: { timeout?: number }
 ): Promise<T> {
   const queryName = query.match(/(query|mutation) (\w+)/)?.[2] || 'Unknown';
   const token = resolveAuthToken();
@@ -126,7 +156,7 @@ async function executeGql<T = unknown>(
             method: 'POST',
             headers,
             body: JSON.stringify({ query, variables }),
-            signal: AbortSignal.timeout(30_000),
+            signal: AbortSignal.timeout(options?.timeout ?? 90_000),
           });
           res = response;
           usedApi = candidate;
@@ -183,12 +213,23 @@ async function executeGql<T = unknown>(
 
     if (!res.ok) {
       const text = await res.text();
+      if (isClientRefUnsupported(text)) {
+        console.warn(`[gql] [${queryName}] API lacks clientRef — retrying without it`);
+        const s = stripClientRef(query, variables);
+        return executeGql<T>(s.query, s.variables, options);
+      }
       console.error(`[gql] [${queryName}] HTTP Error: ${res.status} (${usedApi})`, text);
       throw new Error(`HTTP Error ${res.status}: ${text}`);
     }
 
     const json = await res.json();
     if (json.errors?.length) {
+      const errText = json.errors.map((e: any) => e.message).join(' ');
+      if (isClientRefUnsupported(errText)) {
+        console.warn(`[gql] [${queryName}] API lacks clientRef — retrying without it`);
+        const s = stripClientRef(query, variables);
+        return executeGql<T>(s.query, s.variables, options);
+      }
       console.error(`[gql] [${queryName}] GraphQL Errors:`, json.errors);
       throw new Error(json.errors[0].message);
     }
@@ -252,7 +293,7 @@ export const Q_SUPPLIERS = `
 export const Q_SALES = `
   query GetSales($status: String) {
     sales(status: $status) {
-      id totalAmount amountPaid change paymentMethod cashAmount momoAmount
+      id clientRef totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
       customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
@@ -269,7 +310,7 @@ export const Q_SALES = `
 export const Q_SALES_PAGINATED = `
   query GetSalesPaginated($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String, $status: String) {
     sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo, status: $status) {
-      id totalAmount amountPaid change paymentMethod cashAmount momoAmount
+      id clientRef totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
       customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
@@ -285,7 +326,7 @@ export const Q_SALES_PAGINATED = `
 export const Q_SALES_PAGINATED_LEGACY = `
   query GetSalesPaginatedLegacy($offset: Int, $limit: Int, $branchId: String, $dateFrom: String, $dateTo: String, $status: String) {
     sales(offset: $offset, limit: $limit, branchId: $branchId, dateFrom: $dateFrom, dateTo: $dateTo, status: $status) {
-      id totalAmount amountPaid change paymentMethod
+      id clientRef totalAmount amountPaid change paymentMethod
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
       customerType notes isRefunded refundReason refundedAt createdAt cashierId branchId
@@ -453,6 +494,7 @@ export const M_CREATE_SALE = `
     $customerName: String
     $customerPhone: String
     $customerEmail: String
+    $clientRef: String
   ) {
     createSale(
       userId: $userId
@@ -466,8 +508,9 @@ export const M_CREATE_SALE = `
       customerName: $customerName
       customerPhone: $customerPhone
       customerEmail: $customerEmail
+      clientRef: $clientRef
     ) {
-      id totalAmount amountPaid change paymentMethod cashAmount momoAmount
+      id clientRef totalAmount amountPaid change paymentMethod cashAmount momoAmount
       customerName customerPhone receiptNo subtotal discountAmt discountReason
       nhil getfund covid19Levy vat nhisClaimNo status profitMargin averageItemValue
       customerType notes isRefunded refundReason refundedAt createdAt cashierId
@@ -498,6 +541,7 @@ export const M_CREATE_PENDING_SALE = `
     $customerName: String
     $customerPhone: String
     $customerEmail: String
+    $clientRef: String
   ) {
     createPendingSale(
       userId: $userId
@@ -507,6 +551,7 @@ export const M_CREATE_PENDING_SALE = `
       customerName: $customerName
       customerPhone: $customerPhone
       customerEmail: $customerEmail
+      clientRef: $clientRef
     ) {
       id totalAmount amountPaid change paymentMethod receiptNo status customerName customerPhone
       createdAt
@@ -976,6 +1021,7 @@ export const M_CREATE_PURCHASE = `
     $items: [PurchaseItemInput!]!
     $tax: Float
     $autoReceive: Boolean
+    $clientRef: String
   ) {
     createPurchase(
       branchId: $branchId
@@ -984,6 +1030,7 @@ export const M_CREATE_PURCHASE = `
       items: $items
       tax: $tax
       autoReceive: $autoReceive
+      clientRef: $clientRef
     ) {
       id invoiceNo total status createdAt
     }
@@ -1043,8 +1090,8 @@ export const M_DELETE_PRODUCT = `
 `;
 
 export const M_UPDATE_PRODUCT_STOCK = `
-  mutation UpdateProductStock($productId: ID!, $quantity: Int!, $reason: String) {
-    updateProductStock(productId: $productId, quantity: $quantity, reason: $reason) {
+  mutation UpdateProductStock($productId: ID!, $quantity: Int!, $reason: String, $clientRef: String) {
+    updateProductStock(productId: $productId, quantity: $quantity, reason: $reason, clientRef: $clientRef) {
       id name stockQuantity
     }
   }
@@ -1128,6 +1175,7 @@ export const M_RECEIVE_INVOICE = `
     $items: [PurchaseItemInput!]!
     $tax: Float
     $notes: String
+    $clientRef: String
   ) {
     receiveInvoice(
       branchId: $branchId
@@ -1138,6 +1186,7 @@ export const M_RECEIVE_INVOICE = `
       items: $items
       tax: $tax
       notes: $notes
+      clientRef: $clientRef
     ) {
       id invoiceNo total status createdAt
     }

@@ -184,14 +184,37 @@ export default function StockSyncPage() {
         expiryDate: i.expiry ? new Date(i.expiry).toISOString() : undefined
       }));
 
-      await gql(M_CREATE_PURCHASE, {
+      const clientRef = crypto.randomUUID();
+      const variables = {
         branchId: me.branchId || '',
         supplierId,
         invoiceNo,
         items: itemsToSync,
         tax: 0,
-        autoReceive: true
-      });
+        autoReceive: true,
+        clientRef,
+      };
+
+      try {
+        await gql(M_CREATE_PURCHASE, variables);
+      } catch (submitErr: any) {
+        // Offline → queue; server dedupes on clientRef so stock can't double-receive
+        const { isNetworkishError, enqueueOfflineOp } = await import('@/lib/tauri-sync');
+        if (!isNetworkishError(submitErr)) throw submitErr;
+        await enqueueOfflineOp({
+          clientRef,
+          mutation: M_CREATE_PURCHASE,
+          variables,
+          flat: {
+            items: itemsToSync.map(i => ({ productId: i.productId, name: i.productId, qty: i.quantity, price: i.unitCost })),
+            total: itemsToSync.reduce((s, i) => s + i.quantity * i.unitCost, 0),
+            cashier_name: me?.name || 'Unknown',
+            cashier_id: me?.id,
+            branch_name: 'Purchase Sync',
+            branch_id: me?.branchId,
+          },
+        });
+      }
 
       await refetchProducts();
       setSyncDone(true);

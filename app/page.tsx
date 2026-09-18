@@ -825,6 +825,22 @@ export default function LoginPage() {
               <div className="w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
               <p className="text-xs font-semibold opacity-60">Loading staff profiles...</p>
             </div>
+          ) : staff.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-4 text-center max-w-sm mx-auto">
+              <div className="w-16 h-16 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center mb-2 shadow-inner">
+                <AlertTriangle className="w-8 h-8 text-amber-500" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">No Profiles Found</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                We couldn't load the staff directory. If this is your first time opening the app, please ensure you are connected to the server to download the profiles.
+              </p>
+              <button
+                onClick={() => fetchStaff()}
+                className="mt-4 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-xl shadow-lg transition-all active:scale-95"
+              >
+                Try Again
+              </button>
+            </div>
           ) : (
             <motion.div
               initial="hidden"

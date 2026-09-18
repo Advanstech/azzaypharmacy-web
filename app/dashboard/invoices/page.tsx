@@ -12,6 +12,7 @@ import {
 import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE, Q_INVOICES } from '@/lib/gql';
+import { isNetworkishError } from '@/lib/tauri-sync';
 import { useToast } from '@/components/pharma-toast';
 import { useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -621,6 +622,7 @@ export default function InvoicesPage() {
         return;
       }
 
+      const clientRef = crypto.randomUUID();
       const payload = {
         branchId,
         supplierId: resolvedSupplierId,
@@ -630,12 +632,46 @@ export default function InvoicesPage() {
         items: normalizedItems,
         tax: 0,
         notes: 'Manual invoice entry',
+        clientRef,
       };
 
       console.log('📤 [MANUAL_ENTRY] Creating invoice with payload:', payload);
-      
-      await gql(M_RECEIVE_INVOICE, payload);
-      
+
+      try {
+        await gql(M_RECEIVE_INVOICE, payload);
+      } catch (submitErr: any) {
+        // Offline / API unreachable → queue for sync; the server dedupes on clientRef
+        if (isNetworkishError(submitErr)) {
+          const { enqueueOfflineOp } = await import('@/lib/tauri-sync');
+          await enqueueOfflineOp({
+            clientRef,
+            mutation: M_RECEIVE_INVOICE,
+            variables: payload,
+            flat: {
+              items: normalizedItems.map(i => ({ productId: i.productId, name: i.productId, qty: i.quantity, price: i.unitCost })),
+              total: normalizedItems.reduce((s, i) => s + i.quantity * i.unitCost, 0),
+              cashier_name: me?.name || 'Unknown',
+              cashier_id: me?.id,
+              branch_name: 'Manual Invoice',
+              branch_id: branchId,
+            },
+          });
+          addToast({
+            type: 'success',
+            title: 'Invoice Saved Offline',
+            message: `Invoice ${manualData.invoiceNumber} will sync automatically when you're back online.`,
+            duration: 6000,
+          });
+          setShowManualLedger(false);
+          setManualData({ supplierId: '', invoiceNumber: '', issueDate: '', dueDate: '' });
+          setManualSupplierDraft('');
+          setManualCreateSupplierOnSubmit(false);
+          setManualLineItems([]);
+          return;
+        }
+        throw submitErr;
+      }
+
       console.log('✅ [MANUAL_ENTRY] Invoice created successfully');
       addToast({
         type: 'success',

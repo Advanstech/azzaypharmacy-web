@@ -1,23 +1,25 @@
-// Azzay Pharmacy NEXUS — Service Worker v2.1
-// Fixed: Never cache _next/ build chunks (they break on rebuild)
+// Azzay Pharmacy NEXUS — Service Worker v3
+// Offline-first app shell: cache-first for hashed _next/static (immutable),
+// network-first for navigations (fresh online, cached offline), SWR for assets.
 
-const CACHE_NAME = 'azzay-nexus-v2.1';
+const CACHE_NAME = 'azzay-nexus-v3';
 
-// Only cache these specific static assets — NOT _next/ chunks
+// Precached at install — the guaranteed offline entry points
 const PRECACHE_ASSETS = [
+  '/',
+  '/offline.html',
   '/manifest.json',
   '/azzay-logo.png',
-  '/offline.html',
 ];
 
 // ── Install ───────────────────────────────────────────────────────────────────
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS).catch((err) => {
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(PRECACHE_ASSETS).catch((err) => {
         console.warn('[SW] Pre-cache partial failure:', err);
-      });
-    })
+      })
+    )
   );
   self.skipWaiting();
 });
@@ -25,15 +27,18 @@ self.addEventListener('install', (event) => {
 // ── Activate ──────────────────────────────────────────────────────────────────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) =>
+    caches.keys().then((names) =>
       Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+        names.filter((n) => n !== CACHE_NAME).map((n) => caches.delete(n))
       )
     )
   );
   self.clients.claim();
+});
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
@@ -41,121 +46,86 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Always skip:
-  // - Non-GET requests
-  // - Chrome extensions
-  // - Supabase API calls
-  // - Next.js build chunks (_next/static) — these MUST come from network
-  //   because they have content-hash names that change on every build
-  // - Next.js dev server chunks (_next/dev)
-  // - HMR websocket
+  // Pass through untouched: non-GET, extensions, external APIs, dev/HMR
   if (
     request.method !== 'GET' ||
     url.protocol === 'chrome-extension:' ||
     url.hostname.includes('supabase.co') ||
     url.hostname.includes('googleapis.com') ||
-    url.pathname.startsWith('/_next/') ||
+    url.hostname.includes('railway.app') ||
     url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/_next/dev') ||
     url.pathname.includes('__nextjs') ||
     url.pathname.includes('webpack-hmr')
   ) {
-    return; // Let browser handle normally
+    return;
   }
 
-  // Navigation requests (HTML pages): Network first, offline fallback
+  // GraphQL endpoint (same-origin dev proxy or direct): network only
+  if (url.pathname.includes('graphql')) return;
+
+  // _next/static — content-hashed, immutable → cache-first.
+  // THIS is what makes the app bootable offline: JS/CSS chunks persist.
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.match(request).then((cached) => {
+        if (cached) return cached;
+        return fetch(request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Navigations — network-first (fresh deploys win), cache as you go,
+  // fall back to the cached page or offline.html when the network is gone.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
         .catch(() =>
-          caches.match(request)
-            .then((cached) => cached || caches.match('/offline.html'))
+          caches.match(request).then(
+            (cached) => cached || caches.match('/offline.html')
+          )
         )
     );
     return;
   }
 
-  // Logo and manifest: Cache first (these never change)
-  if (
-    url.pathname === '/azzay-logo.png' ||
-    url.pathname === '/manifest.json' ||
-    url.pathname === '/offline.html'
-  ) {
+  // Same-origin static assets (icons, fonts, images, media):
+  // stale-while-revalidate — instant offline, refreshed in background.
+  if (url.origin === self.location.origin) {
     event.respondWith(
-      caches.match(request).then(
-        (cached) => cached || fetch(request).then((response) => {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          return response;
-        })
-      )
+      caches.match(request).then((cached) => {
+        const fetched = fetch(request)
+          .then((response) => {
+            if (response.ok) {
+              const clone = response.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+            }
+            return response;
+          })
+          .catch(() => cached);
+        return cached || fetched;
+      })
     );
     return;
   }
 
-  // Everything else: Network only (safe default)
-  // This prevents any stale cache issues during development
+  // Everything else: network only
 });
 
-// ── Background Sync (offline POS transactions) ────────────────────────────────
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-pos-transactions') {
-    event.waitUntil(syncOfflineTransactions());
-  }
-});
-
-async function syncOfflineTransactions() {
-  try {
-    const db = await openOfflineDB();
-    const tx = db.transaction('pending_sales', 'readonly');
-    const store = tx.objectStore('pending_sales');
-    const pending = await getAllFromStore(store);
-
-    for (const sale of pending) {
-      try {
-        const response = await fetch('/api/mobile/pos/sale', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sale),
-        });
-        if (response.ok) {
-          const deleteTx = db.transaction('pending_sales', 'readwrite');
-          deleteTx.objectStore('pending_sales').delete(sale.id);
-        }
-      } catch (err) {
-        console.warn('[SW] Failed to sync sale:', sale.id, err);
-      }
-    }
-  } catch (err) {
-    console.error('[SW] Sync failed:', err);
-  }
-}
-
-function openOfflineDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open('azzay-offline', 1);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('pending_sales')) {
-        db.createObjectStore('pending_sales', { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains('products_cache')) {
-        db.createObjectStore('products_cache', { keyPath: 'id' });
-      }
-      if (!db.objectStoreNames.contains('staff_cache')) {
-        db.createObjectStore('staff_cache', { keyPath: 'id' });
-      }
-    };
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
-  });
-}
-
-function getAllFromStore(store) {
-  return new Promise((resolve, reject) => {
-    const req = store.getAll();
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
-  });
-}
-
-console.log('[SW] Azzay NEXUS v2.1 — safe caching mode');
+// NOTE: POS sale sync is owned by the app's sync engine
+// (IndexedDB outbox in browser / native SQLite daemon in Tauri) —
+// no background-sync handler here; it previously raced the real engine.

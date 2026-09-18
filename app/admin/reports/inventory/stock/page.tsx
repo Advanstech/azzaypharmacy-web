@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore, Product } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
@@ -14,6 +14,9 @@ import {
 
 export default function StockLevelReportPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const urlFrom = searchParams?.get('from') ?? '';
+  const urlTo = searchParams?.get('to') ?? '';
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -44,8 +47,52 @@ export default function StockLevelReportPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  // Seed the date range from the shared ?from=&to= params the reports hub
+  // carries in the URL — on a stock report the period means "stock received
+  // during this period".
+  const [dateMode, setDateMode] = useState<'all' | 'exp30' | 'exp60' | 'exp90' | 'expired' | 'expiryRange' | 'receivedRange'>(
+    urlFrom || urlTo ? 'receivedRange' : 'all'
+  );
+  const [dateFrom, setDateFrom] = useState(urlFrom);
+  const [dateTo, setDateTo] = useState(urlTo);
   const [sortField, setSortField] = useState<'name' | 'stock' | 'value'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  // Date-filter helper — checks a product's (branch-scoped) batches against
+  // the selected window on expiryDate or receivedAt.
+  const matchesDateFilter = (p: Product) => {
+    if (dateMode === 'all') return true;
+    const batches = (p.stockItems || []).filter(si => !activeBranchId || si.branchId === activeBranchId);
+    if (batches.length === 0) return false;
+    const now = Date.now();
+    const DAY = 86400000;
+    const inRange = (ts: number, from: number, to: number) => ts >= from && ts <= to;
+
+    switch (dateMode) {
+      case 'exp30': case 'exp60': case 'exp90': {
+        const days = dateMode === 'exp30' ? 30 : dateMode === 'exp60' ? 60 : 90;
+        return batches.some(si => {
+          const t = new Date(si.expiryDate).getTime();
+          return inRange(t, now, now + days * DAY);
+        });
+      }
+      case 'expired':
+        return batches.some(si => new Date(si.expiryDate).getTime() < now);
+      case 'expiryRange': {
+        if (!dateFrom && !dateTo) return true;
+        const from = dateFrom ? new Date(dateFrom).getTime() : -Infinity;
+        const to = dateTo ? new Date(dateTo).getTime() + DAY - 1 : Infinity;
+        return batches.some(si => inRange(new Date(si.expiryDate).getTime(), from, to));
+      }
+      case 'receivedRange': {
+        if (!dateFrom && !dateTo) return true;
+        const from = dateFrom ? new Date(dateFrom).getTime() : -Infinity;
+        const to = dateTo ? new Date(dateTo).getTime() + DAY - 1 : Infinity;
+        return batches.some(si => inRange(new Date(si.receivedAt).getTime(), from, to));
+      }
+      default: return true;
+    }
+  };
 
   // Get unique categories
   const categories = useMemo(() => {
@@ -80,6 +127,8 @@ export default function StockLevelReportPage() {
       });
     }
 
+    filtered = filtered.filter(matchesDateFilter);
+
     // Sort
     filtered.sort((a, b) => {
       let comparison = 0;
@@ -90,7 +139,7 @@ export default function StockLevelReportPage() {
     });
 
     return filtered;
-  }, [products, searchTerm, categoryFilter, statusFilter, sortField, sortDirection]);
+  }, [products, searchTerm, categoryFilter, statusFilter, dateMode, dateFrom, dateTo, sortField, sortDirection, activeBranchId]);
 
   const { currentPage, totalPages, paginatedData: paginatedProducts, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredProducts });
 
@@ -264,6 +313,38 @@ export default function StockLevelReportPage() {
           <option value="LOW">Low Stock</option>
           <option value="OUT">Out of Stock</option>
         </select>
+        <select
+          value={dateMode}
+          onChange={(e) => { setDateMode(e.target.value as any); goToPage(1); }}
+          className="px-4 py-2.5 rounded-xl text-sm"
+          style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}>
+          <option value="all">All Dates</option>
+          <option value="exp30">Expiring ≤ 30d</option>
+          <option value="exp60">Expiring ≤ 60d</option>
+          <option value="exp90">Expiring ≤ 90d</option>
+          <option value="expired">Already Expired</option>
+          <option value="expiryRange">Expiry Range…</option>
+          <option value="receivedRange">Received Range…</option>
+        </select>
+        {(dateMode === 'expiryRange' || dateMode === 'receivedRange') && (
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); goToPage(1); }}
+              className="px-3 py-2.5 rounded-xl text-sm"
+              style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
+            />
+            <span className="text-xs" style={{ color: card.subtle }}>to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); goToPage(1); }}
+              className="px-3 py-2.5 rounded-xl text-sm"
+              style={{ background: card.bg, border: `1px solid ${card.border}`, color: card.text }}
+            />
+          </div>
+        )}
       </div>
 
       {/* Products Table */}

@@ -15,6 +15,7 @@ import { useStore } from '@/lib/store';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE, M_REPAIR_STOCK_BRANCHES } from '@/lib/gql';
+import { isNetworkishError } from '@/lib/tauri-sync';
 import { exportToExcel } from '@/lib/export-excel';
 import { useToast } from '@/components/pharma-toast';
 import { useBranchFilter, useBranch } from '@/lib/branch-context';
@@ -1360,11 +1361,51 @@ export default function InventoryPage() {
           expiryDate: item.expiryDate ? toIsoDateOrFallback(item.expiryDate) : new Date(Date.now() + 365 * 86400000).toISOString(),
         })),
         tax: 0,
-        notes: invoiceNotes
+        notes: invoiceNotes,
+        clientRef: crypto.randomUUID(),
       };
 
-      await gql(M_RECEIVE_INVOICE, payload);
-      
+      try {
+        await gql(M_RECEIVE_INVOICE, payload);
+      } catch (submitErr: any) {
+        // Offline → queue for sync; server dedupes on clientRef
+        if (isNetworkishError(submitErr)) {
+          const { enqueueOfflineOp } = await import('@/lib/tauri-sync');
+          await enqueueOfflineOp({
+            clientRef: payload.clientRef,
+            mutation: M_RECEIVE_INVOICE,
+            variables: payload,
+            flat: {
+              items: payload.items.map(i => ({ productId: i.productId, name: i.productId, qty: i.quantity, price: i.unitCost })),
+              total: payload.items.reduce((s, i) => s + i.quantity * i.unitCost, 0),
+              cashier_name: me?.name || 'Unknown',
+              cashier_id: me?.id,
+              branch_name: 'Invoice Receipt',
+              branch_id: branchId,
+            },
+          });
+          setShowUploadModal(false);
+          setInvoiceStep('type');
+          setInvoiceItems([]);
+          setInvoiceSupplier('');
+          setInvoiceSupplierDraft('');
+          setCreateSupplierOnConfirm(false);
+          setInvoiceNumber('');
+          setInvoiceDueDate('');
+          setInvoiceNotes('');
+          setInvoiceFile(null);
+          setFilePreview(null);
+          addToast({
+            type: 'success',
+            title: 'Invoice Saved Offline',
+            message: `Invoice ${payload.invoiceNo} will sync automatically when you're back online.`,
+            duration: 6000,
+          });
+          return;
+        }
+        throw submitErr;
+      }
+
       // Refresh all relevant data to sync across all modules
       await Promise.all([
         refetchProducts(activeBranchId ?? undefined),

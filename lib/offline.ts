@@ -26,6 +26,11 @@ export async function openDB(): Promise<IDBDatabase> {
         const store = db.createObjectStore('pending_sales', { keyPath: 'id' });
         store.createIndex('timestamp', 'timestamp', { unique: false });
       }
+      if (!db.objectStoreNames.contains('inventory_deltas')) {
+        const store = db.createObjectStore('inventory_deltas', { keyPath: 'id' });
+        store.createIndex('synced', 'synced', { unique: false });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
       // Generic key-value store for arbitrary/dynamic cache keys (e.g. sales
       // filtered by branch + date range) that don't map to a fixed object store.
       if (!db.objectStoreNames.contains('kv_cache')) {
@@ -83,7 +88,7 @@ export async function saveToCache(storeName: string, items: any[]) {
 export async function clearCache(): Promise<void> {
   try {
     const db = await openDB();
-    const stores = ['products_cache', 'staff_cache', 'sales_cache', 'pending_sales', 'kv_cache'];
+    const stores = ['products_cache', 'staff_cache', 'sales_cache', 'pending_sales', 'inventory_deltas', 'kv_cache'];
     for (const storeName of stores) {
       const tx = db.transaction(storeName, 'readwrite');
       tx.objectStore(storeName).clear();
@@ -131,6 +136,12 @@ export interface PendingSale {
   momoAmount?: number;
   notes?: string;
   timestamp: number;
+  /**
+   * Generic queued operation. When present, the drain posts this exact
+   * mutation+variables instead of mapping the flat sale fields to createSale.
+   * Used for held/pending sales and future non-sale offline ops.
+   */
+  op?: { mutation: string; variables: Record<string, any> };
 }
 
 export async function savePendingSale(sale: PendingSale): Promise<void> {
@@ -198,6 +209,205 @@ export async function getPendingSalesCount(): Promise<number> {
   } catch (e) {
     console.error('[offline] Failed to count pending sales:', e);
     return 0;
+  }
+}
+
+// Inventory Deltas
+
+export interface InventoryDelta {
+  id: string;
+  productId: string;
+  branchId: string;
+  quantity: number;
+  synced: boolean;
+  timestamp: number;
+  error?: string;
+}
+
+export async function recordInventoryDelta(productId: string, branchId: string, quantity: number): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('inventory_deltas', 'readwrite');
+    const store = tx.objectStore('inventory_deltas');
+    
+    store.put({
+      id: crypto.randomUUID(),
+      productId,
+      branchId,
+      quantity,
+      synced: false,
+      timestamp: Date.now()
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('[offline] Failed to record inventory delta:', e);
+  }
+}
+
+export async function getPendingInventoryDeltas(): Promise<InventoryDelta[]> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('inventory_deltas', 'readonly');
+    const store = tx.objectStore('inventory_deltas');
+    const index = store.index('synced');
+    const request = index.getAll(IDBKeyRange.only(false));
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('[offline] Failed to get pending inventory deltas:', e);
+    return [];
+  }
+}
+
+export async function markInventoryDeltaSynced(id: string, timestamp: number): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('inventory_deltas', 'readwrite');
+    const store = tx.objectStore('inventory_deltas');
+    const request = store.get(id);
+
+    request.onsuccess = () => {
+      if (request.result) {
+        store.put({ ...request.result, synced: true, timestamp });
+      }
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error(`[offline] Failed to mark delta ${id} synced:`, e);
+  }
+}
+
+export async function recordInventoryDeltaError(id: string, message: string): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('inventory_deltas', 'readwrite');
+    const store = tx.objectStore('inventory_deltas');
+    const request = store.get(id);
+
+    request.onsuccess = () => {
+      if (request.result) {
+        store.put({ ...request.result, error: message });
+      }
+    };
+
+    await new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error(`[offline] Failed to mark delta ${id} error:`, e);
+  }
+}
+
+export async function getAggregatedInventoryChanges(): Promise<Record<string, Record<string, number>>> {
+  const pending = await getPendingInventoryDeltas();
+  const aggregated: Record<string, Record<string, number>> = {};
+  
+  for (const delta of pending) {
+    if (!aggregated[delta.productId]) {
+      aggregated[delta.productId] = {};
+    }
+    if (!aggregated[delta.productId][delta.branchId]) {
+      aggregated[delta.productId][delta.branchId] = 0;
+    }
+    aggregated[delta.productId][delta.branchId] += delta.quantity;
+  }
+  
+  return aggregated;
+}
+
+export async function clearSyncedInventoryDeltas(olderThan: number): Promise<number> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction('inventory_deltas', 'readwrite');
+    const store = tx.objectStore('inventory_deltas');
+    const index = store.index('synced');
+    const request = index.getAll(IDBKeyRange.only(true));
+
+    return new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        let count = 0;
+        const items = request.result;
+        for (const item of items) {
+          if (item.timestamp < olderThan) {
+            store.delete(item.id);
+            count++;
+          }
+        }
+        resolve(count);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  } catch (e) {
+    console.error('[offline] Failed to clear synced deltas:', e);
+    return 0;
+  }
+}
+
+// Backup & Restore Utilities
+
+export async function exportIndexedDB(): Promise<string> {
+  const db = await openDB();
+  const exportData: Record<string, any[]> = {};
+  const stores = ['products_cache', 'staff_cache', 'sales_cache', 'pending_sales', 'inventory_deltas', 'kv_cache'];
+
+  for (const storeName of stores) {
+    try {
+      const tx = db.transaction(storeName, 'readonly');
+      const store = tx.objectStore(storeName);
+      const data = await new Promise<any[]>((resolve, reject) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      exportData[storeName] = data;
+    } catch (e) {
+      console.warn(`[offline] Skip export for store ${storeName}`);
+    }
+  }
+
+  return JSON.stringify(exportData);
+}
+
+export async function importIndexedDB(jsonData: string): Promise<void> {
+  try {
+    const importData = JSON.parse(jsonData);
+    const db = await openDB();
+
+    for (const storeName of Object.keys(importData)) {
+      if (db.objectStoreNames.contains(storeName)) {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        
+        // Clear first
+        store.clear();
+        
+        // Insert items
+        const items = importData[storeName] || [];
+        for (const item of items) {
+          store.put(item);
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+      }
+    }
+  } catch (e) {
+    console.error('[offline] Failed to import IndexedDB backup:', e);
+    throw e;
   }
 }
 
