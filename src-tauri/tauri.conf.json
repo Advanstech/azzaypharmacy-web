@@ -7,7 +7,17 @@
     "frontendDist": "../out",
     "devUrl": "http://localhost:3001",
     "beforeDevCommand": "pnpm dev --port 3001",
-    "beforeBuildCommand": "TAURI_ENV_PLATFORM=desktop pnpm build"
+    "beforeBuildCommand": "cross-env TAURI_ENV_PLATFORM=desktop pnpm build"
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGOTRDNzc5NDNEQ0U2NUEKUldSYTV0eERlY2VVdndDNTZOaEFzL3NuR2JyMWNXWW8yWUowMExNTFB1V0IvT29jdURVRGx0cE0K",
+      "endpoints": [
+        "https://github.com/Advanstech/azzaypharmacy-web/releases/latest/download/latest.json"
+      ],
+      "windows": { "installMode": "passive" }
+    }
   },
   "app": {
     "windows": [
@@ -28,18 +38,9 @@
       "csp": null
     }
   },
-  "plugins": {
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://github.com/Advanstech/azzaypharmacy-web/releases/latest/download/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc3NDRFOEU0Rjg5M0ZCOEQKUldTTis1UDQ1T2hFZHloNnJuSHJnS0pJYkRvWFBmeGszNlhSZEdLOEI2aUYycW5CdHhIOEJZZXoK",
-      "windows": { "installMode": "passive" }
-    }
-  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["app", "dmg", "msi"],
     "icon": [
       "icons/32x32.png",

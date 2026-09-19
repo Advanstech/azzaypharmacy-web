@@ -5,13 +5,13 @@
   "author": "Hanson Peprah, Digital Fortuna Market",
   "private": true,
   "scripts": {
-    "dev": "NODE_OPTIONS='--max-old-space-size=4096' next dev",
-    "build": "NODE_OPTIONS='--max-old-space-size=4096' next build",
+    "dev": "cross-env NODE_OPTIONS='--max-old-space-size=4096' next dev",
+    "build": "cross-env NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
     "lint": "eslint",
     "tauri": "tauri",
-    "tauri:dev": "TAURI_ENV_PLATFORM=desktop tauri dev",
-    "tauri:build": "NODE_OPTIONS='--max-old-space-size=4096' TAURI_ENV_PLATFORM=desktop tauri build"
+    "tauri:dev": "cross-env TAURI_ENV_PLATFORM=desktop tauri dev",
+    "tauri:build": "cross-env NODE_OPTIONS='--max-old-space-size=4096' TAURI_ENV_PLATFORM=desktop tauri build"
   },
   "dependencies": {
     "@apollo/client": "^4.1.9",
@@ -22,8 +22,8 @@
     "@react-three/postprocessing": "^3.0.4",
     "@react-three/rapier": "^2.2.0",
     "@supabase/supabase-js": "^2.105.1",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-updater": "^2.11.0",
+    "@tauri-apps/plugin-process": "~2.3.1",
+    "@tauri-apps/plugin-updater": "~2.11.0",
     "@types/three": "^0.184.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -45,6 +45,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
