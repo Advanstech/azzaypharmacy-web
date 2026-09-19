@@ -179,7 +179,7 @@ export default function SupplierInvoicesPage() {
               return (
                 <div key={invoice.id} className="p-4 space-y-4">
                   <div className="flex justify-between items-start">
-                    <Link href={`/admin/invoices/${invoice.id}`} className="flex items-center gap-3">
+                    <Link href={`/admin/invoices/detail?id=${invoice.id}`} className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>
                         <FileText size={18} />
                       </div>
@@ -264,7 +264,7 @@ export default function SupplierInvoicesPage() {
                   >
                     {/* Invoice Info — clickable to detail */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Link href={`/admin/invoices/${invoice.id}`} className="flex items-center gap-3 group">
+                      <Link href={`/admin/invoices/detail?id=${invoice.id}`} className="flex items-center gap-3 group">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center transition-colors group-hover:bg-blue-500/10" style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}>
                           <FileText size={18} />
                         </div>
@@ -333,7 +333,7 @@ export default function SupplierInvoicesPage() {
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
                         {/* View Details */}
                         <Link
-                          href={`/admin/invoices/${invoice.id}`}
+                          href={`/admin/invoices/detail?id=${invoice.id}`}
                           className="p-2 rounded-xl transition-colors"
                           style={{ background: isDark ? '#1E293B' : '#F1F5F9', color: isDark ? '#94A3B8' : '#64748B' }}
                           title="View Details"

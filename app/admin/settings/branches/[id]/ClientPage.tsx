@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, Store, TrendingUp, DollarSign, Users, Package, Calendar,
@@ -121,6 +121,8 @@ export default function BranchDashboardPage() {
   const { theme, resolvedTheme } = useTheme();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
+  const branchId = (params.id as string) || (searchParams?.get('id') as string);
   const [mounted, setMounted] = useState(false);
   const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month'>('today');
   const [refreshing, setRefreshing] = useState(false);
@@ -129,8 +131,8 @@ export default function BranchDashboardPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const branch = useMemo(() => {
-    return BRANCHES.find(b => b.id === params.id) || BRANCHES[0];
-  }, [params.id]);
+    return BRANCHES.find(b => b.id === branchId) || BRANCHES[0];
+  }, [branchId]);
 
   const data = useMemo(() => generateMockData(branch.id), [branch.id, refreshing]);
 

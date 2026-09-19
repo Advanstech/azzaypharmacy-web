@@ -1686,7 +1686,7 @@ export default function InventoryPage() {
                   <tr key={p.id} 
                     className={`transition-colors group cursor-pointer ${selectedIds.includes(p.id) ? (isDark ? 'bg-primary/5' : 'bg-primary/5') : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'}`}
                     style={{ borderBottom: `1px solid ${card.border}` }}
-                    onClick={() => router.push(`/dashboard/inventory/${p.id}`)}
+                    onClick={() => router.push(`/dashboard/inventory/detail?id=${p.id}`)}
                   >
                     {isAdmin && (
                       <td className="px-5 py-4" onClick={(e) => { e.stopPropagation(); toggleSelect(p.id); }}>
@@ -1723,7 +1723,7 @@ export default function InventoryPage() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              router.push(`/dashboard/suppliers/${p.supplierId}`);
+                              router.push(`/dashboard/suppliers/detail?id=${p.supplierId}`);
                             }}
                             className="text-[10px] font-medium max-w-[120px] truncate hover:underline transition-colors"
                             style={{ color: card.primary }}
@@ -1798,7 +1798,7 @@ export default function InventoryPage() {
             suppliers.map(s => (
               <div key={s.id} className="rounded-2xl border p-5 backdrop-blur-xl group hover:scale-[1.02] transition-all cursor-pointer"
                 style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}
-                onClick={() => router.push(`/dashboard/suppliers/${s.id}`)}>
+                onClick={() => router.push(`/dashboard/suppliers/detail?id=${s.id}`)}>
                 <div className="flex items-start justify-between mb-4">
                   <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-display text-lg font-bold" style={{ background: card.primaryBg, color: card.primary }}>
                     {s.name[0]}

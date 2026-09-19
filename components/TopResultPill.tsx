@@ -63,11 +63,11 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
           {product.supplierId && (
             <>
               <span>·</span>
-              <span>Supplier: <Link href={`/dashboard/suppliers/${product.supplierId}`} className="hover:underline ml-0.5" onClick={e => e.stopPropagation()}>{supplier?.name || 'Unknown'}</Link></span>
+              <span>Supplier: <Link href={`/dashboard/suppliers/detail?id=${product.supplierId}`} className="hover:underline ml-0.5" onClick={e => e.stopPropagation()}>{supplier?.name || 'Unknown'}</Link></span>
             </>
           )}
           <span>·</span>
-          <Link href={`/dashboard/inventory/${product.id}`} className="hover:underline font-semibold ml-0.5" onClick={e => e.stopPropagation()}>
+          <Link href={`/dashboard/inventory/detail?id=${product.id}`} className="hover:underline font-semibold ml-0.5" onClick={e => e.stopPropagation()}>
             View Details
           </Link>
         </div>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from 'next-themes';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useStore } from '@/lib/store';
@@ -246,7 +246,8 @@ export default function StaffDetailPage() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const params = useParams();
-  const staffId = params.id as string;
+  const searchParams = useSearchParams();
+  const staffId = (params.id as string) || (searchParams?.get('id') as string);
   const { staff: liveStaff, loadingStaff, updateStaffProfile, generateTempPassword, sales, me, deleteStaff } = useStore();
   const { addToast } = useToast();
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
   ArrowLeft, Search, Filter, MoreHorizontal, Edit2, Trash2, 
@@ -36,7 +36,8 @@ export default function SupplierProductsPage() {
   const { activeBranchId } = useBranch();
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
   
-  const supplierId = params.id as string;
+  const searchParams = useSearchParams();
+  const supplierId = (params.id as string) || (searchParams?.get('id') as string);
   const supplier = storeSuppliers.find(s => s.id === supplierId) || FALLBACK_SUPPLIERS.find(s => s.id === supplierId) || FALLBACK_SUPPLIERS[0];
 
   const [products, setProducts] = useState<any[]>([]);
@@ -472,7 +473,7 @@ export default function SupplierProductsPage() {
 
                     return (
                       <tr key={p.id} 
-                        onClick={() => router.push(`/dashboard/inventory/${p.id}`)}
+                        onClick={() => router.push(`/dashboard/inventory/detail?id=${p.id}`)}
                         style={{ borderBottom: i < paginatedProducts.length - 1 ? `1px solid ${c.border}` : 'none' }}
                         className="group cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
                       >

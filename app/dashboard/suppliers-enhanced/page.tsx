@@ -462,7 +462,7 @@ export default function EnhancedSuppliersPage() {
                 return (
                   <div key={supplier.id} className="rounded-2xl border p-5 backdrop-blur-xl group hover:scale-[1.02] transition-all cursor-pointer"
                     style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}
-                    onClick={() => router.push(`/dashboard/suppliers/${supplier.id}`)}>
+                    onClick={() => router.push(`/dashboard/suppliers/detail?id=${supplier.id}`)}>
                     
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center gap-3">

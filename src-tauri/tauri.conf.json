@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Azzay Pharmacy",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "identifier": "com.azzay.pharmacy.nexus",
   "build": {
     "frontendDist": "../out",

@@ -1480,7 +1480,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                       {previewProduct.category || 'OTC'}
                     </span>
                     <h2 className="font-display font-bold text-lg leading-tight mt-2 hover:text-emerald-400 transition-colors">
-                      <Link href={`/dashboard/inventory/${previewProduct.id}`} className="hover:underline">
+                      <Link href={`/dashboard/inventory/detail?id=${previewProduct.id}`} className="hover:underline">
                         {previewProduct.name}
                       </Link>
                     </h2>
@@ -1695,7 +1695,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                      <div className="flex items-center justify-between">
                        {previewProduct.supplierId ? (
                          <Link 
-                           href={`/dashboard/suppliers/${previewProduct.supplierId}`}
+                           href={`/dashboard/suppliers/detail?id=${previewProduct.supplierId}`}
                            className="text-sm font-bold text-white hover:text-emerald-400 hover:underline transition-colors"
                          >
                            {suppliers.find(s => s.id === previewProduct.supplierId)?.name || 'Unknown Supplier'}

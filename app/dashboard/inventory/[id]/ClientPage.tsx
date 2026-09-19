@@ -21,7 +21,7 @@ export default function ProductDetailedPaper() {
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   
-  const productId = params?.id as string;
+  const productId = (params?.id as string) || (searchParams?.get('id') as string);
   const { products, suppliers, stockMovements, updateProductFull, updateProductSupplier, adjustProductStock, refetchProducts, loadingProducts, me } = useStore();
   
   const [showMoveModal, setShowMoveModal] = useState(false);
@@ -1120,7 +1120,7 @@ export default function ProductDetailedPaper() {
                  <div>
                    <p className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: card.subtle }}>Supplier</p>
                    {supplier ? (
-                     <button onClick={() => router.push(`/dashboard/suppliers/${supplier.id}`)} className="text-sm font-bold hover:underline transition-colors" style={{ color: card.primary }}>
+                     <button onClick={() => router.push(`/dashboard/suppliers/detail?id=${supplier.id}`)} className="text-sm font-bold hover:underline transition-colors" style={{ color: card.primary }}>
                        {supplier.name}
                      </button>
                    ) : (

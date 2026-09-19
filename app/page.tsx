@@ -566,7 +566,7 @@ export default function LoginPage() {
   const [confirmPin, setConfirmPin] = useState('');
   const [isFirstTimeLogin, setIsFirstTimeLogin] = useState(false);
 
-  const { signIn, signInWithPin, signOut } = useCustomAuth();
+  const { signIn, signInWithPin, signOut, user } = useCustomAuth();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const router = useRouter();
   const isFetchingRef = useRef(false);
@@ -575,6 +575,12 @@ export default function LoginPage() {
     setMounted(true);
     fetchStaff();
   }, []);
+
+  // Authenticated users landing here (e.g. after an app reload) go straight
+  // back to the dashboard instead of seeing a login form.
+  useEffect(() => {
+    if (user) router.replace('/dashboard');
+  }, [user, router]);
 
   const fetchStaff = async () => {
     if (isFetchingRef.current) return;

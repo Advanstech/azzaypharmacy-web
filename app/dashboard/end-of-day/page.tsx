@@ -444,7 +444,7 @@ export default function EndOfDayDashboardPage() {
                           key={shift.id} 
                           className="transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/30 cursor-pointer" 
                           style={{ borderBottom: idx < paginatedShifts.length - 1 ? `1px solid ${c.border}` : 'none' }}
-                          onClick={() => router.push(`/dashboard/end-of-day/${shift.id}`)}
+                          onClick={() => router.push(`/dashboard/end-of-day/detail?id=${shift.id}`)}
                         >
                           <td className="px-5 py-4">
                             <p className="text-xs font-bold" style={{ color: c.text }}>{dateText}</p>

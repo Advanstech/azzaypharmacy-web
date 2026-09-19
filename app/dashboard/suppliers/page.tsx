@@ -385,7 +385,7 @@ export default function SuppliersPage() {
                 <tr key={s.id}
                   className="cursor-pointer transition-all hover:bg-slate-50/50 dark:hover:bg-slate-800/30 group"
                   style={{ borderBottom: i < paginatedSuppliers.length - 1 ? `1px solid ${c.divider}` : 'none' }}
-                  onClick={() => router.push(`/dashboard/suppliers/${s.id}`)}>
+                  onClick={() => router.push(`/dashboard/suppliers/detail?id=${s.id}`)}>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-display text-xs font-bold"

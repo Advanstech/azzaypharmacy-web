@@ -2,7 +2,7 @@
 
 import { useStore } from '@/lib/store';
 import { useTheme } from 'next-themes';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { 
   ArrowLeft, FileText, CheckCircle, Clock, AlertCircle, 
@@ -14,7 +14,9 @@ import { gql, M_UPDATE_PRODUCT_PRICES } from '@/lib/gql';
 import { useToast } from '@/components/pharma-toast';
 
 export default function InvoiceDetailPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const id = (params?.id as string) || (searchParams?.get('id') as string);
   const router = useRouter();
   const { invoices, recordSupplierPayment, refetchInvoices, refetchProducts } = useStore() as any;
   const { theme, resolvedTheme } = useTheme();

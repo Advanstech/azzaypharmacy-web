@@ -397,7 +397,7 @@ export default function StaffIntelligencePage() {
                         </div>
                       )}
                       <div>
-                        <Link href={`/admin/staff/${member.id}`} className="font-bold text-base hover:text-blue-500 hover:underline transition-colors block" style={{ color: card.text }}>
+                        <Link href={`/admin/staff/detail?id=${member.id}`} className="font-bold text-base hover:text-blue-500 hover:underline transition-colors block" style={{ color: card.text }}>
                           {member.name}
                         </Link>
                         <p className="text-xs font-medium mt-0.5 flex items-center gap-1" style={{ color: card.muted }}>

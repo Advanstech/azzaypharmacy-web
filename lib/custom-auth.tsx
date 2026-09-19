@@ -116,15 +116,24 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error: any) {
       const msg = (error?.message || '').toLowerCase();
-      const isNetworkError = msg.includes('fetch') || msg.includes('network') || msg.includes('unreachable') || msg.includes('econnrefused');
-      if (!isNetworkError) {
+      // Only clear the session on a definitive auth rejection. Anything else —
+      // network failures, 5xx, timeouts — is transient and must not log the
+      // user out (an API blip during a remount was wiping valid sessions).
+      const isAuthRejection =
+        msg.includes('unauthorized') ||
+        msg.includes('invalid token') ||
+        msg.includes('jwt expired') ||
+        msg.includes('not found or inactive') ||
+        msg.includes('http error 401') ||
+        msg.includes('http error 403');
+      if (isAuthRejection) {
         // Server confirmed token is invalid — log out
         localStorage.removeItem('auth_token');
         setAuthToken(null);
         setUser(null);
         setSession(null);
       }
-      // Network errors: keep token alive, user stays logged in
+      // Transient errors: keep token alive, user stays logged in
     }
   };
 

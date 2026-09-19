@@ -421,7 +421,7 @@ export default function AnalyticsPage() {
             {topProducts.length === 0 ? (
               <p className="text-xs text-center py-6" style={{ color: s.muted }}>No sales data for this period</p>
             ) : topProducts.map((p, i) => (
-              <Link key={p.id} href={`/dashboard/inventory/${p.id}`} className="flex items-center gap-3 p-2.5 rounded-xl transition-colors hover:scale-[1.01]"
+              <Link key={p.id} href={`/dashboard/inventory/detail?id=${p.id}`} className="flex items-center gap-3 p-2.5 rounded-xl transition-colors hover:scale-[1.01]"
                 style={{ background: i < 3 ? `${s.primary}08` : 'transparent' }}>
                 <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
                   style={{ background: i === 0 ? `${s.primary}25` : `${s.subtle}15`, color: i === 0 ? s.primary : s.subtle }}>

@@ -522,7 +522,7 @@ export default function EnhancedStockPage() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => router.push(`/dashboard/inventory/${product.id}`)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-blue-500" title="View Details">
+                          <button onClick={() => router.push(`/dashboard/inventory/detail?id=${product.id}`)} className="p-1.5 rounded-lg hover:bg-blue-500/10 text-blue-500" title="View Details">
                             <Eye size={14} />
                           </button>
                           <button className="p-1.5 rounded-lg hover:bg-green-500/10 text-green-500" title="Quick Edit">
