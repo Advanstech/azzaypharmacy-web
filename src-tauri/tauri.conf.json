@@ -28,6 +28,16 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/Advanstech/azzaypharmacy-web/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc3NDRFOEU0Rjg5M0ZCOEQKUldTTis1UDQ1T2hFZHloNnJuSHJnS0pJYkRvWFBmeGszNlhSZEdLOEI2aUYycW5CdHhIOEJZZXoK",
+      "windows": { "installMode": "passive" }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg", "msi"],

@@ -3,6 +3,7 @@ import { CustomAuthProvider } from "@/lib/custom-auth";
 import { RootStoreProvider } from "@/components/root-store-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ServiceWorkerRegister } from "@/components/sw-register";
+import { UpdateChecker } from "@/components/update-checker";
 import { ToastProvider } from "@/components/pharma-toast";
 import "./globals.css";
 
@@ -36,6 +37,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased" suppressHydrationWarning>
         <ServiceWorkerRegister />
+        <UpdateChecker />
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
