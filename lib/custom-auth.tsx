@@ -48,6 +48,66 @@ function decodeJwtPayload(token: string): any | null {
   }
 }
 
+// ─── Offline credential cache ────────────────────────────────────────────────
+// On each successful online sign-in we store a PBKDF2 verifier (never the PIN/
+// password itself) keyed by email, plus the last-issued token and user profile.
+// When the API is unreachable, the same PIN/password is verified locally and
+// the cached session restored, so staff can sign in with no connectivity.
+
+const OFFLINE_CREDS_KEY = 'offline_credentials';
+
+interface OfflineCredential {
+  verifier: string;
+  user: any;
+  token: string;
+  storedAt: number;
+}
+
+async function deriveVerifier(userId: string, secret: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: enc.encode(`azzay-offline:${userId}`), iterations: 100_000, hash: 'SHA-256' },
+    key,
+    256
+  );
+  return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getOfflineCredential(email: string): OfflineCredential | null {
+  try {
+    const map = JSON.parse(localStorage.getItem(OFFLINE_CREDS_KEY) || '{}');
+    return map[email.trim().toLowerCase()] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function cacheOfflineCredential(email: string, user: any, secret: string, token: string) {
+  try {
+    if (!crypto?.subtle || !user?.id || !secret) return;
+    const map = JSON.parse(localStorage.getItem(OFFLINE_CREDS_KEY) || '{}');
+    map[email.trim().toLowerCase()] = {
+      verifier: await deriveVerifier(user.id, secret),
+      user,
+      token,
+      storedAt: Date.now(),
+    } satisfies OfflineCredential;
+    localStorage.setItem(OFFLINE_CREDS_KEY, JSON.stringify(map));
+  } catch {
+    // Non-fatal — offline sign-in just won't be available for this user
+  }
+}
+
+function isConnectivityError(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    m.includes('fetch') || m.includes('network') || m.includes('unreachable') ||
+    m.includes('econnrefused') || m.includes('failed to fetch') ||
+    /http error 5\d\d/.test(m) || m.includes('timeout') || m.includes('timed out')
+  );
+}
+
 export function CustomAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
@@ -67,14 +127,17 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
 
     // Decode JWT locally first — no network needed
     const payload = decodeJwtPayload(token);
-    const nowSec = Math.floor(Date.now() / 1000);
 
-    if (!payload || (payload.exp && payload.exp < nowSec)) {
-      // Token is clearly expired — clear immediately, no network call needed
+    if (!payload) {
+      // Malformed token — clear immediately
       localStorage.removeItem('auth_token');
       setLoading(false);
       return;
     }
+
+    // Expired tokens still hydrate the session: when offline there is no way
+    // to re-authenticate, so the user must stay signed in. When online, the
+    // background verifyToken below rejects the expired JWT and signs out.
 
     // Token looks valid locally — hydrate state immediately so UI is ready
     setAuthToken(token);
@@ -152,10 +215,14 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         setUser(authData.user);
         setSession({ access_token: authData.access_token, user: authData.user });
         setAuthToken(authData.access_token);
+        cacheOfflineCredential(email, authData.user, password, authData.access_token);
         return { data: authData, error: null };
       }
       return { error: 'Login failed. Please check your credentials.' };
     } catch (error: any) {
+      if (isConnectivityError(error?.message || '')) {
+        return await attemptOfflineLogin(email, password, 'password');
+      }
       return { error: sanitizeAuthError(error.message) };
     }
   };
@@ -175,11 +242,37 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         setUser(authData.user);
         setSession({ access_token: authData.access_token, user: authData.user });
         setAuthToken(authData.access_token);
+        cacheOfflineCredential(email, authData.user, pin, authData.access_token);
         return { data: authData, error: null };
       }
       return { error: 'Invalid PIN. Please try again.' };
     } catch (error: any) {
+      if (isConnectivityError(error?.message || '')) {
+        return await attemptOfflineLogin(email, pin, 'PIN');
+      }
       return { error: sanitizeAuthError(error.message) };
+    }
+  };
+
+  // Verify PIN/password against the credential cached at last online login.
+  // Restores the previous token + profile so queued offline work continues.
+  const attemptOfflineLogin = async (email: string, secret: string, kind: string) => {
+    const entry = getOfflineCredential(email);
+    if (!entry) {
+      return { error: `Unable to reach the server. Offline sign-in isn't available for this account yet — sign in online once to enable it.` };
+    }
+    try {
+      const verifier = await deriveVerifier(entry.user.id, secret);
+      if (verifier !== entry.verifier) {
+        return { error: kind === 'PIN' ? 'Invalid PIN. Please try again.' : 'Login failed. Please check your credentials.' };
+      }
+      localStorage.setItem('auth_token', entry.token);
+      setAuthToken(entry.token);
+      setUser(entry.user);
+      setSession({ access_token: entry.token, user: entry.user });
+      return { data: { user: entry.user, access_token: entry.token, offline: true }, error: null };
+    } catch {
+      return { error: 'Offline sign-in failed on this device.' };
     }
   };
 
