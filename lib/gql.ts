@@ -98,7 +98,10 @@ export function gql<T = unknown>(
 // server rejects it with a validation error, strip it and retry once so the
 // app keeps working against both old and new schemas.
 function isClientRefUnsupported(text: string): boolean {
-  return /Cannot query field "clientRef"|Unknown argument "clientRef"/.test(text);
+  // Raw error bodies carry JSON-escaped quotes (\"clientRef\") — strip
+  // backslashes first so both plain text and JSON-encoded messages match.
+  const t = text.replace(/\\/g, '');
+  return /Cannot query field "clientRef"|Unknown argument "clientRef"/.test(t);
 }
 
 function stripClientRef(
