@@ -104,6 +104,7 @@ function isConnectivityError(msg: string): boolean {
   return (
     m.includes('fetch') || m.includes('network') || m.includes('unreachable') ||
     m.includes('econnrefused') || m.includes('failed to fetch') ||
+    m.includes('networkerror') || m.includes('api root unreachable') ||
     /http error 5\d\d/.test(m) || m.includes('timeout') || m.includes('timed out')
   );
 }
@@ -267,7 +268,7 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         return { error: kind === 'PIN' ? 'Invalid PIN. Please try again.' : 'Login failed. Please check your credentials.' };
       }
       localStorage.setItem('auth_token', entry.token);
-      setAuthToken(entry.token);
+      setAuthToken(entry.token); // also feeds nativeSetSyncAuth via gql.ts
       setUser(entry.user);
       setSession({ access_token: entry.token, user: entry.user });
       return { data: { user: entry.user, access_token: entry.token, offline: true }, error: null };

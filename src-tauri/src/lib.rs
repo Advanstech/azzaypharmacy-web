@@ -23,6 +23,26 @@ fn outbox_enqueue(
     outbox::enqueue(&conn, &id, &variables, mutation.as_deref())
 }
 
+// ── Staff profile commands ────────────────────────────────────────────────────
+
+/// Persist the staff directory to SQLite — survives OS updates, reinstalls,
+/// and the signOut() IndexedDB wipe.
+#[tauri::command]
+fn save_staff_profiles(
+    app: AppHandle,
+    profiles: Vec<outbox::StaffProfileInput>,
+) -> Result<(), String> {
+    let conn = outbox::open_for_app(&app)?;
+    outbox::save_staff(&conn, profiles)
+}
+
+/// Return the locally cached staff directory (empty vec if not yet seeded).
+#[tauri::command]
+fn get_staff_profiles(app: AppHandle) -> Result<Vec<outbox::StaffProfile>, String> {
+    let conn = outbox::open_for_app(&app)?;
+    outbox::get_staff(&conn)
+}
+
 #[tauri::command]
 fn outbox_stats(app: AppHandle) -> Result<outbox::QueueStats, String> {
     let conn = outbox::open_for_app(&app)?;
@@ -247,6 +267,8 @@ pub fn run() {
             list_backups,
             restore_backup,
             delete_backup,
+            save_staff_profiles,
+            get_staff_profiles,
         ])
         .setup(move |app| {
             sync::spawn_daemon(app.handle().clone(), cfg.clone());

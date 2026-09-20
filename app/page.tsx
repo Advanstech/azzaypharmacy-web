@@ -18,6 +18,7 @@ import {
   M_SET_STAFF_PIN,
 } from '@/lib/gql';
 import { saveToCache, getFromCache } from '@/lib/offline';
+import { isTauri, nativeSaveStaffProfiles, nativeGetStaffProfiles } from '@/lib/tauri-native';
 import { StaffMember } from '@/lib/store';
 import {
   X,
@@ -588,19 +589,72 @@ export default function LoginPage() {
     setLoadingStaff(true);
 
     try {
-      const cached = await getFromCache('staff_cache');
-      if (cached?.length) {
-        setStaff(cached);
-        setLoadingStaff(false);
+      // ── On Tauri: read from durable SQLite first ─────────────────────────
+      // SQLite survives OS updates, app reinstalls, and signOut() which wipes
+      // IndexedDB. The network fetch below refreshes it in the background.
+      if (isTauri()) {
+        try {
+          const sqliteStaff = await nativeGetStaffProfiles();
+          if (sqliteStaff?.length) {
+            // Map snake_case Rust fields to camelCase for the UI
+            const mapped = sqliteStaff.map((s) => ({
+              id: s.id,
+              name: s.name,
+              email: s.email,
+              role: s.role,
+              avatarUrl: s.avatar_url ?? null,
+              position: s.position ?? null,
+              phone: null,
+              branch: s.branch_id
+                ? { id: s.branch_id, name: s.branch_name ?? '', location: null, phone: s.branch_phone ?? null }
+                : null,
+            }));
+            setStaff(mapped);
+            setLoadingStaff(false);
+          }
+        } catch (sqliteErr) {
+          console.warn('[fetchStaff] SQLite read failed, falling back to IndexedDB:', sqliteErr);
+        }
       }
 
-      const data = await gql<{ loginStaff?: StaffMember[] }>(Q_LOGIN_STAFF);
-      if (data?.loginStaff?.length) {
-        setStaff(data.loginStaff);
-        await saveToCache('staff_cache', data.loginStaff);
+      // ── Browser / fallback: read from IndexedDB ───────────────────────────
+      if (!isTauri()) {
+        const cached = await getFromCache('staff_cache');
+        if (cached?.length) {
+          setStaff(cached);
+          setLoadingStaff(false);
+        }
       }
-    } catch (e) {
-      console.error('Failed to fetch staff list', e);
+
+      // ── Background refresh from API (works online; silent failure offline) ─
+      try {
+        const data = await gql<{ loginStaff?: StaffMember[] }>(Q_LOGIN_STAFF);
+        if (data?.loginStaff?.length) {
+          setStaff(data.loginStaff);
+
+          // Persist to IndexedDB for browser
+          await saveToCache('staff_cache', data.loginStaff).catch(() => {});
+
+          // Persist to SQLite for Tauri (durable across reinstalls)
+          if (isTauri()) {
+            const sqliteProfiles = data.loginStaff.map((s: any) => ({
+              id: s.id,
+              name: s.name,
+              email: s.email,
+              role: s.role,
+              avatar_url: s.avatarUrl ?? null,
+              position: s.position ?? null,
+              branch_id: s.branch?.id ?? null,
+              branch_name: s.branch?.name ?? null,
+              branch_phone: s.branch?.phone ?? null,
+            }));
+            await nativeSaveStaffProfiles(sqliteProfiles).catch(() => {});
+          }
+        }
+      } catch (networkErr) {
+        // Silent — staff already loaded from SQLite/IndexedDB above
+        console.warn('[fetchStaff] Network fetch failed (offline?):', networkErr);
+      }
     } finally {
       setLoadingStaff(false);
       isFetchingRef.current = false;

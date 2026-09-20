@@ -48,6 +48,18 @@ pub fn open(path: &PathBuf) -> Result<Connection, String> {
            attempts    INTEGER NOT NULL DEFAULT 0,
            last_error  TEXT,
            created_at  INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS staff_profiles (
+           id          TEXT PRIMARY KEY,
+           name        TEXT NOT NULL,
+           email       TEXT NOT NULL,
+           role        TEXT NOT NULL,
+           avatar_url  TEXT,
+           position    TEXT,
+           branch_id   TEXT,
+           branch_name TEXT,
+           branch_phone TEXT,
+           synced_at   INTEGER NOT NULL
          );",
     )
     .map_err(|e| format!("sqlite init: {e}"))?;
@@ -68,6 +80,84 @@ pub fn open(path: &PathBuf) -> Result<Connection, String> {
     }
 
     Ok(conn)
+}
+
+// ── Staff profiles (durable local cache) ─────────────────────────────────────
+
+#[derive(Debug, Serialize, Clone)]
+pub struct StaffProfile {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+    pub avatar_url: Option<String>,
+    pub position: Option<String>,
+    pub branch_id: Option<String>,
+    pub branch_name: Option<String>,
+    pub branch_phone: Option<String>,
+    pub synced_at: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct StaffProfileInput {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+    pub role: String,
+    pub avatar_url: Option<String>,
+    pub position: Option<String>,
+    pub branch_id: Option<String>,
+    pub branch_name: Option<String>,
+    pub branch_phone: Option<String>,
+}
+
+pub fn save_staff(conn: &Connection, profiles: Vec<StaffProfileInput>) -> Result<(), String> {
+    let now = chrono::Utc::now().timestamp();
+    let tx = conn.unchecked_transaction().map_err(|e| format!("tx begin: {e}"))?;
+    for p in &profiles {
+        tx.execute(
+            "INSERT OR REPLACE INTO staff_profiles
+             (id, name, email, role, avatar_url, position, branch_id, branch_name, branch_phone, synced_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+            params![
+                p.id, p.name, p.email, p.role,
+                p.avatar_url, p.position,
+                p.branch_id, p.branch_name, p.branch_phone,
+                now
+            ],
+        )
+        .map_err(|e| format!("save_staff: {e}"))?;
+    }
+    tx.commit().map_err(|e| format!("tx commit: {e}"))?;
+    Ok(())
+}
+
+pub fn get_staff(conn: &Connection) -> Result<Vec<StaffProfile>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, name, email, role, avatar_url, position, branch_id, branch_name, branch_phone, synced_at
+             FROM staff_profiles ORDER BY name ASC",
+        )
+        .map_err(|e| format!("get_staff prepare: {e}"))?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(StaffProfile {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                email: r.get(2)?,
+                role: r.get(3)?,
+                avatar_url: r.get(4)?,
+                position: r.get(5)?,
+                branch_id: r.get(6)?,
+                branch_name: r.get(7)?,
+                branch_phone: r.get(8)?,
+                synced_at: r.get(9)?,
+            })
+        })
+        .map_err(|e| format!("get_staff query: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("get_staff collect: {e}"))?;
+    Ok(rows)
 }
 
 pub fn open_for_app(app: &AppHandle) -> Result<Connection, String> {

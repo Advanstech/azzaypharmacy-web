@@ -157,6 +157,49 @@ export async function nativeClearInventoryDeltas(ids: string[]): Promise<void> {
   await tauriInvoke('clear_inventory_deltas', { ids });
 }
 
+// ── Staff Profiles (durable SQLite cache) ────────────────────────────────────
+
+export interface NativeStaffProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar_url?: string;
+  position?: string;
+  branch_id?: string;
+  branch_name?: string;
+  branch_phone?: string;
+  synced_at: number;
+}
+
+export interface NativeStaffProfileInput {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  avatar_url?: string | null;
+  position?: string | null;
+  branch_id?: string | null;
+  branch_name?: string | null;
+  branch_phone?: string | null;
+}
+
+/**
+ * Save the staff directory to SQLite (called after every successful API fetch).
+ * Survives OS updates, app reinstalls, and the signOut() IndexedDB wipe.
+ */
+export async function nativeSaveStaffProfiles(profiles: NativeStaffProfileInput[]): Promise<void> {
+  await tauriInvoke('save_staff_profiles', { profiles });
+}
+
+/**
+ * Return the locally cached staff directory.
+ * Returns an empty array on first boot before the first online sync.
+ */
+export async function nativeGetStaffProfiles(): Promise<NativeStaffProfile[]> {
+  return tauriInvoke<NativeStaffProfile[]>('get_staff_profiles');
+}
+
 // ── Backup ───────────────────────────────────────────────────────────────────
 
 export interface BackupInfo {
