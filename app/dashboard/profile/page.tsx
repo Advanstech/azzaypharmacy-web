@@ -42,7 +42,7 @@ export default function ProfilePage() {
     setMessage(null);
 
     if (!passwordData.currentPassword) {
-      setMessage({ type: 'error', text: 'Please enter your current password' });
+      setMessage({ type: 'error', text: 'Please enter your current password or PIN' });
       return;
     }
 
@@ -135,14 +135,14 @@ export default function ProfilePage() {
 
             <form onSubmit={handlePasswordChange} className="space-y-6">
               <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Current Password</label>
+                <label className="text-xs font-bold uppercase tracking-wider" style={{ color: c.muted }}>Current Password or PIN</label>
                 <div className="relative">
                   <input 
                     type={showCurrentPassword ? 'text' : 'password'}
                     required
                     value={passwordData.currentPassword}
                     onChange={e => setPasswordData({...passwordData, currentPassword: e.target.value})}
-                    placeholder="Enter your current password"
+                    placeholder="Enter current password or PIN"
                     className="w-full pl-4 pr-12 py-3.5 rounded-2xl border outline-none transition-all focus:ring-2 focus:ring-blue-500/20"
                     style={{ background: isDark ? 'rgba(15,23,42,0.5)' : '#F8FAFC', borderColor: c.border, color: c.text }}
                   />
