@@ -26,6 +26,7 @@ import {
 } from './offline';
 import { errorHandler, ErrorCategory, ErrorSeverity } from './error-handler';
 import { gql } from './gql';
+import { shouldQueueOfflineMutation } from './offline-ops';
 import {
   startConnectivityMonitor,
   onConnectivityChange,
@@ -394,8 +395,7 @@ export async function enqueueOfflineOp(args: {
 
 /** True when the failure looks like connectivity, not a server rejection. */
 export function isNetworkishError(err: any): boolean {
-  const m = (err?.message || String(err) || '').toLowerCase();
-  return /networkerror|fetch|timeout|unreachable|premature|abort|econnrefused|failed to fetch|signal timed out/.test(m);
+  return shouldQueueOfflineMutation(err);
 }
 
 export async function manualSync() {

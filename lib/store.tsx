@@ -1854,28 +1854,72 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     expiryDate?: string;
     branchId?: string;
   }): Promise<Product> => {
-    const data = await gql<{ createProduct: Product }>(M_CREATE_PRODUCT, args);
-    const newProduct = data.createProduct;
-    setProducts(prev => [newProduct, ...prev]);
-    if (args.stockQuantity > 0) {
-      const supplier = suppliers.find(s => s.id === args.supplierId);
-      setStockMovements(prev => [{
-        id: `mv-${Date.now()}`,
-        productId: newProduct.id,
-        productName: newProduct.name,
-        type: 'in' as const,
-        quantity: args.stockQuantity,
-        reason: 'Initial stock on product creation',
-        user: me?.name,
-        date: new Date().toISOString(),
-        branchId: args.branchId || me?.branchId,
-        branchName: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : ''),
+    const clientRef = crypto.randomUUID();
+    const variables = { ...args };
+
+    try {
+      const data = await gql<{ createProduct: Product }>(M_CREATE_PRODUCT, variables);
+      const newProduct = data.createProduct;
+      setProducts(prev => [newProduct, ...prev]);
+      if (args.stockQuantity > 0) {
+        const supplier = suppliers.find(s => s.id === args.supplierId);
+        setStockMovements(prev => [{
+          id: `mv-${Date.now()}`,
+          productId: newProduct.id,
+          productName: newProduct.name,
+          type: 'in' as const,
+          quantity: args.stockQuantity,
+          reason: 'Initial stock on product creation',
+          user: me?.name,
+          date: new Date().toISOString(),
+          branchId: args.branchId || me?.branchId,
+          branchName: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : ''),
+          supplierId: args.supplierId,
+          supplierName: supplier?.name,
+        }, ...prev].slice(0, 200));
+      }
+      return newProduct;
+    } catch (err: any) {
+      const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
+      if (!isNetworkishError(err)) throw err;
+
+      const optimistic: Product = {
+        id: clientRef,
+        name: args.name,
+        genericName: args.genericName,
+        brand: args.brand,
+        category: args.category,
+        costPrice: args.costPrice,
+        sellingPrice: args.sellingPrice,
+        stockQuantity: args.stockQuantity,
         supplierId: args.supplierId,
-        supplierName: supplier?.name,
-      }, ...prev].slice(0, 200));
+        branchId: args.branchId || me?.branchId,
+        strength: args.strength,
+        dosageForm: args.dosageForm,
+        barcode: args.barcode,
+        nafdacNo: args.nafdacNo,
+        requiresRx: args.requiresRx,
+        isControlled: args.isControlled,
+        imageUrl: args.imageUrl,
+      };
+
+      setProducts(prev => [optimistic, ...prev]);
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_CREATE_PRODUCT,
+        variables,
+        flat: {
+          items: [{ productId: clientRef, name: args.name, qty: args.stockQuantity, price: args.sellingPrice }],
+          total: 0,
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: 'Product Create',
+          branch_id: args.branchId || me?.branchId,
+        },
+      });
+      return optimistic;
     }
-    return newProduct;
-  }, [me]);
+  }, [me, suppliers]);
 
   const deleteProduct = useCallback(async (productId: string): Promise<void> => {
     await gql(M_DELETE_PRODUCT, { productId });
@@ -1954,11 +1998,46 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     name: string; contact?: string; phone?: string; email?: string;
     address?: string; tin?: string; categories?: string[]; paymentTerms?: string;
   }): Promise<Supplier> => {
-    const data = await gql<{ createSupplier: Supplier }>(M_CREATE_SUPPLIER, { input: args });
-    const newSupplier = data.createSupplier;
-    setSuppliers(prev => [newSupplier, ...prev]);
-    return newSupplier;
-  }, []);
+    const clientRef = crypto.randomUUID();
+    const variables = { input: args };
+
+    try {
+      const data = await gql<{ createSupplier: Supplier }>(M_CREATE_SUPPLIER, variables);
+      const newSupplier = data.createSupplier;
+      setSuppliers(prev => [newSupplier, ...prev]);
+      return newSupplier;
+    } catch (err: any) {
+      const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
+      if (!isNetworkishError(err)) throw err;
+
+      const optimistic: Supplier = {
+        id: clientRef,
+        name: args.name,
+        contact: args.contact,
+        phone: args.phone,
+        email: args.email,
+        address: args.address,
+        tin: args.tin,
+        categories: args.categories ?? [],
+      };
+
+      setSuppliers(prev => [optimistic, ...prev]);
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_CREATE_SUPPLIER,
+        variables,
+        flat: {
+          items: [{ productId: clientRef, name: args.name, qty: 1, price: 0 }],
+          total: 0,
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: 'Supplier Create',
+          branch_id: me?.branchId,
+        },
+      });
+      return optimistic;
+    }
+  }, [me]);
 
   const updateSupplier = useCallback(async (args: {
     id: string; name?: string; contact?: string; phone?: string;
@@ -1977,23 +2056,108 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, []);
 
   const recordSupplierPayment = useCallback(async (invoiceId: string, amount: number, method: string, reference?: string, notes?: string): Promise<Invoice> => {
-    const data = await gql<{ recordSupplierPayment: Invoice }>(M_RECORD_SUPPLIER_PAYMENT, { invoiceId, amount, method, reference, notes });
-    const updatedInvoice = data.recordSupplierPayment;
-    setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, ...updatedInvoice } : inv));
-    refetchLedger();
-    return updatedInvoice;
-  }, [refetchLedger]);
+    const clientRef = crypto.randomUUID();
+    const variables = { invoiceId, amount, method, reference, notes };
+
+    try {
+      const data = await gql<{ recordSupplierPayment: Invoice }>(M_RECORD_SUPPLIER_PAYMENT, variables);
+      const updatedInvoice = data.recordSupplierPayment;
+      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, ...updatedInvoice } : inv));
+      refetchLedger();
+      return updatedInvoice;
+    } catch (err: any) {
+      const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
+      if (!isNetworkishError(err)) throw err;
+
+      const current = invoices.find(inv => inv.id === invoiceId) ?? {
+        id: invoiceId,
+        invoiceNo: 'PENDING',
+        supplierId: '',
+        type: 'SUPPLIER_PAYMENT',
+        issueDate: new Date().toISOString(),
+        subtotal: 0,
+        vat: 0,
+        total: 0,
+        paidAmount: 0,
+        balance: 0,
+        paymentStatus: 'PENDING',
+        createdAt: new Date().toISOString(),
+      } as Invoice;
+
+      const optimistic: Invoice = {
+        ...current,
+        id: invoiceId,
+        total: current.total + amount,
+        paidAmount: current.paidAmount + amount,
+        balance: Math.max(0, (current.balance || 0) - amount),
+        paymentStatus: 'PARTIAL',
+        notes: notes ?? current.notes,
+        createdAt: new Date().toISOString(),
+      };
+
+      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? optimistic : inv));
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_RECORD_SUPPLIER_PAYMENT,
+        variables,
+        flat: {
+          items: [{ productId: invoiceId, name: 'Supplier payment', qty: 1, price: amount }],
+          total: 0,
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: 'Supplier Payment',
+          branch_id: me?.branchId,
+        },
+      });
+      return optimistic;
+    }
+  }, [invoices, me, refetchLedger]);
 
   const createExpense = useCallback(async (args: {
     categoryId: string; amount: number; description: string; date: string; receiptUrl?: string;
   }): Promise<Expense> => {
     if (!me?.branchId) throw new Error('No branch assigned');
-    const data = await gql<{ createExpense: Expense }>(M_CREATE_EXPENSE, { ...args, branchId: me.branchId });
-    const newExpense = data.createExpense;
-    setExpenses(prev => [newExpense, ...prev]);
-    refetchLedger();
-    return newExpense;
-  }, [me?.branchId, refetchLedger]);
+    const clientRef = crypto.randomUUID();
+    const variables = { ...args, branchId: me.branchId };
+
+    try {
+      const data = await gql<{ createExpense: Expense }>(M_CREATE_EXPENSE, variables);
+      const newExpense = data.createExpense;
+      setExpenses(prev => [newExpense, ...prev]);
+      refetchLedger();
+      return newExpense;
+    } catch (err: any) {
+      const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
+      if (!isNetworkishError(err)) throw err;
+
+      const optimistic: Expense = {
+        id: clientRef,
+        amount: args.amount,
+        description: args.description,
+        date: args.date,
+        receiptUrl: args.receiptUrl,
+        status: 'PENDING',
+        branchId: me.branchId,
+        createdAt: new Date().toISOString(),
+      } as Expense;
+
+      setExpenses(prev => [optimistic, ...prev]);
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_CREATE_EXPENSE,
+        variables,
+        flat: {
+          items: [{ productId: clientRef, name: args.description, qty: 1, price: args.amount }],
+          total: 0,
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: 'Expense Create',
+          branch_id: me.branchId,
+        },
+      });
+      return optimistic;
+    }
+  }, [me?.branchId, me?.id, me?.name, refetchLedger]);
 
   const createBudget = useCallback(async (args: {
     branchId?: string;
