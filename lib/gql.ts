@@ -3,7 +3,9 @@
  * Authenticated requests using custom JWT
  */
 
-const RAW_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/graphql';
+const DEFAULT_REMOTE_API = 'https://azzaypharmacy-api-production.up.railway.app/graphql';
+const DEFAULT_LOCAL_API = 'http://localhost:4000/graphql';
+const RAW_API = process.env.NEXT_PUBLIC_API_URL || DEFAULT_REMOTE_API;
 const API = RAW_API;
 
 function buildApiCandidates(apiUrl: string): string[] {
@@ -17,6 +19,23 @@ function buildApiCandidates(apiUrl: string): string[] {
     candidates.push(apiUrl.replace('://localhost:', '://127.0.0.1:'));
   }
   return [...new Set(candidates)];
+}
+
+function buildApiCandidateSet(primaryApi: string): string[] {
+  const primaryCandidates = buildApiCandidates(primaryApi);
+  const fallbackCandidates = new Set<string>(primaryCandidates);
+
+  const localApi = DEFAULT_LOCAL_API;
+  const remoteApi = DEFAULT_REMOTE_API;
+
+  if (primaryApi !== localApi) {
+    for (const candidate of buildApiCandidates(localApi)) fallbackCandidates.add(candidate);
+  }
+  if (primaryApi !== remoteApi) {
+    for (const candidate of buildApiCandidates(remoteApi)) fallbackCandidates.add(candidate);
+  }
+
+  return [...fallbackCandidates];
 }
 
 function getApiRootUrl(apiUrl: string): string | null {
@@ -43,11 +62,25 @@ async function diagnoseApiReachability(apiUrl: string): Promise<string> {
   }
 }
 
-const API_CANDIDATES = buildApiCandidates(API);
+const API_CANDIDATES = buildApiCandidateSet(API);
 let currentActiveApi: string = API_CANDIDATES[0] || API;
+
+export function getCurrentApiUrl(): string {
+  return currentActiveApi || API;
+}
 
 // Token can be set externally by the StoreProvider once auth is ready
 let _token: string | null = null;
+
+function syncNativeAuth() {
+  if (typeof window === 'undefined' || !('__TAURI__' in window)) return;
+
+  const apiForNative = currentActiveApi || API;
+  import('./tauri-native')
+    .then(m => m.nativeSetSyncAuth(apiForNative, _token))
+    .catch(() => {});
+}
+
 export function setAuthToken(token: string | null) {
   _token = token;
   if (token) {
@@ -56,11 +89,7 @@ export function setAuthToken(token: string | null) {
     console.log('[gql] Auth token cleared');
   }
   // Feed the native sync daemon (Tauri only — no-op in browser)
-  if (typeof window !== 'undefined' && '__TAURI__' in window) {
-    import('./tauri-native')
-      .then(m => m.nativeSetSyncAuth(API, token))
-      .catch(() => {});
-  }
+  syncNativeAuth();
 }
 
 function resolveAuthToken(): string | null {
@@ -164,6 +193,7 @@ async function executeGql<T = unknown>(
           res = response;
           usedApi = candidate;
           currentActiveApi = candidate; // Stick with working endpoint
+          syncNativeAuth();
           break;
         } catch (err: any) {
           const isLastAttempt = attempt === 2;

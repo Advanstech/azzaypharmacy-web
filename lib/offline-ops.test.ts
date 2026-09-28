@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { shouldQueueOfflineMutation } from './offline-ops.ts';
+import { shouldQueueOfflineMutation } from './offline-ops';
 
 test('queues network errors for offline sync', () => {
   assert.equal(shouldQueueOfflineMutation(new Error('NetworkError when attempting to fetch resource')), true);

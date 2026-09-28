@@ -10,6 +10,7 @@ import { gql, Q_DASHBOARD_STATS } from '@/lib/gql';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
+import { SyncStatusPill } from '@/components/sync-status-pill';
 import {
   TrendingUp, TrendingDown, ShoppingCart, Package,
   AlertTriangle, Sparkles, Plus, BarChart3, Users,
@@ -226,10 +227,13 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
           <h2 className="font-display text-xl font-bold" style={{ color: s.textMain }}>Executive Command</h2>
           <p className="text-xs mt-1" style={{ color: s.textMuted }}>Real-time pulse of Azzay Pharmacy operations</p>
         </div>
-        <span className="text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
-          style={{ background: `${s.accent}18`, color: s.accent, border: `1px solid ${s.accent}40` }}>
-          Management
-        </span>
+        <div className="flex items-center gap-3">
+          <SyncStatusPill />
+          <span className="text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm"
+            style={{ background: `${s.accent}18`, color: s.accent, border: `1px solid ${s.accent}40` }}>
+            Management
+          </span>
+        </div>
       </div>
 
       {loadingStats && !stats ? <DashboardSkeleton isDark={isDark} /> : null}

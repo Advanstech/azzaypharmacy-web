@@ -230,6 +230,7 @@ export async function nativeDeleteBackup(path: string): Promise<void> {
 export interface NativeSyncStatus {
   state: 'online' | 'offline' | 'syncing';
   pending: number;
+  dead: number;
   synced: number;
   failed: number;
   last_error?: string;

@@ -109,6 +109,28 @@ function isConnectivityError(msg: string): boolean {
   );
 }
 
+function clearAuthStoragePreservingOffline() {
+  try {
+    const keep = new Set(['offline_credentials', '_sv']);
+    const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index) ?? '');
+    keys.filter(Boolean).forEach((key) => {
+      if (!keep.has(key)) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (_) {}
+
+  try {
+    const keepSession = new Set(['offline_credentials']);
+    const keys = Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index) ?? '');
+    keys.filter(Boolean).forEach((key) => {
+      if (!keepSession.has(key)) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  } catch (_) {}
+}
+
 export function CustomAuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any>(null);
   const [session, setSession] = useState<any>(null);
@@ -331,12 +353,7 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setSession(null);
 
-    try {
-      localStorage.clear();
-    } catch (_) {}
-    try {
-      sessionStorage.clear();
-    } catch (_) {}
+    clearAuthStoragePreservingOffline();
     try {
       const { clearCache } = await import('@/lib/offline');
       await clearCache();

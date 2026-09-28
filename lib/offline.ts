@@ -3,6 +3,13 @@
  * Handles IndexedDB persistence for products, staff, and pending sales.
  */
 
+import {
+  isTauri,
+  nativeClearInventoryDeltas,
+  nativeGetPendingDeltas,
+  nativeRecordInventoryDelta,
+} from './tauri-native';
+
 const DB_NAME = 'azzay-offline';
 const DB_VERSION = 3;
 
@@ -90,6 +97,7 @@ export async function clearCache(): Promise<void> {
     const db = await openDB();
     const stores = ['products_cache', 'staff_cache', 'sales_cache', 'pending_sales', 'inventory_deltas', 'kv_cache'];
     for (const storeName of stores) {
+      if (!db.objectStoreNames.contains(storeName)) continue;
       const tx = db.transaction(storeName, 'readwrite');
       tx.objectStore(storeName).clear();
       await new Promise<void>((resolve, reject) => {
@@ -225,6 +233,15 @@ export interface InventoryDelta {
 }
 
 export async function recordInventoryDelta(productId: string, branchId: string, quantity: number): Promise<void> {
+  if (isTauri()) {
+    try {
+      await nativeRecordInventoryDelta(productId, branchId, quantity);
+      return;
+    } catch (e) {
+      console.warn('[offline] Failed to record native inventory delta, falling back to IndexedDB:', e);
+    }
+  }
+
   try {
     const db = await openDB();
     const tx = db.transaction('inventory_deltas', 'readwrite');
@@ -249,6 +266,23 @@ export async function recordInventoryDelta(productId: string, branchId: string, 
 }
 
 export async function getPendingInventoryDeltas(): Promise<InventoryDelta[]> {
+  if (isTauri()) {
+    try {
+      const rows = await nativeGetPendingDeltas();
+      return rows.map(row => ({
+        id: row.id,
+        productId: row.product_id,
+        branchId: row.branch_id,
+        quantity: row.quantity,
+        synced: false,
+        timestamp: row.created_at,
+      }));
+    } catch (e) {
+      console.warn('[offline] Failed to read native pending inventory deltas:', e);
+      return [];
+    }
+  }
+
   try {
     const db = await openDB();
     const tx = db.transaction('inventory_deltas', 'readonly');
@@ -267,6 +301,15 @@ export async function getPendingInventoryDeltas(): Promise<InventoryDelta[]> {
 }
 
 export async function markInventoryDeltaSynced(id: string, timestamp: number): Promise<void> {
+  if (isTauri()) {
+    try {
+      await nativeClearInventoryDeltas([id]);
+      return;
+    } catch (e) {
+      console.warn('[offline] Failed to clear native inventory delta after sync:', e);
+    }
+  }
+
   try {
     const db = await openDB();
     const tx = db.transaction('inventory_deltas', 'readwrite');

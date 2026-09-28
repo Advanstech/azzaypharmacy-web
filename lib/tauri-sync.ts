@@ -35,6 +35,10 @@ import {
 } from './connectivity';
 import {
   isTauri,
+  nativeClearInventoryDeltas,
+  nativeGetPendingDeltas,
+  nativeListQueue,
+  nativeRetryQueuedSale,
   nativeSyncNow,
   nativeProbeApi,
   onNativeSyncStatus,
@@ -304,10 +308,19 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
 
 async function syncInventoryDeltasFn() {
   try {
-    const pendingDeltas = await getPendingInventoryDeltas();
+    const pendingDeltas = isTauri()
+      ? (await nativeGetPendingDeltas().catch(() => [])).map(d => ({
+          id: d.id,
+          productId: d.product_id,
+          branchId: d.branch_id,
+          quantity: d.quantity,
+          synced: false,
+          timestamp: d.created_at,
+        }))
+      : await getPendingInventoryDeltas();
+
     if (pendingDeltas.length === 0) return;
 
-    // Group by branchId
     const deltasByBranch: Record<string, any[]> = {};
     for (const delta of pendingDeltas) {
       if (!deltasByBranch[delta.branchId]) deltasByBranch[delta.branchId] = [];
@@ -321,11 +334,14 @@ async function syncInventoryDeltasFn() {
           branchId,
           deltas: deltas.map(d => ({ productId: d.productId, quantity: d.quantity }))
         });
-        
-        // Mark all as synced
+
         const now = Date.now();
         for (const delta of deltas) {
-          await markInventoryDeltaSynced(delta.id, now);
+          if (isTauri()) {
+            await nativeClearInventoryDeltas([delta.id]).catch(() => {});
+          } else {
+            await markInventoryDeltaSynced(delta.id, now);
+          }
         }
       } catch (err: any) {
         console.error(`[sync] Failed to sync inventory deltas for branch ${branchId}:`, err);
@@ -336,8 +352,10 @@ async function syncInventoryDeltasFn() {
           { branchId },
           err.stack
         );
-        for (const delta of deltas) {
-          await recordInventoryDeltaError(delta.id, err.message);
+        if (!isTauri()) {
+          for (const delta of deltas) {
+            await recordInventoryDeltaError(delta.id, err.message);
+          }
         }
       }
     }
@@ -398,12 +416,28 @@ export function isNetworkishError(err: any): boolean {
   return shouldQueueOfflineMutation(err);
 }
 
+export async function retryDeadQueue(): Promise<number> {
+  if (!isTauri()) return 0;
+
+  try {
+    const rows = await nativeListQueue('dead');
+    for (const row of rows) {
+      await nativeRetryQueuedSale(row.id).catch(() => {});
+    }
+    return rows.length;
+  } catch {
+    return 0;
+  }
+}
+
 export async function manualSync() {
   if (isTauri()) {
-    const reachable = await nativeProbeApi(
-      process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/graphql'
-    ).catch(() => false);
-    if (reachable) await nativeSyncNow().catch(() => {});
+    const { getCurrentApiUrl } = await import('./gql');
+    const reachable = await nativeProbeApi(getCurrentApiUrl()).catch(() => false);
+    if (reachable) {
+      await retryDeadQueue();
+      await nativeSyncNow().catch(() => {});
+    }
     return { synced: 0, failed: 0 };
   }
   const reachable = await forceProbe();

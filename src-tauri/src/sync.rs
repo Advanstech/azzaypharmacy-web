@@ -18,6 +18,8 @@ use tauri::{AppHandle, Emitter};
 use crate::outbox;
 
 const PROBE_INTERVAL: Duration = Duration::from_secs(15);
+const OFFLINE_PROBE_INTERVAL: Duration = Duration::from_secs(8);
+const HEALTHY_PROBE_INTERVAL: Duration = Duration::from_secs(45);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(90);
 const MAX_ATTEMPTS: i64 = 8;
@@ -48,6 +50,7 @@ pub struct SyncConfig {
 struct SyncStatus {
     state: String, // "online" | "offline" | "syncing"
     pending: i64,
+    dead: i64,
     synced: i64,
     failed: i64,
     last_error: Option<String>,
@@ -78,6 +81,25 @@ async fn probe(client: &reqwest::Client, api_url: &str) -> bool {
     }
 }
 
+fn is_retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+fn is_retryable_error(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("timeout")
+        || m.contains("timed out")
+        || m.contains("network")
+        || m.contains("connection reset")
+        || m.contains("connection refused")
+        || m.contains("temporarily unavailable")
+        || m.contains("too many requests")
+        || m.contains("rate limit")
+        || m.contains("bad gateway")
+        || m.contains("service unavailable")
+        || m.contains("gateway timeout")
+}
+
 fn is_permanent_error(msg: &str) -> bool {
     let m = msg.to_lowercase();
     m.contains("not found")
@@ -86,6 +108,16 @@ fn is_permanent_error(msg: &str) -> bool {
         || m.contains("unauthorized")
         || m.contains("forbidden")
         || m.contains("graphql")
+}
+
+fn next_probe_delay(online: bool, pending: i64) -> Duration {
+    if !online {
+        return OFFLINE_PROBE_INTERVAL;
+    }
+    if pending > 0 {
+        return PROBE_INTERVAL;
+    }
+    HEALTHY_PROBE_INTERVAL
 }
 
 async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig) {
@@ -147,18 +179,27 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
                     log::info!("[sync] synced sale {}", row.id);
                 } else {
                     let msg = format!("HTTP {status}: {}", &body[..body.len().min(300)]);
-                    let dead =
-                        outbox::mark_failed(&conn, &row.id, &msg, MAX_ATTEMPTS).unwrap_or(false);
+                    let is_retryable = is_retryable_status(status.as_u16())
+                        || is_retryable_error(&msg)
+                        || (status.as_u16() >= 500 && status.as_u16() < 600);
+                    let dead_after = if is_retryable { MAX_ATTEMPTS } else { 1 };
+                    let dead = outbox::mark_failed(&conn, &row.id, &msg, dead_after).unwrap_or(false);
                     if is_permanent_error(&msg) && dead {
                         log::warn!("[sync] sale {} retired as dead: {}", row.id, msg);
+                    } else if is_retryable {
+                        log::warn!("[sync] retryable failure for sale {}: {}", row.id, msg);
                     }
                     failed += 1;
-                    log::warn!("[sync] sale {} failed: {}", row.id, msg);
+                    if !is_retryable {
+                        continue;
+                    }
                 }
             }
             Err(e) => {
-                // Connectivity dropped mid-drain — stop, retry next cycle
-                log::warn!("[sync] request error, pausing drain: {e}");
+                let msg = format!("request error: {e}");
+                log::warn!("[sync] network issue while draining, will retry later: {}", msg);
+                let _ = outbox::mark_failed(&conn, &row.id, &msg, MAX_ATTEMPTS);
+                failed += 1;
                 break;
             }
         }
@@ -173,6 +214,7 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
             &SyncStatus {
                 state: "syncing".into(),
                 pending: stats.pending,
+                dead: stats.dead,
                 synced,
                 failed,
                 last_error: None,
@@ -192,6 +234,7 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
             &SyncStatus {
                 state: "online".into(),
                 pending: stats.pending,
+                dead: stats.dead,
                 synced,
                 failed,
                 last_error: None,
@@ -248,6 +291,7 @@ pub fn spawn_daemon(app: AppHandle, cfg: std::sync::Arc<Mutex<SyncConfig>>) {
                             &SyncStatus {
                                 state: "online".into(),
                                 pending: stats.pending,
+                                dead: stats.dead,
                                 synced: 0,
                                 failed: 0,
                                 last_error: None,
@@ -262,6 +306,7 @@ pub fn spawn_daemon(app: AppHandle, cfg: std::sync::Arc<Mutex<SyncConfig>>) {
                     &SyncStatus {
                         state: "offline".into(),
                         pending: -1,
+                        dead: 0,
                         synced: 0,
                         failed: 0,
                         last_error: None,
@@ -270,7 +315,34 @@ pub fn spawn_daemon(app: AppHandle, cfg: std::sync::Arc<Mutex<SyncConfig>>) {
                 );
             }
 
-            tokio::time::sleep(PROBE_INTERVAL).await;
+            let pending = outbox::open_for_app(&app)
+                .ok()
+                .and_then(|conn| outbox::stats(&conn).ok())
+                .map(|stats| stats.pending)
+                .unwrap_or(0);
+
+            tokio::time::sleep(next_probe_delay(online, pending)).await;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_retryable_status, next_probe_delay};
+    use std::time::Duration;
+
+    #[test]
+    fn retryable_http_codes_are_retried() {
+        assert!(is_retryable_status(429));
+        assert!(is_retryable_status(503));
+        assert!(!is_retryable_status(400));
+        assert!(!is_retryable_status(401));
+    }
+
+    #[test]
+    fn offline_and_pending_use_faster_probe_backoff() {
+        assert_eq!(next_probe_delay(false, 0), Duration::from_secs(8));
+        assert_eq!(next_probe_delay(true, 3), Duration::from_secs(15));
+        assert_eq!(next_probe_delay(true, 0), Duration::from_secs(45));
+    }
 }

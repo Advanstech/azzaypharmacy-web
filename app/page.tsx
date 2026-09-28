@@ -20,6 +20,7 @@ import {
 import { saveToCache, getFromCache } from '@/lib/offline';
 import { isTauri, nativeSaveStaffProfiles, nativeGetStaffProfiles } from '@/lib/tauri-native';
 import { StaffMember } from '@/lib/store';
+import { SyncStatusPill } from '@/components/sync-status-pill';
 import {
   X,
   Eye,
@@ -820,14 +821,16 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Theme Toggle */}
-            <button
-              onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              className="p-2 sm:p-2.5 rounded-lg lg:rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all border border-white/10"
-              title="Toggle Theme"
-            >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+            <div className="flex items-center gap-2">
+              <SyncStatusPill />
+              <button
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                className="p-2 sm:p-2.5 rounded-lg lg:rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all border border-white/10"
+                title="Toggle Theme"
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {/* Heading & Tagline */}

@@ -73,13 +73,11 @@ export function SyncStatusIndicator({
         <p className="text-xs opacity-70 mb-2">{status.message}</p>
       )}
 
-      {status.pendingCount > 0 && (
-        <div className="text-xs space-y-1">
-          <div>Pending: {status.pendingCount}</div>
-          <div>Synced: {status.syncedCount}</div>
-          {status.failedCount > 0 && <div>Failed: {status.failedCount}</div>}
-        </div>
-      )}
+      <div className="text-xs space-y-1">
+        {status.pendingCount > 0 && <div>Queued: {status.pendingCount}</div>}
+        {status.failedCount > 0 && <div>Retrying: {status.failedCount}</div>}
+        <div>Synced: {status.syncedCount}</div>
+      </div>
 
       {status.lastSync && (
         <p className="text-[10px] opacity-50 mt-2">

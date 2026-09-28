@@ -395,14 +395,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Clear gql token cache
     setAuthToken(null);
 
-    // Clear all localStorage keys (Supabase stores session here)
+    // Keep the offline credential cache so staff can still log in without internet.
     try {
-      localStorage.clear();
+      const preserved = new Set(['offline_credentials', '_sv']);
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && !preserved.has(key)) localStorage.removeItem(key);
+      }
     } catch (_) {}
 
-    // Clear sessionStorage
+    // Clear transient sessionStorage, but keep offline staff cache intact.
     try {
-      sessionStorage.clear();
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const key = sessionStorage.key(i);
+        if (key && key !== 'offline_credentials') sessionStorage.removeItem(key);
+      }
     } catch (_) {}
 
     // Clear IndexedDB app caches

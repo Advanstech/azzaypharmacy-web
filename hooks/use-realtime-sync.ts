@@ -67,25 +67,39 @@ export function useRealtimeSyncStatus(
  * Hook for sync status indicator with visual feedback
  */
 export function useSyncIndicator() {
-  const { isOnline, isSyncing, message } = useRealtimeSyncStatus();
+  const { isOnline, isSyncing, message, pendingCount, failedCount } = useRealtimeSyncStatus();
 
   const getIndicatorColor = useCallback((): 'success' | 'warning' | 'error' | 'info' => {
     if (isSyncing) return 'info';
+    if (failedCount > 0) return 'error';
     if (!isOnline) return 'warning';
+    if (pendingCount > 0) return 'warning';
     return 'success';
-  }, [isOnline, isSyncing]);
+  }, [failedCount, isOnline, isSyncing, pendingCount]);
 
   const getIndicatorText = useCallback((): string => {
-    if (isSyncing) return message || 'Syncing...';
-    if (!isOnline) return 'Offline Mode';
+    if (isSyncing) {
+      return pendingCount > 0 ? `Syncing ${pendingCount}…` : 'Syncing…';
+    }
+    if (failedCount > 0) {
+      return `Retrying ${failedCount}`;
+    }
+    if (!isOnline) {
+      return pendingCount > 0 ? `Offline • ${pendingCount} queued` : 'Offline mode';
+    }
+    if (pendingCount > 0) {
+      return `${pendingCount} queued`;
+    }
     return 'All synced';
-  }, [isOnline, isSyncing, message]);
+  }, [failedCount, isOnline, isSyncing, pendingCount]);
 
   const getIndicatorIcon = useCallback((): string => {
-    if (isSyncing) return 'sync'; // spinner
+    if (isSyncing) return 'sync';
+    if (failedCount > 0) return 'wifi-off';
     if (!isOnline) return 'wifi-off';
+    if (pendingCount > 0) return 'wifi-off';
     return 'check-circle';
-  }, [isOnline, isSyncing]);
+  }, [failedCount, isOnline, isSyncing, pendingCount]);
 
   return {
     color: getIndicatorColor(),
