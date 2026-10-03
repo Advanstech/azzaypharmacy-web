@@ -179,6 +179,11 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
                     log::info!("[sync] synced sale {}", row.id);
                 } else {
                     let msg = format!("HTTP {status}: {}", &body[..body.len().min(300)]);
+                    if status.as_u16() == 401 || status.as_u16() == 403 {
+                        log::warn!("[sync] authorization required for queued sale {}", row.id);
+                        failed += 1;
+                        break;
+                    }
                     let is_retryable = is_retryable_status(status.as_u16())
                         || is_retryable_error(&msg)
                         || (status.as_u16() >= 500 && status.as_u16() < 600);

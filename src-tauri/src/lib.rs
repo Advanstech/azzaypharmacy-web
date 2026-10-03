@@ -44,6 +44,18 @@ fn get_staff_profiles(app: AppHandle) -> Result<Vec<outbox::StaffProfile>, Strin
 }
 
 #[tauri::command]
+fn set_local_cache(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    let conn = outbox::open_for_app(&app)?;
+    outbox::set_local_cache(&conn, &key, &value)
+}
+
+#[tauri::command]
+fn get_local_cache(app: AppHandle, key: String) -> Result<Option<String>, String> {
+    let conn = outbox::open_for_app(&app)?;
+    outbox::get_local_cache(&conn, &key)
+}
+
+#[tauri::command]
 fn outbox_stats(app: AppHandle) -> Result<outbox::QueueStats, String> {
     let conn = outbox::open_for_app(&app)?;
     outbox::stats(&conn)
@@ -123,7 +135,8 @@ fn delete_backup(path: String) -> Result<(), String> {
 // ── Sync config ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn set_sync_auth(cfg: State<SharedConfig>, api_url: Option<String>, token: Option<String>) {
+fn set_sync_auth(app: AppHandle, cfg: State<SharedConfig>, api_url: Option<String>, token: Option<String>) {
+    let has_token = token.is_some();
     if let Ok(mut c) = cfg.lock() {
         if let Some(u) = api_url {
             c.api_url = Some(u);
@@ -133,6 +146,11 @@ fn set_sync_auth(cfg: State<SharedConfig>, api_url: Option<String>, token: Optio
             "[sync] auth config updated (token set: {})",
             c.token.is_some()
         );
+    }
+    if has_token {
+        if let Ok(conn) = outbox::open_for_app(&app) {
+            let _ = outbox::retry_authorization_failures(&conn);
+        }
     }
 }
 
@@ -269,6 +287,8 @@ pub fn run() {
             delete_backup,
             save_staff_profiles,
             get_staff_profiles,
+            set_local_cache,
+            get_local_cache,
         ])
         .setup(move |app| {
             sync::spawn_daemon(app.handle().clone(), cfg.clone());

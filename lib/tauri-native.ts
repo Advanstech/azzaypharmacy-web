@@ -200,6 +200,15 @@ export async function nativeGetStaffProfiles(): Promise<NativeStaffProfile[]> {
   return tauriInvoke<NativeStaffProfile[]>('get_staff_profiles');
 }
 
+export async function nativeSetLocalCache(key: string, value: unknown): Promise<void> {
+  await tauriInvoke('set_local_cache', { key, value: JSON.stringify(value) });
+}
+
+export async function nativeGetLocalCache<T>(key: string): Promise<T | undefined> {
+  const value = await tauriInvoke<string | null>('get_local_cache', { key });
+  return value == null ? undefined : JSON.parse(value) as T;
+}
+
 // ── Backup ───────────────────────────────────────────────────────────────────
 
 export interface BackupInfo {

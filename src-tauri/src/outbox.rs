@@ -60,6 +60,11 @@ pub fn open(path: &PathBuf) -> Result<Connection, String> {
            branch_name TEXT,
            branch_phone TEXT,
            synced_at   INTEGER NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS local_cache (
+           key         TEXT PRIMARY KEY,
+           value       TEXT NOT NULL,
+           updated_at  INTEGER NOT NULL
          );",
     )
     .map_err(|e| format!("sqlite init: {e}"))?;
@@ -164,6 +169,27 @@ pub fn open_for_app(app: &AppHandle) -> Result<Connection, String> {
     open(&db_path(app)?)
 }
 
+pub fn set_local_cache(conn: &Connection, key: &str, value: &str) -> Result<(), String> {
+    conn.execute(
+        "INSERT OR REPLACE INTO local_cache (key, value, updated_at) VALUES (?1, ?2, ?3)",
+        params![key, value, chrono::Utc::now().timestamp()],
+    )
+    .map_err(|e| format!("set_local_cache: {e}"))?;
+    Ok(())
+}
+
+pub fn get_local_cache(conn: &Connection, key: &str) -> Result<Option<String>, String> {
+    match conn.query_row(
+        "SELECT value FROM local_cache WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    ) {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(format!("get_local_cache: {e}")),
+    }
+}
+
 pub fn enqueue(
     conn: &Connection,
     id: &str,
@@ -207,6 +233,16 @@ pub fn list(conn: &Connection, status: &str) -> Result<Vec<OutboxRow>, String> {
 pub fn remove(conn: &Connection, id: &str) -> Result<(), String> {
     conn.execute("DELETE FROM pending_sales WHERE id = ?1", params![id])
         .map_err(|e| format!("remove: {e}"))?;
+    Ok(())
+}
+
+pub fn retry_authorization_failures(conn: &Connection) -> Result<(), String> {
+    conn.execute(
+        "UPDATE pending_sales SET status = 'pending', attempts = 0
+         WHERE status = 'dead' AND (last_error LIKE 'HTTP 401:%' OR last_error LIKE 'HTTP 403:%')",
+        [],
+    )
+    .map_err(|e| format!("retry_authorization_failures: {e}"))?;
     Ok(())
 }
 

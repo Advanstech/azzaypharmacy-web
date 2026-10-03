@@ -1,11 +1,11 @@
 {
   "name": "web",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "AI-Powered Pharmaceutical Intelligence Platform for Azzay Pharmacy Pro NEXUS",
   "author": "Hanson Peprah, Digital Fortuna Market",
   "private": true,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS='--max-old-space-size=4096' next dev",
+    "dev": "cross-env NODE_OPTIONS='--max-old-space-size=4096' next dev --webpack",
     "build": "cross-env NODE_OPTIONS='--max-old-space-size=4096' next build",
     "start": "next start",
     "lint": "eslint",

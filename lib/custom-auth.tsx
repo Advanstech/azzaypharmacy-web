@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import { gql, setAuthToken, M_RECORD_STAFF_LOGOUT } from '@/lib/gql';
+import { isTauri, nativeGetLocalCache, nativeSetLocalCache } from '@/lib/tauri-native';
 
 interface CustomAuthContextType {
   user: any;
@@ -63,6 +64,10 @@ interface OfflineCredential {
   storedAt: number;
 }
 
+type OfflineCredentialKind = 'password' | 'pin';
+type OfflineCredentialSet = Partial<Record<OfflineCredentialKind, OfflineCredential>>;
+type OfflineCredentialMap = Record<string, OfflineCredentialSet>;
+
 async function deriveVerifier(userId: string, secret: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, ['deriveBits']);
@@ -74,28 +79,53 @@ async function deriveVerifier(userId: string, secret: string): Promise<string> {
   return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-function getOfflineCredential(email: string): OfflineCredential | null {
+async function readOfflineCredentials(): Promise<OfflineCredentialMap> {
   try {
-    const map = JSON.parse(localStorage.getItem(OFFLINE_CREDS_KEY) || '{}');
-    return map[email.trim().toLowerCase()] ?? null;
+    if (isTauri()) {
+      const cached = await nativeGetLocalCache<OfflineCredentialMap>(OFFLINE_CREDS_KEY);
+      if (cached) return cached;
+    }
+    return JSON.parse(localStorage.getItem(OFFLINE_CREDS_KEY) || '{}');
   } catch {
-    return null;
+    return {};
   }
 }
 
-async function cacheOfflineCredential(email: string, user: any, secret: string, token: string) {
+async function getOfflineCredential(email: string, kind: OfflineCredentialKind): Promise<OfflineCredential | null> {
+  const entry = (await readOfflineCredentials())[email.trim().toLowerCase()];
+  if (!entry) return null;
+  if ('verifier' in entry) return entry as unknown as OfflineCredential;
+  return entry[kind] ?? null;
+}
+
+async function cacheOfflineCredential(
+  email: string,
+  user: any,
+  secret: string,
+  token: string,
+  kind: OfflineCredentialKind,
+) {
   try {
-    if (!crypto?.subtle || !user?.id || !secret) return;
-    const map = JSON.parse(localStorage.getItem(OFFLINE_CREDS_KEY) || '{}');
-    map[email.trim().toLowerCase()] = {
-      verifier: await deriveVerifier(user.id, secret),
-      user,
-      token,
-      storedAt: Date.now(),
-    } satisfies OfflineCredential;
+    if (!globalThis.crypto?.subtle || !user?.id || !secret) {
+      console.warn('[auth] WebCrypto unavailable; offline credential was not cached');
+      return;
+    }
+    const map = await readOfflineCredentials();
+    const key = email.trim().toLowerCase();
+    const existing = map[key] && !('verifier' in map[key]) ? map[key] : {};
+    map[key] = {
+      ...existing,
+      [kind]: {
+        verifier: await deriveVerifier(user.id, secret),
+        user,
+        token,
+        storedAt: Date.now(),
+      } satisfies OfflineCredential,
+    };
     localStorage.setItem(OFFLINE_CREDS_KEY, JSON.stringify(map));
-  } catch {
-    // Non-fatal — offline sign-in just won't be available for this user
+    if (isTauri()) await nativeSetLocalCache(OFFLINE_CREDS_KEY, map);
+  } catch (error) {
+    console.warn('[auth] Failed to cache offline credential:', error);
   }
 }
 
@@ -238,7 +268,7 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         setUser(authData.user);
         setSession({ access_token: authData.access_token, user: authData.user });
         setAuthToken(authData.access_token);
-        cacheOfflineCredential(email, authData.user, password, authData.access_token);
+        await cacheOfflineCredential(email, authData.user, password, authData.access_token, 'password');
         return { data: authData, error: null };
       }
       return { error: 'Login failed. Please check your credentials.' };
@@ -265,7 +295,7 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
         setUser(authData.user);
         setSession({ access_token: authData.access_token, user: authData.user });
         setAuthToken(authData.access_token);
-        cacheOfflineCredential(email, authData.user, pin, authData.access_token);
+        await cacheOfflineCredential(email, authData.user, pin, authData.access_token, 'pin');
         return { data: authData, error: null };
       }
       return { error: 'Invalid PIN. Please try again.' };
@@ -279,8 +309,8 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
 
   // Verify PIN/password against the credential cached at last online login.
   // Restores the previous token + profile so queued offline work continues.
-  const attemptOfflineLogin = async (email: string, secret: string, kind: string) => {
-    const entry = getOfflineCredential(email);
+  const attemptOfflineLogin = async (email: string, secret: string, kind: 'password' | 'PIN') => {
+    const entry = await getOfflineCredential(email, kind === 'PIN' ? 'pin' : 'password');
     if (!entry) {
       return { error: `Unable to reach the server. Offline sign-in isn't available for this account yet — sign in online once to enable it.` };
     }
@@ -354,10 +384,6 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
 
     clearAuthStoragePreservingOffline();
-    try {
-      const { clearCache } = await import('@/lib/offline');
-      await clearCache();
-    } catch (_) {}
     try {
       const keys = await caches?.keys?.() ?? [];
       await Promise.all(keys.map((key) => caches.delete(key)));

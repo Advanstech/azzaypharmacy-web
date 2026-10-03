@@ -949,8 +949,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchPrescriptions = useCallback(async () => {
     setLoadingPrescriptions(true);
     try {
+      const cached = await getKV('prescriptions_cache');
+      if (cached?.length) setPrescriptions(cached);
       const data = await gql<{ prescriptions: Prescription[] }>(Q_PRESCRIPTIONS);
       setPrescriptions(data.prescriptions ?? []);
+      await saveKV('prescriptions_cache', data.prescriptions ?? []);
     } catch (e: any) {
       console.warn('[store] prescriptions fetch failed:', e.message);
     } finally {
@@ -988,8 +991,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         console.warn('[store] refetchInvoices: no branchId — skipping');
         return;
       }
+      const cacheKey = `invoices_cache_${effectiveBranchId ?? 'all'}`;
+      const cached = await getKV(cacheKey);
+      if (cached?.length) setInvoices(cached);
       const data = await gql<{ invoices: Invoice[] }>(Q_INVOICES, { branchId: effectiveBranchId });
       setInvoices(data.invoices ?? []);
+      await saveKV(cacheKey, data.invoices ?? []);
     } catch (e: any) {
       console.warn('[store] invoices fetch failed:', e.message);
     } finally {
@@ -1000,8 +1007,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchExpenses = useCallback(async () => {
     setLoadingExpenses(true);
     try {
+      const cached = await getKV('expenses_cache');
+      if (cached?.length) setExpenses(cached);
       const data = await gql<{ expenses: { items: Expense[] } }>(Q_EXPENSES, { page: 1, limit: 10000 });
-      setExpenses(data.expenses?.items ?? []);
+      const items = data.expenses?.items ?? [];
+      setExpenses(items);
+      await saveKV('expenses_cache', items);
     } catch (e: any) {
       console.warn('[store] expenses fetch failed:', e.message);
     } finally {
@@ -1012,8 +1023,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchShiftReconciliations = useCallback(async (branchId?: string | null) => {
     setLoadingShiftReconciliations(true);
     try {
+      const cacheKey = `shift_reconciliations_${branchId ?? 'all'}`;
+      const cached = await getKV(cacheKey);
+      if (cached?.length) setShiftReconciliations(cached);
       const data = await gql<{ allShiftReconciliations: ShiftReconciliation[] }>(Q_ALL_SHIFT_RECONCILIATIONS, { branchId: branchId ?? undefined });
       setShiftReconciliations(data.allShiftReconciliations ?? []);
+      await saveKV(cacheKey, data.allShiftReconciliations ?? []);
     } catch (e: any) {
       console.warn('[store] shift reconciliations fetch failed:', e.message);
     } finally {
@@ -1024,8 +1039,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const refetchExpenseCategories = useCallback(async () => {
     setLoadingExpenseCategories(true);
     try {
+      const cached = await getKV('expense_categories_cache');
+      if (cached?.length) setExpenseCategories(cached);
       const data = await gql<{ expenseCategories: ExpenseCategory[] }>(Q_EXPENSE_CATEGORIES);
       setExpenseCategories(data.expenseCategories ?? []);
+      await saveKV('expense_categories_cache', data.expenseCategories ?? []);
     } catch (e: any) {
       console.warn('[store] expense categories fetch failed:', e.message);
     } finally {
@@ -1038,8 +1056,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (!effectiveBranchId) return;
     setLoadingLedger(true);
     try {
+      const cacheKey = `ledger_cache_${effectiveBranchId}`;
+      const cached = await getKV(cacheKey);
+      if (cached?.length) setLedger(cached);
       const data = await gql<{ ledgerEntries: LedgerEntry[] }>(Q_LEDGER, { branchId: effectiveBranchId });
       setLedger(data.ledgerEntries ?? []);
+      await saveKV(cacheKey, data.ledgerEntries ?? []);
     } catch (e: any) {
       console.warn('[store] ledger fetch failed:', e.message);
     } finally {
@@ -1052,8 +1074,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (!effectiveBranchId || !startDate || !endDate) return;
     setLoadingFinancialSummary(true);
     try {
+      const cacheKey = `financial_summary_${effectiveBranchId}_${startDate}_${endDate}`;
+      const cached = await getKV(cacheKey);
+      if (cached) setFinancialSummary(cached);
       const data = await gql<{ financialSummary: FinancialSummary }>(Q_FINANCIAL_SUMMARY, { branchId: effectiveBranchId, startDate, endDate });
       setFinancialSummary(data.financialSummary ?? null);
+      await saveKV(cacheKey, data.financialSummary ?? null);
     } catch (e: any) {
       console.warn('[store] financial summary fetch failed:', e.message);
     } finally {
@@ -1065,8 +1091,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     const effectiveBranchId = branchId || me?.branchId;
     setLoadingBudgets(true);
     try {
+      const cacheKey = `budgets_cache_${effectiveBranchId ?? 'all'}`;
+      const cached = await getKV(cacheKey);
+      if (cached?.length) setBudgets(cached);
       const data = await gql<{ budgets: Budget[] }>(Q_BUDGETS, { branchId: effectiveBranchId });
       setBudgets(data.budgets ?? []);
+      await saveKV(cacheKey, data.budgets ?? []);
     } catch (e: any) {
       console.warn('[store] budgets fetch failed:', e.message);
     } finally {
@@ -1079,8 +1109,12 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (!effectiveBranchId || !startDate || !endDate) return;
     setLoadingBudgetVsActual(true);
     try {
+      const cacheKey = `budget_actual_${effectiveBranchId}_${startDate}_${endDate}`;
+      const cached = await getKV(cacheKey);
+      if (cached) setBudgetVsActual(cached);
       const data = await gql<{ budgetVsActual: BudgetVsActualSummary }>(Q_BUDGET_VS_ACTUAL, { branchId: effectiveBranchId, startDate, endDate });
       setBudgetVsActual(data.budgetVsActual ?? null);
+      await saveKV(cacheKey, data.budgetVsActual ?? null);
     } catch (e: any) {
       console.warn('[store] budget vs actual fetch failed:', e.message);
     } finally {
@@ -1089,8 +1123,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, [me?.branchId]);
   const refetchRefundRequests = useCallback(async (branchId?: string | null) => {
     try {
+      const cacheKey = `refund_requests_${branchId ?? 'all'}`;
+      const cached = await getKV(cacheKey);
+      if (cached?.length) setRefundRequests(cached);
       const data = await gql<{ refundRequests: { items: RefundRequest[] } }>(Q_REFUND_REQUESTS, { page: 1, limit: 1000, branchId: branchId ?? undefined });
-      setRefundRequests(data.refundRequests?.items || []);
+      const items = data.refundRequests?.items || [];
+      setRefundRequests(items);
+      await saveKV(cacheKey, items);
     } catch (err: any) {
       console.error('Failed to fetch refund requests', err);
     }
@@ -1270,16 +1309,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           error: err?.message,
           status: err?.status,
         });
-        const isNetworkErr =
-          err?.message?.includes('NetworkError') ||
-          err?.message?.includes('fetch') ||
-          err?.message?.includes('unreachable') ||
-          err?.message?.includes('Failed to fetch') ||
-          err?.message?.includes('Premature close') ||
-          err?.message?.includes('timed out') ||
-          !isApiReachable();
-
-        if (isNetworkErr) {
+        const { isNetworkishError } = await import('./tauri-sync');
+        if (isNetworkishError(err) || !isApiReachable()) {
           console.warn('[store] 📶 Network error detected — queuing sale locally in IndexedDB for automatic background sync.');
           isSynced = false;
         } else {

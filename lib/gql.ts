@@ -73,7 +73,7 @@ export function getCurrentApiUrl(): string {
 let _token: string | null = null;
 
 function syncNativeAuth() {
-  if (typeof window === 'undefined' || !('__TAURI__' in window)) return;
+  if (typeof window === 'undefined' || (!('__TAURI__' in window) && !('__TAURI_INTERNALS__' in window))) return;
 
   const apiForNative = currentActiveApi || API;
   import('./tauri-native')

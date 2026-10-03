@@ -7,7 +7,9 @@ import {
   isTauri,
   nativeClearInventoryDeltas,
   nativeGetPendingDeltas,
+  nativeGetLocalCache,
   nativeRecordInventoryDelta,
+  nativeSetLocalCache,
 } from './tauri-native';
 
 const DB_NAME = 'azzay-offline';
@@ -50,6 +52,10 @@ export async function openDB(): Promise<IDBDatabase> {
 /** Generic key-value cache for dynamic/composite cache keys (e.g. range-scoped queries). */
 export async function saveKV(key: string, value: any): Promise<void> {
   try {
+    if (isTauri()) {
+      await nativeSetLocalCache(`kv:${key}`, value);
+      return;
+    }
     const db = await openDB();
     const tx = db.transaction('kv_cache', 'readwrite');
     tx.objectStore('kv_cache').put({ key, value });
@@ -64,6 +70,9 @@ export async function saveKV(key: string, value: any): Promise<void> {
 
 export async function getKV(key: string): Promise<any | undefined> {
   try {
+    if (isTauri()) {
+      return await nativeGetLocalCache(`kv:${key}`);
+    }
     const db = await openDB();
     const tx = db.transaction('kv_cache', 'readonly');
     const request = tx.objectStore('kv_cache').get(key);
@@ -79,6 +88,10 @@ export async function getKV(key: string): Promise<any | undefined> {
 
 export async function saveToCache(storeName: string, items: any[]) {
   try {
+    if (isTauri()) {
+      await nativeSetLocalCache(`store:${storeName}`, items);
+      return true;
+    }
     const db = await openDB();
     const tx = db.transaction(storeName, 'readwrite');
     const store = tx.objectStore(storeName);
@@ -112,6 +125,9 @@ export async function clearCache(): Promise<void> {
 
 export async function getFromCache(storeName: string): Promise<any[]> {
   try {
+    if (isTauri()) {
+      return await nativeGetLocalCache<any[]>(`store:${storeName}`) ?? [];
+    }
     const db = await openDB();
     const tx = db.transaction(storeName, 'readonly');
     const store = tx.objectStore(storeName);
