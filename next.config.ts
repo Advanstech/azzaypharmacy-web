@@ -4,7 +4,7 @@ const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 
 const nextConfig: NextConfig = {
   images: { unoptimized: true },
-  allowedDevOrigins: ['192.168.100.15'],
+  allowedDevOrigins: ['192.168.100.15', '127.0.0.1'],
 
   // Enable static export for Tauri desktop builds
   ...(isTauri && {

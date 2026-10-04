@@ -22,22 +22,26 @@ export default function StockLevelReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { products: allProducts } = useStore();
+  const { products: allProducts, refetchProducts, loadingProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const products = useMemo(() => {
     if (!activeBranchId) return allProducts;
     return allProducts.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId));
   }, [allProducts, activeBranchId]);
 
-  const branchStock = (p: Product) => activeBranchId
-    ? (p.stockItems || []).filter(si => si.branchId === activeBranchId).reduce((sum, si) => sum + si.quantity, 0)
-    : p.stockQuantity;
+  const branchStock = (p: Product) => {
+    if (!activeBranchId) return Number(p.stockQuantity || 0);
+    const items = (p.stockItems || []).filter(si => si.branchId === activeBranchId);
+    if (items.length) return items.reduce((sum, si) => sum + Number(si.quantity || 0), 0);
+    return p.branchId === activeBranchId ? Number(p.stockQuantity || 0) : 0;
+  };
 
   const branchStockValue = (p: Product) => {
     const items = activeBranchId
       ? (p.stockItems || []).filter(si => si.branchId === activeBranchId)
       : (p.stockItems || []);
-    return items.reduce((sum, si) => sum + Number(si.costPrice || 0) * si.quantity, 0);
+    if (!items.length) return Number(p.costPrice || 0) * branchStock(p);
+    return items.reduce((sum, si) => sum + Number(si.costPrice || p.costPrice || 0) * Number(si.quantity || 0), 0);
   };
 
   const branchAvgCost = (p: Product) => {
@@ -57,6 +61,19 @@ export default function StockLevelReportPage() {
   const [dateTo, setDateTo] = useState(urlTo);
   const [sortField, setSortField] = useState<'name' | 'stock' | 'value'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  useEffect(() => {
+    refetchProducts(activeBranchId ?? undefined);
+  }, [activeBranchId, refetchProducts]);
+
+  useEffect(() => {
+    if (dateMode !== 'expiryRange' && dateMode !== 'receivedRange') return;
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
+    let changed = false;
+    if (dateFrom && dateFrom !== params.get('from')) { params.set('from', dateFrom); changed = true; }
+    if (dateTo && dateTo !== params.get('to')) { params.set('to', dateTo); changed = true; }
+    if (changed) router.replace(`?${params.toString()}`, { scroll: false });
+  }, [dateMode, dateFrom, dateTo, router, searchParams]);
 
   // Date-filter helper — checks a product's (branch-scoped) batches against
   // the selected window on expiryDate or receivedAt.
@@ -145,15 +162,15 @@ export default function StockLevelReportPage() {
 
   // Metrics
   const metrics = useMemo(() => {
-    const totalProducts = products.length;
-    const totalStockValue = products.reduce((sum, p) => sum + branchStockValue(p), 0);
-    const totalRetailValue = products.reduce((sum, p) => sum + (p.sellingPrice * branchStock(p)), 0);
-    const lowStock = products.filter(p => { const q = branchStock(p); return q > 0 && q <= 10; }).length;
-    const outOfStock = products.filter(p => branchStock(p) === 0).length;
+    const totalProducts = filteredProducts.length;
+    const totalStockValue = filteredProducts.reduce((sum, p) => sum + branchStockValue(p), 0);
+    const totalRetailValue = filteredProducts.reduce((sum, p) => sum + (Number(p.sellingPrice || 0) * branchStock(p)), 0);
+    const lowStock = filteredProducts.filter(p => { const q = branchStock(p); return q > 0 && q <= 10; }).length;
+    const outOfStock = filteredProducts.filter(p => branchStock(p) === 0).length;
     const potentialProfit = totalRetailValue - totalStockValue;
 
     return { totalProducts, totalStockValue, totalRetailValue, lowStock, outOfStock, potentialProfit };
-  }, [products, activeBranchId]);
+  }, [filteredProducts, activeBranchId]);
 
   const handleExport = () => {
     const sorted = [...filteredProducts].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
@@ -235,7 +252,7 @@ export default function StockLevelReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Stock Level Report</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Complete inventory status and valuation · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
+            <p className="text-sm" style={{ color: card.muted }}>Complete inventory status and valuation · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span>{loadingProducts && <span> · Syncing real data…</span>}</p>
           </div>
         </div>
         <button 

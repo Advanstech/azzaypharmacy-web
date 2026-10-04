@@ -23,7 +23,7 @@ export default function ReportsPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales: allSales, products: allProducts, staff: allStaff, customers, suppliers, expenses: allExpenses, purchases, prescriptions } = useStore();
+  const { sales: allSales, products: allProducts, staff: allStaff, customers, suppliers, expenses: allExpenses, purchases, prescriptions, refetchSales, refetchProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const isAdmin = true; // simplified
   const searchParams = useSearchParams();
@@ -72,6 +72,15 @@ export default function ReportsPage() {
     if (dateTo !== params.get('to')) { params.set('to', dateTo); changed = true; }
     if (changed) router.replace(`?${params.toString()}`, { scroll: false });
   }, [dateFrom, dateTo, router, searchParams]);
+
+  useEffect(() => {
+    refetchProducts(activeBranchId ?? undefined);
+  }, [activeBranchId, refetchProducts]);
+
+  useEffect(() => {
+    if (!dateFrom || !dateTo) return;
+    refetchSales(activeBranchId ?? undefined, `${dateFrom}T00:00:00.000Z`, `${dateTo}T23:59:59.999Z`);
+  }, [activeBranchId, dateFrom, dateTo, refetchSales]);
 
   const rangeStart = useMemo(() => new Date(dateFrom + 'T00:00:00'), [dateFrom]);
   const rangeEnd = useMemo(() => new Date(dateTo + 'T23:59:59'), [dateTo]);

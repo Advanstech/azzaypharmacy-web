@@ -51,6 +51,12 @@ const HEADER_FILL = 'FF0EA5E9';
 const TOTAL_FILL = 'FFE0F2FE';
 const TITLE_FONT_COLOR = 'FF0F172A';
 
+type ExtendedWorksheet = XLSX.WorkSheet & {
+  '!view'?: { state: string; ySplit: number }[];
+  '!pageSetup'?: { orientation: string; fitToWidth: number; fitToHeight: number };
+  '!margins'?: { left: number; right: number; top: number; bottom: number; header: number; footer: number };
+};
+
 function colLetter(n: number): string {
   let s = '';
   let num = n + 1;
@@ -80,7 +86,7 @@ export function exportToExcel(opts: ExcelExportOptions) {
   } = opts;
 
   const colCount = headers.length;
-  const aoa: any[][] = [];
+  const aoa: (string | number | null | undefined)[][] = [];
 
   // Title block
   aoa.push([title]);
@@ -134,7 +140,7 @@ export function exportToExcel(opts: ExcelExportOptions) {
   ws['!merges'] = merges;
 
   // Styling helpers
-  const setCellStyle = (r: number, c: number, style: any) => {
+  const setCellStyle = (r: number, c: number, style: Record<string, unknown>) => {
     const ref = XLSX.utils.encode_cell({ r, c });
     if (!ws[ref]) ws[ref] = { t: 's', v: '' };
     ws[ref].s = { ...(ws[ref].s || {}), ...style };
@@ -205,7 +211,7 @@ export function exportToExcel(opts: ExcelExportOptions) {
         }
       }
 
-      const baseStyle: any = {
+      const baseStyle: Record<string, unknown> = {
         border: {
           bottom: { style: 'thin', color: { rgb: 'FFE2E8F0' } },
         },
@@ -236,7 +242,15 @@ export function exportToExcel(opts: ExcelExportOptions) {
 
   // Freeze header row
   ws['!freeze'] = { xSplit: 0, ySplit: headerRowIndex + 1 };
-  (ws as any)['!view'] = [{ state: 'frozen', ySplit: headerRowIndex + 1 }];
+  (ws as ExtendedWorksheet)['!view'] = [{ state: 'frozen', ySplit: headerRowIndex + 1 }];
+  ws['!autofilter'] = {
+    ref: `${colLetter(0)}${headerRowIndex + 1}:${colLetter(colCount - 1)}${dataStartRow + rows.length}`,
+  };
+  ws['!rows'] = aoa.map((_, index) => ({
+    hpt: index === 0 ? 26 : index === headerRowIndex ? 22 : 18,
+  }));
+  (ws as ExtendedWorksheet)['!pageSetup'] = { orientation: colCount > 8 ? 'landscape' : 'portrait', fitToWidth: 1, fitToHeight: 0 };
+  (ws as ExtendedWorksheet)['!margins'] = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));

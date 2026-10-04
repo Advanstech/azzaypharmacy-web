@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { getEffectiveDateRange } from '@/lib/effective-date';
 import { 
   ArrowLeft, Download, Package, Search, TrendingUp, ShoppingCart,
   ChevronLeft, ChevronRight, Star, Award, Calendar
@@ -15,20 +16,29 @@ import {
 export default function SalesByProductReportPage() {
   const router = useRouter();
   const { theme, resolvedTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales: allSales, products } = useStore();
+  const { sales: allSales, products: allProducts, refetchSales, refetchProducts, loadingSales, loadingProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const products = useMemo(() => activeBranchId
+    ? allProducts.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId))
+    : allProducts, [allProducts, activeBranchId]);
   const searchParams = useSearchParams();
 
-  const defaultDate = new Date().toISOString().split('T')[0];
-  const [fromDate, setFromDate] = useState(searchParams?.get('from') || defaultDate);
-  const [toDate, setToDate] = useState(searchParams?.get('to') || defaultDate);
+  const [inputFromDate, setInputFromDate] = useState(searchParams?.get('from') || '');
+  const [inputToDate, setInputToDate] = useState(searchParams?.get('to') || '');
+  const effectiveRange = useMemo(() => getEffectiveDateRange(sales), [sales]);
+  const fromDate = inputFromDate || effectiveRange.from;
+  const toDate = inputToDate || effectiveRange.to;
 
   useEffect(() => {
+    if (!fromDate || !toDate) return;
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     if (fromDate !== params.get('from') || toDate !== params.get('to')) {
       params.set('from', fromDate);
@@ -36,6 +46,15 @@ export default function SalesByProductReportPage() {
       router.replace(`?${params.toString()}`, { scroll: false });
     }
   }, [fromDate, toDate, router, searchParams]);
+
+  useEffect(() => {
+    refetchProducts(activeBranchId ?? undefined);
+  }, [activeBranchId, refetchProducts]);
+
+  useEffect(() => {
+    if (!fromDate || !toDate) return;
+    refetchSales(activeBranchId ?? undefined, `${fromDate}T00:00:00.000Z`, `${toDate}T23:59:59.999Z`);
+  }, [activeBranchId, fromDate, toDate, refetchSales]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
@@ -61,12 +80,15 @@ export default function SalesByProductReportPage() {
       cogs: number;
       profit: number;
       profitMargin: number;
+      saleIds: Set<string>;
     }> = {};
 
     sales.forEach(s => {
+      if (s.status === 'REFUNDED' || s.status === 'VOIDED' || s.isRefunded) return;
       const saleDate = new Date(s.createdAt);
       if (saleDate < start || saleDate > end) return;
       s.items.forEach(item => {
+        if (!item.product?.id) return;
         const product = products.find(p => p.id === item.product.id);
         if (!data[item.product.id]) {
           data[item.product.id] = {
@@ -80,12 +102,16 @@ export default function SalesByProductReportPage() {
             cogs: 0,
             profit: 0,
             profitMargin: 0,
+            saleIds: new Set<string>(),
           };
         }
-        const unitCost = product ? product.costPrice : item.unitPrice * 0.5;
-        data[item.product.id].quantitySold += item.quantity;
-        data[item.product.id].revenue += item.total;
-        data[item.product.id].cogs += unitCost * item.quantity;
+        const quantity = Number(item.quantity || 0);
+        const unitPrice = Number(item.unitPrice || 0);
+        const unitCost = Number(product?.costPrice ?? unitPrice * 0.5);
+        data[item.product.id].quantitySold += quantity;
+        data[item.product.id].revenue += Number(item.total ?? unitPrice * quantity);
+        data[item.product.id].cogs += unitCost * quantity;
+        data[item.product.id].saleIds.add(s.id);
       });
     });
 
@@ -133,30 +159,68 @@ export default function SalesByProductReportPage() {
   }, [productAnalysis]);
 
   const handleExport = () => {
-    const rows = filteredProducts.map(p => [
-      p.name, p.category, p.supplier, p.dosageForm,
-      p.quantitySold, p.revenue, p.cogs, p.profit, p.profitMargin,
+    const exportRevenue = filteredProducts.reduce((sum, p) => sum + p.revenue, 0);
+    const exportCogs = filteredProducts.reduce((sum, p) => sum + p.cogs, 0);
+    const exportProfit = exportRevenue - exportCogs;
+    const exportQuantity = filteredProducts.reduce((sum, p) => sum + p.quantitySold, 0);
+    const exportMargin = exportRevenue > 0 ? (exportProfit / exportRevenue) * 100 : 0;
+    const exportTransactions = new Set(filteredProducts.flatMap(p => [...p.saleIds])).size;
+    const detailRows = filteredProducts.map((p, index) => [
+      index + 1,
+      p.name,
+      p.category,
+      p.supplier,
+      p.dosageForm,
+      p.saleIds.size,
+      p.quantitySold,
+      p.quantitySold > 0 ? p.revenue / p.quantitySold : 0,
+      p.revenue,
+      p.cogs,
+      p.profit,
+      p.profitMargin,
+      exportRevenue > 0 ? (p.revenue / exportRevenue) * 100 : 0,
     ]);
+    const rows = [
+      ...detailRows,
+      [
+        '', 'TOTAL', '', '', '',
+        exportTransactions,
+        exportQuantity,
+        exportQuantity > 0 ? exportRevenue / exportQuantity : 0,
+        exportRevenue,
+        exportCogs,
+        exportProfit,
+        exportMargin,
+        exportRevenue > 0 ? 100 : 0,
+      ],
+    ];
     exportToExcel({
       filename: `sales-by-product-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${fromDate}-to-${toDate}`,
-      title: 'Sales by Product',
-      subtitle: 'Azzay Pharmacy — Product Performance and Profit Analysis',
+      title: 'Sales by Product Performance Report',
+      subtitle: 'Azzay Pharmacy Pro — Revenue, Volume and Estimated Gross Profit Analysis',
       meta: [
         { label: 'Branch', value: activeBranchName },
-        { label: 'Date Range', value: `${fromDate} to ${toDate}` },
+        { label: 'Reporting Period', value: `${fromDate} to ${toDate}` },
+        { label: 'Cost Basis', value: 'Estimated using the current product cost price' },
+        { label: 'Scope', value: `${filteredProducts.length} product lines after active filters` },
       ],
       summary: [
-        { label: 'Products Sold', value: metrics.totalProducts },
-        { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}` },
-        { label: 'Total Profit', value: `GH₵ ${metrics.totalProfit.toFixed(2)}` },
-        { label: 'Avg Margin', value: `${metrics.avgMargin.toFixed(1)}%` },
+        { label: 'Distinct Products Sold', value: filteredProducts.length },
+        { label: 'Total Units Sold', value: exportQuantity },
+        { label: 'Transactions Represented', value: exportTransactions },
+        { label: 'Total Revenue', value: `GH₵ ${exportRevenue.toFixed(2)}` },
+        { label: 'Estimated COGS', value: `GH₵ ${exportCogs.toFixed(2)}` },
+        { label: 'Estimated Gross Profit', value: `GH₵ ${exportProfit.toFixed(2)}` },
+        { label: 'Weighted Gross Margin', value: `${exportMargin.toFixed(1)}%` },
+        { label: 'Top Product', value: filteredProducts[0]?.name ?? 'N/A' },
       ],
-      headers: ['Product', 'Category', 'Supplier', 'Dosage Form', 'Qty Sold', 'Revenue', 'COGS', 'Profit', 'Margin %'],
+      headers: ['Rank', 'Product', 'Category', 'Supplier', 'Dosage Form', 'Transactions', 'Units Sold', 'Avg Unit Price', 'Revenue', 'Est. COGS', 'Est. Gross Profit', 'Margin %', 'Revenue Share %'],
       rows,
-      currencyColumns: [5, 6, 7],
-      numberColumns: [4],
-      percentColumns: [8],
-      sheetName: 'Sales by Product',
+      currencyColumns: [7, 8, 9, 10],
+      numberColumns: [0, 5, 6],
+      percentColumns: [11, 12],
+      totalRowIndices: [rows.length - 1],
+      sheetName: 'Product Performance',
     });
   };
 
@@ -185,7 +249,7 @@ export default function SalesByProductReportPage() {
           </button>
           <div>
             <h1 className="font-display text-2xl font-bold" style={{ color: card.text }}>Sales by Product</h1>
-            <p className="text-sm" style={{ color: card.muted }}>Product performance with revenue and profit analysis · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span></p>
+            <p className="text-sm" style={{ color: card.muted }}>Product performance with revenue and profit analysis · <span className="font-bold" style={{ color: card.primary }}>{activeBranchName}</span>{(loadingSales || loadingProducts) && <span> · Syncing real data…</span>}</p>
           </div>
         </div>
         <button 
@@ -200,10 +264,10 @@ export default function SalesByProductReportPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Products Sold', value: String(metrics.totalProducts), icon: Package, color: card.primary },
+          { label: 'Units Sold', value: String(metrics.totalQuantity), icon: Package, color: card.primary },
           { label: 'Total Revenue', value: `GH₵ ${metrics.totalRevenue.toFixed(2)}`, icon: TrendingUp, color: '#10B981' },
-          { label: 'Total Profit', value: `GH₵ ${metrics.totalProfit.toFixed(2)}`, icon: ShoppingCart, color: '#8B5CF6' },
-          { label: 'Avg Margin', value: `${metrics.avgMargin.toFixed(1)}%`, icon: Star, color: card.gold },
+          { label: 'Est. Gross Profit', value: `GH₵ ${metrics.totalProfit.toFixed(2)}`, icon: ShoppingCart, color: '#8B5CF6' },
+          { label: 'Weighted Margin', value: `${metrics.avgMargin.toFixed(1)}%`, icon: Star, color: card.gold },
         ].map((kpi, i) => (
           <div key={i} className="rounded-xl border p-4" style={{ background: card.bg, borderColor: card.border, boxShadow: card.shadow }}>
             <div className="flex items-center gap-2 mb-2">
@@ -254,7 +318,7 @@ export default function SalesByProductReportPage() {
           <input 
             type="date" 
             value={fromDate}
-            onChange={(e) => { setFromDate(e.target.value); goToPage(1); }}
+            onChange={(e) => { setInputFromDate(e.target.value); goToPage(1); }}
             className="text-sm bg-transparent focus:outline-none"
             style={{ color: card.text }}
           />
@@ -262,7 +326,7 @@ export default function SalesByProductReportPage() {
           <input 
             type="date" 
             value={toDate}
-            onChange={(e) => { setToDate(e.target.value); goToPage(1); }}
+            onChange={(e) => { setInputToDate(e.target.value); goToPage(1); }}
             className="text-sm bg-transparent focus:outline-none"
             style={{ color: card.text }}
           />
@@ -287,8 +351,8 @@ export default function SalesByProductReportPage() {
                 <th className="px-4 py-3 text-left text-xs font-bold uppercase" style={{ color: card.subtle }}>Supplier</th>
                 <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Qty Sold</th>
                 <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>Revenue</th>
-                <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>COGS</th>
-                <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>Profit</th>
+                <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>Est. COGS</th>
+                <th className="px-4 py-3 text-right text-xs font-bold uppercase" style={{ color: card.subtle }}>Est. Profit</th>
                 <th className="px-4 py-3 text-center text-xs font-bold uppercase" style={{ color: card.subtle }}>Margin</th>
               </tr>
             </thead>
