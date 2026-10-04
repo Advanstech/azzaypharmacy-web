@@ -12,7 +12,7 @@ import {
   BrainCircuit, Sparkles, Thermometer, Heart, MessageSquare, Globe,
   Pause, Inbox
 } from 'lucide-react';
-import { useStore } from '@/lib/store';
+import { useStore, getSellableStock } from '@/lib/store';
 import { manualSync } from '@/lib/tauri-sync';
 import { tryThermalPrint } from '@/lib/print';
 import { isTauri } from '@/lib/tauri-native';
@@ -583,14 +583,14 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
   }, [mounted, me?.id, liveProducts.length, loadingProducts, refetchProducts]);
 
   const addToCart = (product: any) => {
-    if (product.stockQuantity === 0) return;
+    // Don't hard-block on zero stock — cached/offline stockQuantity can be
+    // stale, and pharmacists sometimes need to sell and reconcile later.
+    const available = getSellableStock(product);
     setCart(prev => {
       const existing = prev.find(i => i.product.id === product.id);
       if (existing) {
-        return prev.map(i => i.product.id === product.id
-          ? { ...i, quantity: Math.min(i.quantity + 1, product.stockQuantity) }
-          : i
-        );
+        const next = available > 0 ? Math.min(existing.quantity + 1, available) : existing.quantity + 1;
+        return prev.map(i => i.product.id === product.id ? { ...i, quantity: next } : i);
       }
       return [...prev, { product, quantity: 1 }];
     });
@@ -1131,15 +1131,15 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                   {filteredProducts.map(p => {
                     const supplier = p.supplier || suppliers.find(s => s.id === p.supplierId);
                     const inCart = cart.find(i => i.product.id === p.id);
+                    const stock = getSellableStock(p);
                     return (
-                      <button 
+                      <button
                         key={p.id} onClick={() => addToCart(p)}
-                        disabled={p.stockQuantity === 0}
                         className="group text-left rounded-2xl border hover:border-[#059669] transition-all shadow-sm active:scale-[0.98] overflow-hidden relative"
-                        style={{ 
+                        style={{
                           background: isDark ? 'rgba(15,23,42,0.86)' : '#fff',
                           borderColor: inCart ? '#059669' : c.border,
-                          opacity: p.stockQuantity === 0 ? 0.5 : 1
+                          opacity: stock <= 0 ? 0.5 : 1
                         }}
                       >
                         <div className="flex w-full h-full p-2.5 gap-4 items-center">
@@ -1175,7 +1175,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                             <div className="mt-2">
                               <p className="font-extrabold text-base text-[#059669]">GHc{p.sellingPrice.toFixed(2)}</p>
                               <div className="flex items-center gap-1.5 mt-0.5 text-[#059669] font-bold text-[10px]">
-                                <Store size={12} /> {p.stockQuantity}/{p.maxStock || p.stockQuantity}
+                                <Store size={12} /> {stock}/{p.maxStock || stock}
                               </div>
                             </div>
                           </div>
@@ -1211,15 +1211,15 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                   {filteredProducts.map(p => {
                     const supplier = p.supplier || suppliers.find(s => s.id === p.supplierId);
                     const inCart = cart.find(i => i.product.id === p.id);
+                    const stock = getSellableStock(p);
                     return (
-                      <button 
+                      <button
                         key={p.id} onClick={() => addToCart(p)}
-                        disabled={p.stockQuantity === 0}
                         className="group text-left rounded-2xl border hover:border-[#059669] transition-all shadow-sm active:scale-[0.99] relative overflow-hidden flex items-center justify-between p-3"
-                        style={{ 
+                        style={{
                           background: isDark ? 'rgba(15,23,42,0.86)' : '#fff',
                           borderColor: inCart ? '#059669' : c.border,
-                          opacity: p.stockQuantity === 0 ? 0.5 : 1
+                          opacity: stock <= 0 ? 0.5 : 1
                         }}
                       >
                         <div className="flex items-center gap-4 flex-1 min-w-0 pr-24">
@@ -1240,7 +1240,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                               <span>{p.genericName || p.brand || 'No brand'}</span>
                               <span>•</span>
                               <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                                {p.stockQuantity > 0 ? 'In stock' : 'Out of stock'}
+                                {stock > 0 ? 'In stock' : 'Out of stock'}
                               </span>
                               {supplier && (
                                 <>
@@ -1257,7 +1257,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
                           <div className="text-right">
                             <p className="font-black text-sm text-[#059669]">GHc{p.sellingPrice.toFixed(2)}</p>
                             <p className="text-[10px] font-bold opacity-75" style={{ color: c.muted }}>
-                              Qty: <span className="font-black text-emerald-600 dark:text-emerald-400">{p.stockQuantity}</span>
+                              Qty: <span className="font-black text-emerald-600 dark:text-emerald-400">{stock}</span>
                             </p>
                           </div>
                           <div className="px-3 py-1.5 rounded-full bg-[#059669] text-white flex items-center gap-1 group-hover:bg-[#047857] transition-colors shadow-sm min-w-[54px] justify-center">

@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes';
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useCustomAuth } from '@/lib/custom-auth';
-import { useStore } from '@/lib/store';
+import { useStore, getSellableStock, type Sale, type Product, type StaffMember } from '@/lib/store';
 import { getEffectiveToday } from '@/lib/effective-date';
 import { gql, Q_DASHBOARD_STATS } from '@/lib/gql';
 import { PharmaChart, MolecularBg, AnimatedCounter } from '@/components/pharma-chart';
@@ -153,8 +153,85 @@ function useCardStyles(isDark: boolean) {
 // ═══════════════════════════════════════════════════════════════
 //  MANAGEMENT VIEW — God's Eye Executive Overview
 // ═══════════════════════════════════════════════════════════════
+// Build dashboardStats-shaped data from locally cached sales/products/staff.
+// Used when the API is unreachable so the Overview still shows real numbers.
+function computeLocalStats(sales: Sale[], products: Product[], staff: StaffMember[]) {
+  const valid = sales.filter(s => s.status !== 'VOIDED' && s.status !== 'REFUNDED' && !s.isRefunded);
+  const todayStr = getEffectiveToday();
+  const weekAgo = new Date();
+  weekAgo.setDate(weekAgo.getDate() - 7);
+  const weekAgoStr = weekAgo.toISOString().split('T')[0];
+
+  const dayOf = (s: Sale) => String(s.createdAt || '').slice(0, 10);
+  const todaySales = valid.filter(s => dayOf(s) === todayStr);
+  const weekSales = valid.filter(s => dayOf(s) >= weekAgoStr);
+
+  const revenueOf = (s: Sale) => Number(s.totalAmount ?? s.subtotal ?? 0);
+  const todayRevenue = todaySales.reduce((a, s) => a + revenueOf(s), 0);
+  const weekRevenue = weekSales.reduce((a, s) => a + revenueOf(s), 0);
+
+  // 7-day trajectory, oldest → newest
+  const revenueTrajectory: { day: string; amount: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split('T')[0];
+    revenueTrajectory.push({
+      day: d.toLocaleDateString('en-GB', { weekday: 'short' }),
+      amount: valid.filter(s => dayOf(s) === key).reduce((a, s) => a + revenueOf(s), 0),
+    });
+  }
+
+  const mixMap = new Map<string, number>();
+  valid.forEach(s => {
+    const label = s.paymentMethod || 'Cash';
+    mixMap.set(label, (mixMap.get(label) || 0) + revenueOf(s));
+  });
+  const mixTotal = Array.from(mixMap.values()).reduce((a, b) => a + b, 0) || 1;
+  const paymentMix = Array.from(mixMap.entries()).map(([label, amount]) => ({
+    label, amount, pct: Math.round((amount / mixTotal) * 100),
+  }));
+
+  const prodMap = new Map<string, { name: string; revenue: number; qty: number }>();
+  valid.forEach(s => (s.items || []).forEach(it => {
+    const key = it.product?.id || it.product?.name || 'unknown';
+    const cur = prodMap.get(key) || { name: it.product?.name || 'Unknown', revenue: 0, qty: 0 };
+    cur.revenue += Number(it.total ?? (it.unitPrice || 0) * (it.quantity || 0));
+    cur.qty += Number(it.quantity || 0);
+    prodMap.set(key, cur);
+  }));
+  const topProducts = Array.from(prodMap.values()).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+
+  const staffMap = new Map<string, { name: string; revenue: number; count: number }>();
+  todaySales.forEach(s => {
+    const name = s.user?.name || 'Staff';
+    const cur = staffMap.get(name) || { name, revenue: 0, count: 0 };
+    cur.revenue += revenueOf(s);
+    cur.count += 1;
+    staffMap.set(name, cur);
+  });
+  const staffSales = Array.from(staffMap.values()).sort((a, b) => b.revenue - a.revenue);
+
+  const activeProducts = products.filter(p => p.isActive !== false);
+  const outOfStock = activeProducts.filter(p => getSellableStock(p) <= 0).length;
+  const lowStock = activeProducts.filter(p => { const q = getSellableStock(p); return q > 0 && q <= 10; }).length;
+
+  const activeStaff = staff.filter(st => st.isActive !== false);
+  const staffOnDuty = activeStaff.filter(st => st.isOnDuty).length;
+
+  return {
+    todayRevenue, todayTransactions: todaySales.length,
+    weekRevenue, weekTransactions: weekSales.length,
+    rangeRevenue: weekRevenue, rangeTransactions: weekSales.length,
+    rangeTimeSeries: revenueTrajectory.map(t => ({ label: t.day, revenue: t.amount, sales: 0 })),
+    outOfStock, lowStock, totalProducts: activeProducts.length,
+    staffOnDuty, totalStaff: activeStaff.length,
+    revenueTrajectory, paymentMix, topProducts, staffSales,
+  };
+}
+
 function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>; isDark: boolean }) {
-  const { me, sales, loadingSales } = useStore();
+  const { me, sales, products, staff, loadingSales } = useStore();
   const { session } = useCustomAuth();
   const { activeBranchId } = useBranch();
   const branchFilter = useBranchFilter();
@@ -162,6 +239,20 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
   const [loadingStats, setLoadingStats] = useState(true);
 
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
+  const branchProducts = useMemo(() => {
+    if (!activeBranchId) return products;
+    return products.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId));
+  }, [products, activeBranchId]);
+  const branchStaff = useMemo(() => {
+    if (!activeBranchId) return staff;
+    return staff.filter(st => st.branchId === activeBranchId);
+  }, [staff, activeBranchId]);
+
+  // Local fallback so the Overview is never blank offline.
+  const localStats = useMemo(
+    () => computeLocalStats(branchSales, branchProducts, branchStaff),
+    [branchSales, branchProducts, branchStaff]
+  );
 
   useEffect(() => {
     // Fire as soon as the auth token is available — don't wait for the store's
@@ -178,7 +269,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
         const res = await gql<{ dashboardStats: any }>(Q_DASHBOARD_STATS, variables);
         setStats(res.dashboardStats);
       } catch (err) {
-        console.error('Failed to load dashboard stats:', err);
+        console.warn('[Dashboard] API stats unavailable — using cached data:', err);
       } finally {
         setLoadingStats(false);
       }
@@ -186,20 +277,24 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
     loadStats();
   }, [session?.access_token, activeBranchId]);
 
-  const weekRevenue = stats?.weekRevenue || 0;
-  const weekTxns = stats?.weekTransactions || 0;
-  const todayRevenue = stats?.todayRevenue || 0;
-  const todayTransactions = stats?.todayTransactions || 0;
-  const avgTicket = todayTransactions > 0 ? todayRevenue / todayTransactions : 0;
-  const outOfStock = stats?.outOfStock || 0;
-  const lowStock = stats?.lowStock || 0;
-  const totalProducts = stats?.totalProducts || 0;
-  const staffOnDuty = stats?.staffOnDuty || 0;
-  const totalStaff = stats?.totalStaff || 0;
+  // Server stats when online; locally computed stats as an offline fallback so
+  // the Overview is never blank (same shape as dashboardStats).
+  const displayStats = stats ?? localStats;
 
-  const sparkData = stats?.revenueTrajectory || [];
-  const topProducts = stats?.topProducts || [];
-  const paymentMix = (stats?.paymentMix || []).map((pm: any) => {
+  const weekRevenue = displayStats.weekRevenue || 0;
+  const weekTxns = displayStats.weekTransactions || 0;
+  const todayRevenue = displayStats.todayRevenue || 0;
+  const todayTransactions = displayStats.todayTransactions || 0;
+  const avgTicket = todayTransactions > 0 ? todayRevenue / todayTransactions : 0;
+  const outOfStock = displayStats.outOfStock || 0;
+  const lowStock = displayStats.lowStock || 0;
+  const totalProducts = displayStats.totalProducts || 0;
+  const staffOnDuty = displayStats.staffOnDuty || 0;
+  const totalStaff = displayStats.totalStaff || 0;
+
+  const sparkData = displayStats.revenueTrajectory || [];
+  const topProducts = displayStats.topProducts || [];
+  const paymentMix = (displayStats.paymentMix || []).map((pm: any) => {
     let icon = Banknote;
     let color = '#0EA5E9';
     if (pm.label === 'Cash') { icon = Banknote; color = '#0EA5E9'; }
@@ -208,7 +303,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
     if (pm.label === 'NHIS') { icon = ShieldAlert; color = '#F59E0B'; }
     return { ...pm, icon, color };
   });
-  const staffSales = stats?.staffSales || [];
+  const staffSales = displayStats.staffSales || [];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -236,9 +331,9 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
         </div>
       </div>
 
-      {loadingStats && !stats ? <DashboardSkeleton isDark={isDark} /> : null}
+      {loadingStats && !displayStats ? <DashboardSkeleton isDark={isDark} /> : null}
       {/* ── EXECUTIVE KPI ROW ────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" style={{ display: loadingStats && !stats ? 'none' : undefined }}>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4" style={{ display: loadingStats && !displayStats ? 'none' : undefined }}>
         {[
           { label: "Today's Revenue", value: `GH₵${todayRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${todayTransactions} txns · Avg GH₵${avgTicket.toFixed(2)}`, icon: DollarSign, color: s.accent },
           { label: '7-Day Revenue', value: `GH₵${weekRevenue.toLocaleString('en-GH',{minimumFractionDigits:2})}`, sub: `${weekTxns} transactions this week`, icon: TrendingUp, color: '#10B981' },
@@ -260,7 +355,7 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
       </div>
 
       {/* ── ALL SECTIONS hidden while skeleton shows ─────────── */}
-      <div className="space-y-6" style={{ display: loadingStats && !stats ? 'none' : undefined }}>
+      <div className="space-y-6" style={{ display: loadingStats && !displayStats ? 'none' : undefined }}>
       {/* ── MAIN GRID: Sparkline + Top Products + Payments ───── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 

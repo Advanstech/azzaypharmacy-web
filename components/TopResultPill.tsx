@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { useStore } from '@/lib/store';
+import { useStore, getSellableStock } from '@/lib/store';
 import { Plus, Image as ImageIcon } from 'lucide-react';
 import { PharmaProductImage } from './PharmaProductImage';
 
@@ -14,6 +14,7 @@ interface TopResultPillProps {
 export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewProduct, onPreviewSupplier }: TopResultPillProps) {
   const { suppliers } = useStore();
   const supplier = product.supplier || suppliers.find(s => s.id === product.supplierId);
+  const stock = getSellableStock(product);
 
   // We use the exact light green colors from the screenshot
   const bg = '#f0fdf4'; // green-50
@@ -39,12 +40,12 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
         <div 
           className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold border-2"
           style={{ 
-            background: product.stockQuantity > 10 ? '#22c55e' : product.stockQuantity > 0 ? '#f59e0b' : '#ef4444',
+            background: stock > 10 ? '#22c55e' : stock > 0 ? '#f59e0b' : '#ef4444',
             borderColor: '#f0fdf4',
             color: '#fff'
           }}
         >
-          {product.stockQuantity}
+          {stock}
         </div>
       </div>
 
@@ -59,7 +60,7 @@ export function TopResultPill({ product, onAddToCart, isDark = false, onPreviewP
         <div className="text-xs truncate flex items-center gap-1 flex-wrap mt-0.5" style={{ color: textLight }}>
           <span>{product.genericName || product.brand || 'No brand'}</span>
           <span>·</span>
-          <span>In stock</span>
+          <span>{stock > 0 ? 'In stock' : 'Out of stock'}</span>
           {product.supplierId && (
             <>
               <span>·</span>

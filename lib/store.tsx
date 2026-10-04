@@ -24,11 +24,13 @@ import {
   Q_STOCK_TRANSFERS
 } from './gql';
 import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, getPendingSales, deletePendingSale } from './offline';
-import { initTauriSync, manualSync } from './tauri-sync';
+import { initTauriSync, manualSync, onSyncEvent } from './tauri-sync';
 import { getConnectivity, isApiReachable } from './connectivity';
 import { isTauri, nativeEnqueueSale, nativeSetSyncAuth, nativeListQueue, nativeRemoveFromQueue } from './tauri-native';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+const OFFLINE_SALES_KEY = 'offline_sales';
 
 export interface StockItem {
   id: string;
@@ -39,6 +41,21 @@ export interface StockItem {
   costPrice: number;
   receivedAt: string;
   isExpired: boolean;
+}
+
+/**
+ * Effective sellable stock for a product.
+ * Prefers batch-level stockItems when present (the authoritative source —
+ * `stockQuantity` can be stale or 0 on cached/offline records), otherwise
+ * falls back to the aggregate `stockQuantity` field.
+ */
+export function getSellableStock(p: { stockQuantity?: number | null; stockItems?: StockItem[] | null }): number {
+  if (Array.isArray(p.stockItems) && p.stockItems.length) {
+    return p.stockItems
+      .filter(si => !si.isExpired)
+      .reduce((sum, si) => sum + Number(si.quantity || 0), 0);
+  }
+  return Number(p.stockQuantity ?? 0);
 }
 
 export interface Product {
@@ -829,10 +846,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   // placeholders whose clientRef now exists server-side (synced PENDING sale).
   const mergeHeldSales = async (serverSales: Sale[]): Promise<Sale[]> => {
     try {
+      const serverRefs = new Set(serverSales.map(s => s.clientRef).filter(Boolean));
+      const serverIds = new Set(serverSales.map(s => s.id));
+
       const held = ((await getKV('held_sales')) || {}) as Record<string, { sale: Sale; variables: any }>;
       const entries = Object.values(held);
-      if (entries.length === 0) return serverSales;
-      const serverRefs = new Set(serverSales.map(s => s.clientRef).filter(Boolean));
       const remaining: typeof entries = [];
       let changed = false;
       for (const h of entries) {
@@ -842,7 +860,22 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       if (changed) {
         await saveKV('held_sales', Object.fromEntries(remaining.map(h => [h.sale.clientRef!, h])));
       }
-      return [...remaining.map(h => h.sale), ...serverSales];
+
+      // Completed-offline sales that haven't reached the server yet. They must
+      // survive reloads/restarts so cashiers still see them in history.
+      const offline = ((await getKV(OFFLINE_SALES_KEY)) || {}) as Record<string, Sale>;
+      const offlineRemaining: Sale[] = [];
+      let offlineChanged = false;
+      for (const sale of Object.values(offline)) {
+        const ref = sale.clientRef || sale.id;
+        if (serverRefs.has(ref) || serverIds.has(sale.id)) offlineChanged = true;
+        else offlineRemaining.push(sale);
+      }
+      if (offlineChanged) {
+        await saveKV(OFFLINE_SALES_KEY, Object.fromEntries(offlineRemaining.map(s => [s.clientRef || s.id, s])));
+      }
+
+      return [...remaining.map(h => h.sale), ...offlineRemaining, ...serverSales];
     } catch {
       return serverSales;
     }
@@ -1201,6 +1234,24 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [token]);
 
+  // ── Pull-sync: after reconnecting or after queued writes are pushed, re-pull
+  // server data so changes made at other branches arrive without a restart.
+  const refetchAllRef = useRef(refetchAll);
+  useEffect(() => { refetchAllRef.current = refetchAll; }, [refetchAll]);
+  useEffect(() => {
+    if (!token) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = (delay: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { refetchAllRef.current().catch(() => { }); }, delay);
+    };
+    const off = onSyncEvent(e => {
+      if (e.type === 'connection:changed' && e.status === 'online') schedule(2500);
+      else if (e.type === 'sync:complete' && (e.syncedCount ?? 0) > 0) schedule(1500);
+    });
+    return () => { off(); if (timer) clearTimeout(timer); };
+  }, [token]);
+
   // ── Idle-aware refresh: poll only after 15 min of user inactivity ─────────
   // Resets on any mouse, keyboard, touch, or scroll activity.
   // POS has its own manual Sync button — this covers dashboard / sales pages only.
@@ -1326,6 +1377,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       // sync engine's retry sends the same idempotency key the original attempt used.
       newSale = {
         id: clientRef,
+        clientRef,
+        branchId: me?.branchId,
+        cashierId: me?.id,
         totalAmount,
         amountPaid: args.amountPaid,
         change: Math.max(0, args.amountPaid - totalAmount),
@@ -1404,6 +1458,17 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
     // Optimistically update local state
     setSales(prev => [newSale, ...prev]);
+
+    // Persist unsynced sales so offline history survives reloads/restarts
+    if (!isSynced) {
+      try {
+        const offline = ((await getKV(OFFLINE_SALES_KEY)) || {}) as Record<string, Sale>;
+        offline[clientRef] = newSale;
+        await saveKV(OFFLINE_SALES_KEY, offline);
+      } catch (e) {
+        console.warn('[store] Failed to persist offline sale for history:', e);
+      }
+    }
 
     // Decrement product stock locally and record movements
     const newMovements: StockMovement[] = [];
