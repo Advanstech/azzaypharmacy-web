@@ -1114,7 +1114,7 @@ export default function LoginPage() {
                 <div className="flex flex-col items-center">
                   {/* PIN Dots Display */}
                   <div className="flex items-center gap-3 mb-6 h-4">
-                    {[0, 1, 2, 3, 4, 5].map((index) => {
+                    {Array.from({ length: pin.length > 4 ? 6 : 4 }, (_, index) => index).map((index) => {
                       const isFilled = pin.length > index;
                       return (
                         <motion.div

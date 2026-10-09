@@ -36,7 +36,7 @@ The admin must share the initial PIN with the staff member so they can clock in 
 
 ### For Staff
 
-- Staff can log in by selecting their name and entering their **4-6 digit PIN** on the clock-in keypad at `/`.
+- Staff can log in by selecting their name and entering their **4-6 digit PIN** on the clock-in keypad at `/`. The keypad shows four PIN indicators initially and reveals the remaining two only when a fifth digit is entered.
 - On **first login**, the user is forced to change the PIN before entering the dashboard.
 - Staff can also generate a new PIN at any time from **Settings → Security → PIN Code** (`/dashboard/settings`).
 
