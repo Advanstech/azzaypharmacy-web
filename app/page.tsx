@@ -629,7 +629,11 @@ export default function LoginPage() {
 
       // ── Background refresh from API (works online; silent failure offline) ─
       try {
-        const data = await gql<{ loginStaff?: StaffMember[] }>(Q_LOGIN_STAFF);
+        const data = await gql<{ loginStaff?: StaffMember[] }>(
+          Q_LOGIN_STAFF,
+          undefined,
+          { timeout: 7_000, attempts: 1 }
+        );
         if (data?.loginStaff?.length) {
           setStaff(data.loginStaff);
 
@@ -736,14 +740,7 @@ export default function LoginPage() {
     setError(null);
     const newPin = pin + digit;
     setPin(newPin);
-
-    // Auto-verify on 4-digit PIN (or allow 6-digit)
-    if (newPin.length === 4) {
-      setTimeout(() => {
-        submitAuth(newPin);
-      }, 150);
-    }
-  }, [pin, isVerifying, submitAuth]);
+  }, [pin, isVerifying]);
 
   const handlePinBackspace = useCallback(() => {
     if (isVerifying) return;
@@ -766,6 +763,9 @@ export default function LoginPage() {
         handlePinDigit(e.key);
       } else if (e.key === 'Backspace') {
         handlePinBackspace();
+      } else if (e.key === 'Enter' && pin.length >= 4 && pin.length <= 6) {
+        e.preventDefault();
+        submitAuth(pin);
       } else if (e.key === 'Escape') {
         setSelectedStaff(null);
         setPin('');
@@ -775,7 +775,7 @@ export default function LoginPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedStaff, authMode, isVerifying, handlePinDigit, handlePinBackspace]);
+  }, [selectedStaff, authMode, isVerifying, pin, submitAuth, handlePinDigit, handlePinBackspace]);
 
   return (
     <div className="relative w-full h-[100dvh] lg:h-screen overflow-hidden flex flex-col lg:flex-row items-stretch select-none">
@@ -895,7 +895,7 @@ export default function LoginPage() {
               </div>
               <h3 className="text-xl font-bold text-slate-800 dark:text-slate-200">No Profiles Found</h3>
               <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
-                We couldn't load the staff directory. If this is your first time opening the app, please ensure you are connected to the server to download the profiles.
+                No staff profiles are stored on this device yet. Connect to the server once and sign in so profiles and offline credentials can be saved; after setup, staff can sign in without internet.
               </p>
               <button
                 onClick={() => fetchStaff()}
@@ -1114,7 +1114,7 @@ export default function LoginPage() {
                 <div className="flex flex-col items-center">
                   {/* PIN Dots Display */}
                   <div className="flex items-center gap-3 mb-6 h-4">
-                    {[0, 1, 2, 3].map((index) => {
+                    {[0, 1, 2, 3, 4, 5].map((index) => {
                       const isFilled = pin.length > index;
                       return (
                         <motion.div
@@ -1219,6 +1219,29 @@ export default function LoginPage() {
                       <Delete className="w-5 h-5" />
                     </button>
                   </div>
+
+                  <button
+                    type="button"
+                    disabled={isVerifying || pin.length < 4 || pin.length > 6}
+                    onClick={() => submitAuth(pin)}
+                    className="w-full py-3.5 mb-4 rounded-2xl font-bold text-sm text-white transition-all shadow-lg flex items-center justify-center gap-2 disabled:cursor-not-allowed"
+                    style={{
+                      background: 'linear-gradient(135deg, #059669 0%, #10B981 100%)',
+                      opacity: isVerifying || pin.length < 4 || pin.length > 6 ? 0.7 : 1,
+                    }}
+                  >
+                    {isVerifying ? (
+                      <span className="flex items-center gap-2">
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Authenticating...
+                      </span>
+                    ) : (
+                      <>
+                        Clock In
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
 
                   {/* Alternative: Password Switch */}
                   <button

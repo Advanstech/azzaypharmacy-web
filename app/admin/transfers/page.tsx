@@ -12,10 +12,11 @@ import {
 } from 'lucide-react';
 import { useStore, type StockTransfer, type Product, type Supplier } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
-import { gql } from '@/lib/gql';
+import { gql, Q_BRANCHES } from '@/lib/gql';
 import {
-  M_INITIATE_TRANSFER, M_APPROVE_TRANSFER, M_REJECT_TRANSFER, M_DELETE_TRANSFER, Q_BRANCHES,
+  M_APPROVE_TRANSFER, M_REJECT_TRANSFER, M_DELETE_TRANSFER,
 } from '@/lib/gql';
+import { onSyncEvent, retryQueuedOperation } from '@/lib/tauri-sync';
 
 // ─── Print/Share Invoice ──────────────────────────────────────────────────────
 function printTransferInvoice(transfer: StockTransfer) {
@@ -117,18 +118,21 @@ function useColors(isDark: boolean) {
 
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, localSyncStatus }: { status: string; localSyncStatus?: 'QUEUED' | 'FAILED' }) {
   const colors: Record<string, { bg: string; color: string }> = {
     PENDING:  { bg: '#F59E0B20', color: '#F59E0B' },
     APPROVED: { bg: '#10B98120', color: '#10B981' },
     REJECTED: { bg: '#EF444420', color: '#EF4444' },
     RECEIVED: { bg: '#3B82F620', color: '#3B82F6' },
+    QUEUED: { bg: '#0EA5E920', color: '#0EA5E9' },
+    FAILED: { bg: '#EF444420', color: '#EF4444' },
   };
-  const s = colors[status] || colors.PENDING;
+  const shownStatus = localSyncStatus || status;
+  const s = colors[shownStatus] || colors.PENDING;
   return (
     <span className="px-2 py-0.5 rounded text-[10px] font-black tracking-widest uppercase"
       style={{ background: s.bg, color: s.color }}>
-      {status}
+      {shownStatus === 'QUEUED' ? 'OFFLINE QUEUED' : shownStatus === 'FAILED' ? 'SYNC FAILED' : status}
     </span>
   );
 }
@@ -160,7 +164,7 @@ export default function StockTransferPage() {
   const {
     stockTransfers, loadingTransfers, refetchTransfers,
     products, me, refetchProducts, refetchLedger, refetchPurchases, refetchInvoices,
-    createProduct,
+    createProduct, createStockTransfer,
   } = useStore();
   const { activeBranchId } = useBranch();
 
@@ -189,6 +193,14 @@ export default function StockTransferPage() {
   useEffect(() => {
     refetchTransfers(activeBranchId, dateFrom, dateTo);
   }, [activeBranchId, dateFrom, dateTo, refetchTransfers]);
+
+  useEffect(() => onSyncEvent(event => {
+    if (event.type === 'sync:complete' && ((event.syncedCount ?? 0) > 0 || (event.failedCount ?? 0) > 0)) {
+      refetchTransfers(activeBranchId, dateFrom, dateTo);
+      if ((event.syncedCount ?? 0) > 0) refetchProducts(activeBranchId || undefined);
+    }
+  }), [activeBranchId, dateFrom, dateTo, refetchProducts, refetchTransfers]);
+
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -312,18 +324,23 @@ export default function StockTransferPage() {
     }
     setIsSubmitting(true);
     try {
-      await gql(M_INITIATE_TRANSFER, {
-        sourceBranchId,
-        destBranchId,
-        notes: notes || undefined,
-        items: lineItems.map(l => ({
-          productId: l.product.id,
-          quantity: l.quantity,
-          transferPrice: l.transferPrice,
-        })),
+      const sourceBranch = branches.find(branch => branch.id === sourceBranchId);
+      const destBranch = branches.find(branch => branch.id === destBranchId);
+      if (!sourceBranch || !destBranch) throw new Error('Branch details are unavailable offline. Reconnect and refresh branches.');
+
+      const transfer = await createStockTransfer({
+        sourceBranch,
+        destBranch,
+        notes,
+        items: lineItems,
       });
       await refetchTransfers(activeBranchId, dateFrom, dateTo);
       setTimeout(() => refetchProducts(activeBranchId || undefined), 400);
+      if (transfer.localSyncStatus === 'QUEUED') {
+        setSuccessMsg('Transfer saved offline. It will sync when the connection returns; approval is available after sync.');
+      } else {
+        setSuccessMsg('Transfer initiated successfully.');
+      }
       setShowCreate(false);
       setLineItems([]);
       setNotes('');
@@ -346,6 +363,15 @@ export default function StockTransferPage() {
   const [confirmApproveId, setConfirmApproveId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const retryTransferSync = async (transferId: string) => {
+    try {
+      await retryQueuedOperation(transferId);
+      await refetchTransfers(activeBranchId, dateFrom, dateTo);
+    } catch (error: any) {
+      setErrorMsg(error?.message || 'Could not retry transfer sync.');
+    }
+  };
 
   // Auto-dismiss banners
   useEffect(() => {
@@ -627,7 +653,9 @@ export default function StockTransferPage() {
                         {new Date(t.transferDate || t.createdAt).toLocaleDateString('en-GB')}
                       </span>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
+                    <td className="px-4 py-3" title={t.localSyncError}>
+                      <StatusBadge status={t.status} localSyncStatus={t.localSyncStatus} />
+                    </td>
                     <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1.5">
                         <button onClick={() => setDetailItem(t)}
@@ -636,7 +664,15 @@ export default function StockTransferPage() {
                           title="View details">
                           <Eye size={13} />
                         </button>
-                        {canApprove && t.status === 'PENDING' && (
+                        {t.localSyncStatus === 'FAILED' && (
+                          <button onClick={() => retryTransferSync(t.id)}
+                            className="p-1.5 rounded-lg transition-all"
+                            style={{ background: `${c.warning}20`, color: c.warning }}
+                            title="Retry transfer sync">
+                            <RefreshCw size={13} />
+                          </button>
+                        )}
+                        {canApprove && !t.localSyncStatus && t.status === 'PENDING' && (
                           <>
                             <button onClick={() => setConfirmApproveId(t.id)}
                               className="p-1.5 rounded-lg transition-all min-h-[36px] min-w-[36px] flex items-center justify-center"
@@ -652,7 +688,7 @@ export default function StockTransferPage() {
                             </button>
                           </>
                         )}
-                        {canApprove && (t.status === 'PENDING' || t.status === 'REJECTED') && (
+                        {canApprove && !t.localSyncStatus && (t.status === 'PENDING' || t.status === 'REJECTED') && (
                           <button onClick={() => setDeleteConfirmId(t.id)}
                             className="p-1.5 rounded-lg transition-all"
                             style={{ background: `${c.danger}15`, color: c.danger }}
@@ -827,7 +863,7 @@ export default function StockTransferPage() {
                     {new Date(detailItem.createdAt).toLocaleString('en-GB')}
                   </p>
                 </div>
-                <StatusBadge status={detailItem.status} />
+                <StatusBadge status={detailItem.status} localSyncStatus={detailItem.localSyncStatus} />
               </div>
               <button onClick={() => setDetailItem(null)}
                 className="p-2 rounded-xl" style={{ background: c.inputBg }}>
@@ -864,6 +900,14 @@ export default function StockTransferPage() {
                 <DR label="Invoice Value (Transfer Price)" value={`GH₵ ${Number(detailItem.transferPrice).toFixed(2)}`} c={c} icon={<Receipt size={11} />} />
                 {detailItem.invoiceId && <DR label="Invoice ID" value={detailItem.invoiceId} c={c} icon={<FileText size={11} />} />}
                 {detailItem.notes && <DR label="Notes" value={detailItem.notes} c={c} icon={<Hash size={11} />} />}
+                {detailItem.localSyncError && <DR label="Sync Error" value={detailItem.localSyncError} c={c} icon={<AlertTriangle size={11} />} />}
+                {detailItem.localSyncStatus === 'FAILED' && (
+                  <button onClick={() => retryTransferSync(detailItem.id)}
+                    className="w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 text-sm"
+                    style={{ background: `${c.warning}20`, color: c.warning }}>
+                    <RefreshCw size={14} /> Retry Sync
+                  </button>
+                )}
                 {detailItem.initiatedBy && <DR label="Initiated By" value={`${detailItem.initiatedBy.name} (${detailItem.initiatedBy.role || '—'})`} c={c} icon={<ShieldCheck size={11} />} />}
                 {detailItem.approvedBy && <DR label="Authorized By" value={`${detailItem.approvedBy.name} (${detailItem.approvedBy.role || '—'})`} c={c} icon={<ShieldCheck size={11} />} />}
               </div>
@@ -920,7 +964,7 @@ export default function StockTransferPage() {
               )}
 
               {/* Actions */}
-              {canApprove && detailItem.status === 'PENDING' && (
+              {canApprove && !detailItem.localSyncStatus && detailItem.status === 'PENDING' && (
                 <div className="flex gap-3">
                   <button onClick={() => setConfirmApproveId(detailItem.id)}
                     className="flex-1 py-3.5 rounded-xl font-bold text-white flex items-center justify-center gap-2 min-h-[52px] active:scale-95 transition-all shadow-lg"
@@ -934,7 +978,7 @@ export default function StockTransferPage() {
                   </button>
                 </div>
               )}
-              {canApprove && (detailItem.status === 'PENDING' || detailItem.status === 'REJECTED') && (
+              {canApprove && !detailItem.localSyncStatus && (detailItem.status === 'PENDING' || detailItem.status === 'REJECTED') && (
                 <button onClick={() => setDeleteConfirmId(detailItem.id)}
                   className="w-full py-2.5 rounded-xl font-bold flex items-center justify-center gap-2 text-sm border"
                   style={{ borderColor: `${c.danger}40`, color: c.danger, background: `${c.danger}08` }}>

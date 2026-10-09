@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import { gql, setAuthToken, M_RECORD_STAFF_LOGOUT } from '@/lib/gql';
+import { getConnectivity } from '@/lib/connectivity';
 import { isTauri, nativeGetLocalCache, nativeSetLocalCache } from '@/lib/tauri-native';
 
 interface CustomAuthContextType {
@@ -254,12 +255,16 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signIn = async (email: string, password: string) => {
+    if (getConnectivity() === 'OFFLINE') {
+      return attemptOfflineLogin(email, password, 'password');
+    }
     try {
       const result = await gql<{ customLogin: string }>(
         `mutation CustomLogin($email: String!, $password: String!) {
           customLogin(email: $email, password: $password)
         }`,
-        { email, password }
+        { email, password },
+        { timeout: 7_000, attempts: 1 }
       );
       
       if (result.customLogin) {
@@ -281,12 +286,16 @@ export function CustomAuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signInWithPin = async (email: string, pin: string) => {
+    if (getConnectivity() === 'OFFLINE') {
+      return attemptOfflineLogin(email, pin, 'PIN');
+    }
     try {
       const result = await gql<{ loginWithPin: string }>(
         `mutation LoginWithPin($email: String!, $pin: String!) {
           loginWithPin(email: $email, pin: $pin)
         }`,
-        { email, pin }
+        { email, pin },
+        { timeout: 7_000, attempts: 1 }
       );
       
       if (result.loginWithPin) {

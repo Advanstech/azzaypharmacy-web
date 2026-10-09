@@ -21,10 +21,10 @@ import {
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
   M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_CREATE_EXPENSE,
   M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND,
-  Q_STOCK_TRANSFERS
+  Q_STOCK_TRANSFERS, M_INITIATE_TRANSFER
 } from './gql';
 import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, getPendingSales, deletePendingSale } from './offline';
-import { initTauriSync, manualSync, onSyncEvent } from './tauri-sync';
+import { enqueueOfflineOp, initTauriSync, isNetworkishError, manualSync, onSyncEvent } from './tauri-sync';
 import { getConnectivity, isApiReachable } from './connectivity';
 import { isTauri, nativeEnqueueSale, nativeSetSyncAuth, nativeListQueue, nativeRemoveFromQueue } from './tauri-native';
 
@@ -418,6 +418,8 @@ export interface StockTransfer {
   items: StockTransferItem[];
   createdAt: string;
   updatedAt: string;
+  localSyncStatus?: 'QUEUED' | 'FAILED';
+  localSyncError?: string;
 }
 
 export interface StockMovement {
@@ -508,6 +510,12 @@ interface StoreState {
   refetchLedger: (branchId?: string | null) => Promise<void>;
   refetchExpenseCategories: () => Promise<void>;
   refetchTransfers: (branchId?: string | null, dateFrom?: string, dateTo?: string) => Promise<void>;
+  createStockTransfer: (args: {
+    sourceBranch: { id: string; name: string };
+    destBranch: { id: string; name: string };
+    items: Array<{ product: Product; quantity: number; transferPrice: number }>;
+    notes?: string;
+  }) => Promise<StockTransfer>;
   refetchFinancialSummary: (branchId?: string, startDate?: string, endDate?: string) => Promise<void>;
   refetchBudgets: (branchId?: string) => Promise<void>;
   refetchBudgetVsActual: (branchId?: string, startDate?: string, endDate?: string) => Promise<void>;
@@ -707,6 +715,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   // Monotonic counter guarding refetchSales against out-of-order resolution
   // (see refetchSales below for details).
   const salesRequestIdRef = useRef(0);
+  const transferRequestIdRef = useRef(0);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [me, setMe] = useState<StaffMember | null>(null);
@@ -746,20 +755,138 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   // ── Fetchers ──────────────────────────────────────────────────────────────
 
   const refetchTransfers = useCallback(async (branchId?: string | null, dateFrom?: string, dateTo?: string) => {
+    const requestId = ++transferRequestIdRef.current;
     setLoadingTransfers(true);
+    const matchesScope = (transfer: StockTransfer) => {
+      if (branchId && transfer.sourceBranch?.id !== branchId && transfer.destBranch?.id !== branchId) return false;
+      const date = new Date(transfer.transferDate || transfer.createdAt);
+      if (dateFrom && date < new Date(`${dateFrom}T00:00:00`)) return false;
+      if (dateTo && date > new Date(`${dateTo}T23:59:59`)) return false;
+      return true;
+    };
     try {
+      let localTransfers = ((await getKV('offline_transfers')) || []) as StockTransfer[];
+      if (isTauri()) {
+        try {
+          const deadOps = await nativeListQueue('dead');
+          const deadById = new Map(deadOps.map(operation => [operation.id, operation.last_error]));
+          localTransfers = localTransfers.map(transfer => {
+            const error = deadById.get(transfer.id);
+            return error
+              ? { ...transfer, localSyncStatus: 'FAILED', localSyncError: error }
+              : transfer;
+          });
+          await saveKV('offline_transfers', localTransfers);
+        } catch (error) {
+          console.warn('[store] Failed to inspect native transfer queue:', error);
+        }
+      }
+      const scopedLocal = localTransfers.filter(matchesScope);
+      if (requestId === transferRequestIdRef.current) setStockTransfers(scopedLocal);
+
       const data = await gql<{ stockTransfers: StockTransfer[] }>(Q_STOCK_TRANSFERS, {
         branchId: branchId ?? undefined,
         dateFrom: dateFrom || undefined,
         dateTo: dateTo || undefined,
       });
-      setStockTransfers(data.stockTransfers ?? []);
+      const serverTransfers = data.stockTransfers ?? [];
+      const serverIds = new Set(serverTransfers.map(transfer => transfer.id));
+      const confirmedLocalIds = new Set(
+        localTransfers.filter(transfer => serverIds.has(transfer.id)).map(transfer => transfer.id),
+      );
+      if (confirmedLocalIds.size) {
+        await saveKV('offline_transfers', localTransfers.filter(transfer => !confirmedLocalIds.has(transfer.id)));
+      }
+      if (requestId === transferRequestIdRef.current) {
+        setStockTransfers([
+          ...scopedLocal.filter(transfer => !serverIds.has(transfer.id)),
+          ...serverTransfers,
+        ]);
+      }
     } catch (e: any) {
       console.warn('[store] stockTransfers fetch failed:', e.message);
     } finally {
-      setLoadingTransfers(false);
+      if (requestId === transferRequestIdRef.current) setLoadingTransfers(false);
     }
   }, []);
+
+  const createStockTransfer = useCallback(async (args: {
+    sourceBranch: { id: string; name: string };
+    destBranch: { id: string; name: string };
+    items: Array<{ product: Product; quantity: number; transferPrice: number }>;
+    notes?: string;
+  }): Promise<StockTransfer> => {
+    const clientRef = crypto.randomUUID();
+    const variables = {
+      clientRef,
+      sourceBranchId: args.sourceBranch.id,
+      destBranchId: args.destBranch.id,
+      notes: args.notes || undefined,
+      items: args.items.map(item => ({
+        productId: item.product.id,
+        quantity: item.quantity,
+        transferPrice: item.transferPrice,
+      })),
+    };
+
+    const queueLocally = async (): Promise<StockTransfer> => {
+      const createdAt = new Date().toISOString();
+      const transfer: StockTransfer = {
+        id: clientRef,
+        transferNo: `OFFLINE-${clientRef.slice(0, 8).toUpperCase()}`,
+        status: 'PENDING',
+        localSyncStatus: 'QUEUED',
+        notes: args.notes,
+        transferDate: createdAt,
+        createdAt,
+        updatedAt: createdAt,
+        totalCost: args.items.reduce((sum, item) => sum + item.product.costPrice * item.quantity, 0),
+        transferPrice: args.items.reduce((sum, item) => sum + item.transferPrice * item.quantity, 0),
+        sourceBranch: args.sourceBranch,
+        destBranch: args.destBranch,
+        initiatedBy: me ? { id: me.id, name: me.name, role: me.role } : undefined,
+        items: args.items.map((item, index) => ({
+          id: `${clientRef}-${index}`,
+          quantity: item.quantity,
+          costPrice: item.product.costPrice,
+          transferPrice: item.transferPrice,
+          total: item.quantity * item.transferPrice,
+          product: item.product,
+        })),
+      };
+
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_INITIATE_TRANSFER,
+        variables,
+        kind: 'transfer-create',
+        flat: {
+          total: transfer.transferPrice,
+          payment_method: 'TRANSFER',
+          cashier_name: me?.name || 'Unknown',
+          cashier_id: me?.id,
+          branch_name: args.sourceBranch.name,
+          branch_id: args.sourceBranch.id,
+        },
+      });
+
+      const stored = ((await getKV('offline_transfers')) || []) as StockTransfer[];
+      await saveKV('offline_transfers', [...stored.filter(entry => entry.id !== clientRef), transfer]);
+      setStockTransfers(current => [transfer, ...current.filter(entry => entry.id !== clientRef)]);
+      if (isApiReachable()) manualSync().catch(err => console.warn('[store] Transfer sync failed:', err));
+      return transfer;
+    };
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return queueLocally();
+
+    try {
+      const result = await gql<{ initiateTransfer: StockTransfer }>(M_INITIATE_TRANSFER, variables, { timeout: 8000 });
+      return result.initiateTransfer;
+    } catch (error) {
+      if (!isNetworkishError(error)) throw error;
+      return queueLocally();
+    }
+  }, [me]);
 
   const refetchProducts = useCallback(async (branchId?: string) => {
     setLoadingProducts(true);
@@ -2338,7 +2465,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       lowStockProducts, todaySales, todayRevenue, todayTransactions,
       stockMovements,
       refetchProducts, refetchProductsPOS, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers,
-      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchTransfers, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
+      refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchTransfers, createStockTransfer, refetchFinancialSummary, refetchBudgets, refetchBudgetVsActual, refetchAll,
       createSale, createPendingSale, completePendingSale, cancelPendingSale, closeTerminal, inviteStaff, createStaffAccount, updateStaffProfile, updateDutyStatus, deleteStaff: deleteStaffFn, generateTempPassword,
       updateProductPrices, bulkUpdateProductPrices, updateProductFull,
       updateProductSupplier,

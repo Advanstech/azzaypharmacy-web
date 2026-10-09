@@ -165,7 +165,7 @@ export interface PendingSale {
    * mutation+variables instead of mapping the flat sale fields to createSale.
    * Used for held/pending sales and future non-sale offline ops.
    */
-  op?: { mutation: string; variables: Record<string, any> };
+  op?: { mutation: string; variables: Record<string, any>; kind?: string };
 }
 
 export async function savePendingSale(sale: PendingSale): Promise<void> {

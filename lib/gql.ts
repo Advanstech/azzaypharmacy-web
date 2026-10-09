@@ -3,10 +3,21 @@
  * Authenticated requests using custom JWT
  */
 
+import { getKV, saveKV } from './offline';
+import { shouldQueueOfflineMutation } from './offline-ops';
+import { getConnectivity } from './connectivity';
+
 const DEFAULT_REMOTE_API = 'https://azzaypharmacy-api-production.up.railway.app/graphql';
 const DEFAULT_LOCAL_API = 'http://localhost:4000/graphql';
 const RAW_API = process.env.NEXT_PUBLIC_API_URL || DEFAULT_REMOTE_API;
 const API = RAW_API;
+const API_DIAGNOSTIC_TIMEOUT_MS = 3_000;
+
+interface GqlOptions {
+  timeout?: number;
+  retryWithoutClientRef?: boolean;
+  attempts?: number;
+}
 
 function buildApiCandidates(apiUrl: string): string[] {
   const candidates: string[] = [];
@@ -55,7 +66,10 @@ async function diagnoseApiReachability(apiUrl: string): Promise<string> {
   if (!rootUrl) return 'invalid API URL';
 
   try {
-    const res = await fetch(rootUrl, { method: 'GET' });
+    const res = await fetch(rootUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(API_DIAGNOSTIC_TIMEOUT_MS),
+    });
     return `API root reachable (${res.status}) but GraphQL request failed`;
   } catch {
     return `API root unreachable (${rootUrl})`;
@@ -105,10 +119,69 @@ function resolveAuthToken(): string | null {
 // Mutations are NEVER deduped: two identical mutations are intentional.
 const inflightQueries = new Map<string, Promise<unknown>>();
 
+function hashCacheScope(value: string): string {
+  let first = 2166136261;
+  let second = 2246822519;
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    first = Math.imul(first ^ code, 16777619);
+    second = Math.imul(second ^ code, 3266489917);
+  }
+  return `${(first >>> 0).toString(16)}${(second >>> 0).toString(16)}`;
+}
+
+function getAuthCacheScope(token: string): string {
+  const payload = token.split('.')[1];
+  if (payload && typeof atob === 'function') {
+    try {
+      const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+      const claims: unknown = JSON.parse(atob(base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')));
+      if (claims && typeof claims === 'object' && 'sub' in claims && typeof claims.sub === 'string' && claims.sub) {
+        return claims.sub;
+      }
+    } catch {
+      // Non-JWT or non-ASCII tokens fall back to a token-specific cache scope.
+    }
+  }
+  return token;
+}
+
+function getQueryCacheKey(query: string, variables: Record<string, unknown> | undefined): string | null {
+  const token = resolveAuthToken();
+  if (!token) return null;
+  // Keep the branch and filter variables in the key so offline branch switches
+  // read the last snapshot for that exact query rather than another branch's data.
+  return `gql-query:v1:${hashCacheScope(getAuthCacheScope(token))}:${query.trim()}:${JSON.stringify(variables ?? {})}`;
+}
+
+async function executeQueryWithOfflineCache<T>(
+  query: string,
+  variables?: Record<string, unknown>,
+  options?: GqlOptions
+): Promise<T> {
+  const cacheKey = getQueryCacheKey(query, variables);
+  if (cacheKey && getConnectivity() === 'OFFLINE') {
+    const cached = await getKV(cacheKey);
+    if (cached !== undefined) return cached as T;
+  }
+
+  try {
+    const data = await executeGql<T>(query, variables, options);
+    if (cacheKey) await saveKV(cacheKey, data);
+    return data;
+  } catch (error) {
+    if (cacheKey && shouldQueueOfflineMutation(error)) {
+      const cached = await getKV(cacheKey);
+      if (cached !== undefined) return cached as T;
+    }
+    throw error;
+  }
+}
+
 export function gql<T = unknown>(
   query: string,
   variables?: Record<string, unknown>,
-  options?: { timeout?: number }
+  options?: GqlOptions
 ): Promise<T> {
   if (!/^\s*query\b/.test(query)) {
     return executeGql<T>(query, variables, options);
@@ -116,7 +189,7 @@ export function gql<T = unknown>(
   const key = `${resolveAuthToken() ?? ''}|${query}|${JSON.stringify(variables ?? {})}`;
   const existing = inflightQueries.get(key);
   if (existing) return existing as Promise<T>;
-  const p = executeGql<T>(query, variables, options).finally(() => {
+  const p = executeQueryWithOfflineCache<T>(query, variables, options).finally(() => {
     if (inflightQueries.get(key) === p) inflightQueries.delete(key);
   });
   inflightQueries.set(key, p);
@@ -151,7 +224,7 @@ function stripClientRef(
 async function executeGql<T = unknown>(
   query: string,
   variables?: Record<string, unknown>,
-  options?: { timeout?: number }
+  options?: GqlOptions
 ): Promise<T> {
   const queryName = query.match(/(query|mutation) (\w+)/)?.[2] || 'Unknown';
   const token = resolveAuthToken();
@@ -182,7 +255,8 @@ async function executeGql<T = unknown>(
     for (const candidate of candidatesToTry) {
       // Retry each candidate up to 2 times — handles brief API restarts
       // and transient network blips without flooding the console with errors.
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      const maxAttempts = options?.attempts ?? 2;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           const response = await fetch(candidate, {
             method: 'POST',
@@ -196,7 +270,7 @@ async function executeGql<T = unknown>(
           syncNativeAuth();
           break;
         } catch (err: any) {
-          const isLastAttempt = attempt === 2;
+          const isLastAttempt = attempt === maxAttempts;
           if (isLastAttempt) {
             console.warn(`[gql] [${queryName}] Attempt on ${candidate} failed: ${err?.message || err}`);
           } else {
@@ -246,7 +320,7 @@ async function executeGql<T = unknown>(
 
     if (!res.ok) {
       const text = await res.text();
-      if (isClientRefUnsupported(text)) {
+      if (options?.retryWithoutClientRef !== false && isClientRefUnsupported(text)) {
         console.warn(`[gql] [${queryName}] API lacks clientRef — retrying without it`);
         const s = stripClientRef(query, variables);
         return executeGql<T>(s.query, s.variables, options);
@@ -258,7 +332,7 @@ async function executeGql<T = unknown>(
     const json = await res.json();
     if (json.errors?.length) {
       const errText = json.errors.map((e: any) => e.message).join(' ');
-      if (isClientRefUnsupported(errText)) {
+      if (options?.retryWithoutClientRef !== false && isClientRefUnsupported(errText)) {
         console.warn(`[gql] [${queryName}] API lacks clientRef — retrying without it`);
         const s = stripClientRef(query, variables);
         return executeGql<T>(s.query, s.variables, options);
@@ -1403,9 +1477,10 @@ export const M_INITIATE_TRANSFER = `
     $sourceBranchId: String!
     $destBranchId: String!
     $items: [TransferItemInput!]!
-    $notes: String
+    $notes: String,
+    $clientRef: String
   ) {
-    initiateTransfer(sourceBranchId: $sourceBranchId, destBranchId: $destBranchId, items: $items, notes: $notes) {
+    initiateTransfer(sourceBranchId: $sourceBranchId, destBranchId: $destBranchId, items: $items, notes: $notes, clientRef: $clientRef) {
       id transferNo status totalCost transferPrice createdAt
       sourceBranch { id name }
       destBranch   { id name }
@@ -1440,4 +1515,3 @@ export const M_DELETE_TRANSFER = `
     deleteTransfer(transferId: $transferId)
   }
 `;
-

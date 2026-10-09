@@ -19,6 +19,8 @@ import {
   getPendingSales, 
   deletePendingSale, 
   savePendingSale, 
+  getKV,
+  saveKV,
   getPendingInventoryDeltas,
   markInventoryDeltaSynced,
   recordInventoryDeltaError,
@@ -63,6 +65,21 @@ let started = false;
 
 const FLUSH_INTERVAL_MS = 60_000;
 const MAX_RETRIES = 10;
+const OFFLINE_TRANSFERS_KEY = 'offline_transfers';
+
+async function updateOfflineTransfer(clientRef: string, error?: string, queued = false) {
+  const transfers = (await getKV(OFFLINE_TRANSFERS_KEY) ?? []) as Array<Record<string, any>>;
+  const updated = error
+    ? transfers.map(transfer => transfer.id === clientRef
+    ? { ...transfer, localSyncStatus: 'FAILED', localSyncError: error }
+    : transfer)
+    : queued
+    ? transfers.map(transfer => transfer.id === clientRef
+      ? { ...transfer, localSyncStatus: 'QUEUED', localSyncError: undefined }
+      : transfer)
+    : transfers.filter(transfer => transfer.id !== clientRef);
+  await saveKV(OFFLINE_TRANSFERS_KEY, updated);
+}
 
 const M_SYNC_SALE = `
   mutation SyncSale(
@@ -199,6 +216,7 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
     });
 
     for (const sale of pendingSales) {
+      if (sale.op && Number((sale as any)._retryCount || 0) >= MAX_RETRIES) continue;
       // Re-check reachability mid-loop — bail early if we went offline
       if (!isApiReachable()) break;
 
@@ -206,9 +224,14 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
         // Generic queued ops (held sales, future non-sale writes) carry their
         // own mutation+variables; regular sales map flat fields → createSale.
         if (sale.op) {
-          const result = await gql<any>(sale.op.mutation, sale.op.variables);
+          const result = await gql<any>(
+            sale.op.mutation,
+            sale.op.variables,
+            sale.op.kind === 'transfer-create' ? { retryWithoutClientRef: false } : undefined,
+          );
           if (result && Object.keys(result).length > 0) {
             await deletePendingSale(sale.id);
+            if (sale.op.kind === 'transfer-create') await updateOfflineTransfer(sale.id);
             syncedCount++;
             console.log(`[sync] ✅ Synced queued op ${sale.id}`);
           } else {
@@ -259,10 +282,23 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
           errorHandler.handleConflictError(sale.id, err);
         }
 
-        const isPermanent = /not found|invalid|validation|unauthorized|forbidden|duplicate/i.test(errorMsg) && !isConflict;
+        const isPermanent =
+          /not found|invalid|validation|unauthorized|forbidden|duplicate|insufficient|must be different|unknown argument|cannot query field/i.test(errorMsg) &&
+          !isConflict;
         if (retryCount >= MAX_RETRIES && isPermanent) {
-          console.warn(`[sync] ⚠️ Retiring sale ${sale.id} after ${retryCount} permanent failures`);
-          await deletePendingSale(sale.id);
+          console.warn(`[sync] ⚠️ Pausing queued operation ${sale.id} after ${retryCount} permanent failures`);
+          if (sale.op) {
+            if (sale.op.kind === 'transfer-create') await updateOfflineTransfer(sale.id, errorMsg);
+            await savePendingSale({
+              ...sale,
+              _retryCount: retryCount,
+              _lastError: errorMsg,
+              _lastRetry: Date.now(),
+            } as any);
+          } else {
+            console.warn(`[sync] ⚠️ Retiring permanently invalid sale ${sale.id}`);
+            await deletePendingSale(sale.id);
+          }
         } else {
           await savePendingSale({
             ...sale,
@@ -389,6 +425,7 @@ export async function enqueueOfflineOp(args: {
   clientRef: string;
   mutation: string;
   variables: Record<string, any>;
+  kind?: string;
   flat?: Partial<PendingSale>;
 }): Promise<void> {
   if (isTauri()) {
@@ -407,7 +444,7 @@ export async function enqueueOfflineOp(args: {
     branch_id: args.flat?.branch_id,
     customerName: args.flat?.customerName,
     timestamp: Date.now(),
-    op: { mutation: args.mutation, variables: args.variables },
+    op: { mutation: args.mutation, variables: args.variables, kind: args.kind },
   });
 }
 
@@ -428,6 +465,20 @@ export async function retryDeadQueue(): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+export async function retryQueuedOperation(id: string): Promise<void> {
+  if (isTauri()) {
+    await nativeRetryQueuedSale(id);
+    await updateOfflineTransfer(id, undefined, true);
+    await nativeSyncNow();
+    return;
+  }
+  const queued = (await getPendingSales()).find(sale => sale.id === id);
+  if (!queued) throw new Error(`Queued operation ${id} was not found`);
+  await savePendingSale({ ...queued, _retryCount: 0, _lastError: undefined } as any);
+  if (queued.op?.kind === 'transfer-create') await updateOfflineTransfer(id, undefined, true);
+  await manualSync();
 }
 
 export async function manualSync() {
