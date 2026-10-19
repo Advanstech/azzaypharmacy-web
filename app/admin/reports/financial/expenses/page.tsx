@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import {
@@ -28,7 +28,8 @@ export default function ExpenseReportPage() {
   const searchParams = useSearchParams();
   const { expenses: allExpenses, refetchExpenses } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const expenses = useMemo(() => activeBranchId ? allExpenses.filter(e => e.branchId === activeBranchId) : allExpenses, [allExpenses, activeBranchId]);
+  const filterByBranch = useBranchFilter();
+  const expenses = useMemo(() => filterByBranch(allExpenses), [allExpenses, filterByBranch]);
 
   useEffect(() => {
     if (allExpenses.length === 0) refetchExpenses();

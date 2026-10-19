@@ -13,11 +13,13 @@ import {
   Pause, Inbox
 } from 'lucide-react';
 import { useStore, getSellableStock } from '@/lib/store';
+import { useBranch } from '@/lib/branch-context';
 import { manualSync } from '@/lib/tauri-sync';
 import { tryThermalPrint } from '@/lib/print';
 import { isTauri } from '@/lib/tauri-native';
 import { PrinterSettings } from '@/components/printer-settings';
 import { SyncStatusPill } from '@/components/sync-status-pill';
+import { BranchSwitcher } from '@/components/BranchSwitcher';
 
 import { gql, Q_SEARCH_PRODUCTS, M_ASK_NEXUS_AI, Q_SALES } from '@/lib/gql';
 import { TopResultPill } from '@/components/TopResultPill';
@@ -98,6 +100,9 @@ function POSInner() {
     refetchProductsPOS,
     refetchAll
   } = useStore();
+  const { activeBranchId, activeBranchName, canSwitchBranch } = useBranch();
+  const posBranchId = canSwitchBranch ? activeBranchId : me?.branchId ?? null;
+  const branchRequired = canSwitchBranch && !activeBranchId;
   // POS uses the lean fetch (no stockItems payload); fall back to full if lean unavailable
   const refetchProducts = refetchProductsPOS || refetchProductsFull;
   const { addToast } = useToast();
@@ -105,8 +110,11 @@ function POSInner() {
   const liveProducts = useMemo(() => {
     // Backend already filters products by branchId for non-global roles (PHARMACIST, CASHIER, etc.)
     // No need for additional frontend filtering - use storeProducts as-is
-    return storeProducts;
-  }, [storeProducts]);
+    if (!posBranchId) return storeProducts;
+    return storeProducts.map(product => product.stockItems?.length
+      ? { ...product, stockItems: product.stockItems.filter(item => item.branchId === posBranchId) }
+      : product);
+  }, [storeProducts, posBranchId]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme ?? theme) === 'dark';
@@ -116,6 +124,9 @@ function POSInner() {
   const [cart, setCart] = useState<CartItem[]>(() => {
     if (typeof window !== 'undefined') {
       try {
+        const savedBranch = localStorage.getItem('pos_cart_branch');
+        const currentBranch = canSwitchBranch ? activeBranchId ?? '' : me?.branchId ?? '';
+        if (savedBranch && savedBranch !== currentBranch) return [];
         const saved = localStorage.getItem('pos_cart');
         if (saved) return JSON.parse(saved);
       } catch(e) {}
@@ -127,8 +138,9 @@ function POSInner() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('pos_cart', JSON.stringify(cart));
+      localStorage.setItem('pos_cart_branch', posBranchId ?? '');
     }
-  }, [cart]);
+  }, [cart, posBranchId]);
 
   const [activeCategory, setActiveCategory] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
@@ -157,6 +169,23 @@ function POSInner() {
   const [showPendingPanel, setShowPendingPanel] = useState(false);
   const [resumedPendingId, setResumedPendingId] = useState<string | null>(null);
   const categoryScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (canSwitchBranch) {
+      refetchProducts(activeBranchId).catch(error => console.warn('[POS] Branch product refresh failed:', error));
+    }
+  }, [activeBranchId, canSwitchBranch, refetchProducts]);
+
+  const previousBranchIdRef = useRef(posBranchId);
+  useEffect(() => {
+    if (previousBranchIdRef.current !== posBranchId) {
+      setCart([]);
+      setSelectedCustomer(null);
+      setResumedPendingId(null);
+      setTendered('');
+      previousBranchIdRef.current = posBranchId;
+    }
+  }, [posBranchId]);
 
   // Thermal Receipt Print Function — silent ESC/POS via native layer in the
   // desktop app (works fully offline), HTML print dialog fallback elsewhere.
@@ -636,6 +665,10 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
   const handleComplete = async () => {
     if (cart.length === 0 || submitting || submissionLockRef.current) return;
+    if (canSwitchBranch && !activeBranchId) {
+      addToast({ type: 'warning', title: 'Select a branch', message: 'Choose a branch before completing a POS sale.', duration: 5000 });
+      return;
+    }
     
     // Set lock immediately to prevent race conditions
     submissionLockRef.current = true;
@@ -655,6 +688,8 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       } else {
         sale = await createSale({
           items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
+          branchId: canSwitchBranch ? activeBranchId : undefined,
+          branchName: canSwitchBranch ? activeBranchName : undefined,
           paymentMethod: paymentMethod === 'SPLIT' ? 'SPLIT' : paymentMethod.toUpperCase(),
           amountPaid: paymentMethod === 'Cash' ? tenderedNum || total : total,
           cashAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitCash) || 0) : undefined,
@@ -722,10 +757,16 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
 
   const handleHold = async () => {
     if (cart.length === 0 || submitting) return;
+    if (canSwitchBranch && !activeBranchId) {
+      addToast({ type: 'warning', title: 'Select a branch', message: 'Choose a branch before holding a POS sale.', duration: 5000 });
+      return;
+    }
     setSubmitting(true);
     try {
       const sale = await createPendingSale({
         items: cart.map(i => ({ product: i.product, quantity: i.quantity })),
+        branchId: canSwitchBranch ? activeBranchId : undefined,
+        branchName: canSwitchBranch ? activeBranchName : undefined,
         customerId: selectedCustomer?.id,
         customerName: selectedCustomer?.name && selectedCustomer.name !== 'Walk-in Customer'
           ? selectedCustomer.name
@@ -881,7 +922,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               <span className="mx-2 opacity-50">•</span>
               <span className="font-light truncate max-w-[100px]">{me?.position || me?.role || 'Cashier'}</span>
               <span className="mx-2 opacity-50">•</span>
-              <span className="font-light truncate max-w-[120px]">{(me?.branch?.name || '').toLowerCase().includes('chemical') ? 'Chemical Shop' : 'Main Branch'}</span>
+              <span className="font-light truncate max-w-[120px]">{canSwitchBranch ? activeBranchName : me?.branch?.name || 'My Branch'}</span>
             </div>
           </div>
 
@@ -903,6 +944,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         </div>
 
         <div className="flex items-center gap-4">
+          {canSwitchBranch && <BranchSwitcher isDark={isDark} />}
           <SyncStatusPill
             onSyncClick={async () => {
               setSyncStatus('syncing');
@@ -1448,7 +1490,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
             <div className="flex gap-3">
               <button 
                 onClick={handleHold}
-                disabled={cart.length === 0 || submitting}
+                disabled={cart.length === 0 || submitting || branchRequired}
                 className="flex-1 py-4 rounded-2xl border-2 font-display font-bold text-sm flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
                 style={{ borderColor: c.primary, color: c.primary, background: 'transparent' }}
               >
@@ -1457,7 +1499,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               </button>
               <button 
                 onClick={handleComplete}
-                disabled={cart.length === 0 || submitting || (paymentMethod === 'SPLIT' && (parseFloat(splitCash) || 0) + (parseFloat(splitMomo) || 0) !== total)}
+                disabled={cart.length === 0 || submitting || branchRequired || (paymentMethod === 'SPLIT' && (parseFloat(splitCash) || 0) + (parseFloat(splitMomo) || 0) !== total)}
                 className="flex-[2] py-4 rounded-2xl bg-primary text-white font-display font-bold text-lg flex items-center justify-center gap-3 shadow-xl shadow-primary/20 hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50"
                 style={{ background: submitting ? c.muted : c.primary }}
               >

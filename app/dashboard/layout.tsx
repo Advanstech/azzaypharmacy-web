@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { PageTransition } from '@/components/page-transition';
-import { BranchProvider, useBranch, MANAGERIAL_ROLES } from '@/lib/branch-context';
+import { useBranch, MANAGERIAL_ROLES } from '@/lib/branch-context';
 import { BranchSwitcher } from '@/components/BranchSwitcher';
 import {
   LayoutDashboard,
@@ -81,7 +81,7 @@ function DashboardLayoutInner({ children }: { children: React.ReactNode }) {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString();
     const now = new Date().toISOString();
     refetchSales(activeBranchId ?? undefined, thirtyDaysAgo, now);
-    refetchProductsPOS(activeBranchId ?? undefined);
+    refetchProductsPOS(activeBranchId);
     refetchExpenses();
     refetchPurchases();
     refetchInvoices(activeBranchId ?? undefined);
@@ -643,16 +643,5 @@ function ActiveBranchLabel() {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useCustomAuth();
-  const { me } = useStore();
-  const role = (me?.role || (user?.role || user?.user_metadata?.role as string)) ?? '';
-  return (
-    <BranchProvider
-      role={role}
-      assignedBranchId={me?.branchId}
-      assignedBranchName={me?.branch?.name}
-    >
-      <DashboardLayoutInner>{children}</DashboardLayoutInner>
-    </BranchProvider>
-  );
+  return <DashboardLayoutInner>{children}</DashboardLayoutInner>;
 }

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { 
@@ -22,7 +22,8 @@ export default function SupplierPerformanceReportPage() {
 
   const { suppliers, purchases: allPurchases } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const purchases = useMemo(() => activeBranchId ? allPurchases.filter(p => p.branchId === activeBranchId) : allPurchases, [allPurchases, activeBranchId]);
+  const filterByBranch = useBranchFilter();
+  const purchases = useMemo(() => filterByBranch(allPurchases), [allPurchases, filterByBranch]);
   const [searchTerm, setSearchTerm] = useState('');
 
   // Analyze supplier performance

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore, Product } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday, getEffectiveDateRange } from '@/lib/effective-date';
 import { 
@@ -25,6 +25,7 @@ export default function ReportsPage() {
 
   const { sales: allSales, products: allProducts, staff: allStaff, customers, suppliers, expenses: allExpenses, purchases, prescriptions, refetchSales, refetchProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
+  const filterByBranch = useBranchFilter();
   const isAdmin = true; // simplified
   const searchParams = useSearchParams();
   const [dateFrom, setDateFrom] = useState(searchParams?.get('from') ?? '');
@@ -33,24 +34,24 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState<string | null>(null);
 
   // Branch-scoped data — "All Branches" (activeBranchId === null) shows everything
-  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
   const products = useMemo(() => {
     if (!activeBranchId) return allProducts;
-    return allProducts.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId));
-  }, [allProducts, activeBranchId]);
+    return allProducts.filter(p => filterByBranch([p]).length > 0 || p.stockItems?.some(si => filterByBranch([si]).length > 0));
+  }, [allProducts, activeBranchId, filterByBranch]);
 
   const branchStock = (p: Product) => activeBranchId
-    ? (p.stockItems || []).filter(si => si.branchId === activeBranchId).reduce((sum, si) => sum + si.quantity, 0)
+    ? (p.stockItems || []).filter(si => filterByBranch([si]).length > 0).reduce((sum, si) => sum + si.quantity, 0)
     : p.stockQuantity;
 
   const branchStockValue = (p: Product) => {
     const items = activeBranchId
-      ? (p.stockItems || []).filter(si => si.branchId === activeBranchId)
+      ? (p.stockItems || []).filter(si => filterByBranch([si]).length > 0)
       : (p.stockItems || []);
     return items.reduce((sum, si) => sum + Number(si.costPrice || 0) * si.quantity, 0);
   };
-  const staff = useMemo(() => activeBranchId ? allStaff.filter(s => s.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
-  const expenses = useMemo(() => activeBranchId ? allExpenses.filter(e => e.branchId === activeBranchId) : allExpenses, [allExpenses, activeBranchId]);
+  const staff = useMemo(() => filterByBranch(allStaff), [allStaff, filterByBranch]);
+  const expenses = useMemo(() => filterByBranch(allExpenses), [allExpenses, filterByBranch]);
 
   // Date range filter — use effective date (most recent day with data)
   const effectiveRange = useMemo(() => getEffectiveDateRange(sales), [sales]);
@@ -74,7 +75,7 @@ export default function ReportsPage() {
   }, [dateFrom, dateTo, router, searchParams]);
 
   useEffect(() => {
-    refetchProducts(activeBranchId ?? undefined);
+    refetchProducts(activeBranchId);
   }, [activeBranchId, refetchProducts]);
 
   useEffect(() => {
@@ -117,12 +118,12 @@ export default function ReportsPage() {
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
     return products.filter(p => {
       return p.stockItems?.some(item => {
-        if (!item.expiryDate || (activeBranchId && item.branchId !== activeBranchId)) return false;
+        if (!item.expiryDate || filterByBranch([item]).length === 0) return false;
         const expiry = new Date(item.expiryDate);
         return expiry <= thirtyDaysFromNow && expiry >= new Date() && item.quantity > 0;
       });
     });
-  }, [products, activeBranchId]);
+  }, [products, filterByBranch]);
   
   const totalRevenue = useMemo(() => sales.reduce((sum, s) => sum + s.totalAmount, 0), [sales]);
   const totalCogs = useMemo(() => {

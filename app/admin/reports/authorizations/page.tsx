@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import {
@@ -51,6 +51,7 @@ export default function AuthorizationsReportPage() {
     loadingExpenses, loadingShiftReconciliations,
   } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
+  const filterByBranch = useBranchFilter();
 
   useEffect(() => {
     if (allExpenses.length === 0) refetchExpenses();
@@ -134,9 +135,9 @@ export default function AuthorizationsReportPage() {
     });
 
     if (activeBranchId) list = list.filter(i => {
-      if (i.type === 'EXPENSE') return i.raw.branchId === activeBranchId;
-      if (i.type === 'REFUND') return i.raw.sale?.branchId === activeBranchId;
-      return i.raw.branchId === activeBranchId;
+      if (i.type === 'EXPENSE') return filterByBranch([{ branchId: i.raw.branchId }]).length > 0;
+      if (i.type === 'REFUND') return filterByBranch([{ branchId: i.raw.sale?.branchId }]).length > 0;
+      return filterByBranch([{ branchId: i.raw.branchId }]).length > 0;
     });
 
     if (statusFilter !== 'All') list = list.filter(i => i.status === statusFilter);
@@ -156,7 +157,7 @@ export default function AuthorizationsReportPage() {
     });
 
     return list;
-  }, [items, activeBranchId, statusFilter, typeFilter, search, dateFrom, dateTo, sortDir]);
+  }, [items, activeBranchId, filterByBranch, statusFilter, typeFilter, search, dateFrom, dateTo, sortDir]);
 
   const kpis = useMemo(() => {
     const pending = filtered.filter(i => i.status === 'PENDING');

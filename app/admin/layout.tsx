@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { PageTransition } from '@/components/page-transition';
-import { BranchProvider, useBranch } from '@/lib/branch-context';
+import { useBranch } from '@/lib/branch-context';
 import { BranchSwitcher } from '@/components/BranchSwitcher';
 import {
   LayoutDashboard,
@@ -446,16 +446,5 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const { user } = useCustomAuth();
-  const { me } = useStore();
-  const role = (me?.role || (user?.user_metadata?.role as string)) ?? '';
-  return (
-    <BranchProvider
-      role={role}
-      assignedBranchId={me?.branchId}
-      assignedBranchName={me?.branch?.name}
-    >
-      <AdminLayoutInner>{children}</AdminLayoutInner>
-    </BranchProvider>
-  );
+  return <AdminLayoutInner>{children}</AdminLayoutInner>;
 }

@@ -1408,7 +1408,7 @@ export default function InventoryPage() {
 
       // Refresh all relevant data to sync across all modules
       await Promise.all([
-        refetchProducts(activeBranchId ?? undefined),
+        refetchProducts(activeBranchId),
         refetchPurchases(),
         refetchInvoices(activeBranchId ?? undefined),
       ]);

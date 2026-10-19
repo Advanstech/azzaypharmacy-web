@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday } from '@/lib/effective-date';
 import { usePagination } from '@/hooks/use-pagination';
@@ -24,7 +24,8 @@ export default function DailySalesReportPage() {
   const searchParams = useSearchParams();
   const { sales: allSales, products } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const filterByBranch = useBranchFilter();
+  const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
   const effectiveDay = useMemo(() => getEffectiveToday(sales), [sales]);
   const [selectedDate, setSelectedDate] = useState(searchParams?.get('to') || searchParams?.get('from') || new Date().toISOString().split('T')[0]);
   // Apply effective date once data loads, but only if the URL did not already specify one

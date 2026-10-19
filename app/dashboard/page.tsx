@@ -241,12 +241,12 @@ function ManagementOverview({ s, isDark }: { s: ReturnType<typeof useCardStyles>
   const branchSales = useMemo(() => branchFilter(sales), [branchFilter, sales]);
   const branchProducts = useMemo(() => {
     if (!activeBranchId) return products;
-    return products.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId));
-  }, [products, activeBranchId]);
+    return products.filter(p => branchFilter([p]).length > 0 || p.stockItems?.some(si => branchFilter([si]).length > 0));
+  }, [products, activeBranchId, branchFilter]);
   const branchStaff = useMemo(() => {
     if (!activeBranchId) return staff;
-    return staff.filter(st => st.branchId === activeBranchId);
-  }, [staff, activeBranchId]);
+    return branchFilter(staff);
+  }, [staff, activeBranchId, branchFilter]);
 
   // Local fallback so the Overview is never blank offline.
   const localStats = useMemo(
@@ -1076,4 +1076,3 @@ export default function DashboardOverview() {
   if (isClinical) return <ClinicalOverview s={s} isDark={isDark} />;
   return <SalesOverview s={s} isDark={isDark} />;
 }
-

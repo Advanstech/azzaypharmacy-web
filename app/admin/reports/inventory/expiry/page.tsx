@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { 
@@ -21,7 +21,10 @@ export default function ExpiryTrackingReportPage() {
 
   const { products: allProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const products = useMemo(() => activeBranchId ? allProducts.filter(p => p.branchId === activeBranchId) : allProducts, [allProducts, activeBranchId]);
+  const filterByBranch = useBranchFilter();
+  const products = useMemo(() => activeBranchId
+    ? allProducts.filter(p => filterByBranch([p]).length > 0 || p.stockItems?.some(item => filterByBranch([item]).length > 0))
+    : allProducts, [allProducts, activeBranchId, filterByBranch]);
   const [searchTerm, setSearchTerm] = useState('');
   const [daysFilter, setDaysFilter] = useState('90');
 

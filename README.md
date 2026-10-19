@@ -51,6 +51,13 @@ Relevant files:
 - API mutation: `M_CREATE_STAFF_ACCOUNT` in `lib/gql.ts`
 - PIN GraphQL mutations: `M_LOGIN_WITH_PIN`, `M_SET_STAFF_PIN` in `lib/gql.ts`
 
+## Offline POS, branch views, and reports
+
+- Staff POS transactions stay locked to the signed-in operator's assigned branch. Owners and managers can select a specific branch in POS; an "All Branches" view is read-only until they choose one. When the API cannot be reached, desktop sales are written to the native SQLite outbox (browser sessions use IndexedDB) and retried automatically when connectivity returns. The sale keeps its original assigned/selected branch and idempotency reference across retries.
+- Manager branch choices and the last successful branch list are cached locally. A manager can switch among branches already known to that device while offline; the selected branch is also persisted across reloads.
+- Dashboard and report pages render cached snapshots first. A report can be generated offline for branches and date ranges that were loaded successfully on that device before going offline. Offline reports reflect the last cached snapshot and may not include newer activity from other devices until sync.
+- The sync indicator and pending-sales panel show queued work. Reconnect, periodic checks, or **Sync now** drains the queue and refreshes server-backed data.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

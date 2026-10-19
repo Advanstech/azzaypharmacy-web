@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { getEffectiveDateRange } from '@/lib/effective-date';
@@ -25,10 +25,11 @@ export default function SalesByProductReportPage() {
 
   const { sales: allSales, products: allProducts, refetchSales, refetchProducts, loadingSales, loadingProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const filterByBranch = useBranchFilter();
+  const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
   const products = useMemo(() => activeBranchId
-    ? allProducts.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId))
-    : allProducts, [allProducts, activeBranchId]);
+    ? allProducts.filter(p => filterByBranch([p]).length > 0 || p.stockItems?.some(si => filterByBranch([si]).length > 0))
+    : allProducts, [allProducts, activeBranchId, filterByBranch]);
   const searchParams = useSearchParams();
 
   const [inputFromDate, setInputFromDate] = useState(searchParams?.get('from') || '');
@@ -48,7 +49,7 @@ export default function SalesByProductReportPage() {
   }, [fromDate, toDate, router, searchParams]);
 
   useEffect(() => {
-    refetchProducts(activeBranchId ?? undefined);
+    refetchProducts(activeBranchId);
   }, [activeBranchId, refetchProducts]);
 
   useEffect(() => {

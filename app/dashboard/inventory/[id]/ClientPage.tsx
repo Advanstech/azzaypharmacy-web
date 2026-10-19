@@ -70,13 +70,13 @@ export default function ProductDetailedPaper() {
 
   useEffect(() => {
     if (!products.length && !loadingProducts) {
-      refetchProducts(activeBranchId ?? undefined);
+      refetchProducts(activeBranchId);
     }
   }, [products.length, loadingProducts, refetchProducts, activeBranchId]);
 
   useEffect(() => {
     if (products.length && !loadingProducts && activeBranchId !== undefined) {
-      refetchProducts(activeBranchId ?? undefined);
+      refetchProducts(activeBranchId);
     }
   }, [activeBranchId, refetchProducts]);
 

@@ -110,6 +110,28 @@ fn is_permanent_error(msg: &str) -> bool {
         || m.contains("graphql")
 }
 
+fn validate_graphql_response(body: &str) -> Result<(), String> {
+    let response: serde_json::Value =
+        serde_json::from_str(body).map_err(|e| format!("invalid GraphQL response: {e}"))?;
+
+    if let Some(errors) = response.get("errors") {
+        let has_errors = !errors.is_null()
+            && errors
+                .as_array()
+                .map(|items| !items.is_empty())
+                .unwrap_or(true);
+        if has_errors {
+            return Err(format!("GraphQL errors: {errors}"));
+        }
+    }
+
+    if !response.get("data").is_some_and(serde_json::Value::is_object) {
+        return Err("GraphQL response is missing data".into());
+    }
+
+    Ok(())
+}
+
 fn next_probe_delay(online: bool, pending: i64) -> Duration {
     if !online {
         return OFFLINE_PROBE_INTERVAL;
@@ -171,14 +193,25 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
         match req.send().await {
             Ok(res) => {
                 let status = res.status();
-                let body = res.text().await.unwrap_or_default();
-                let has_errors = body.contains("\"errors\"");
-                if status.is_success() && !has_errors {
-                    let _ = outbox::remove(&conn, &row.id);
-                    synced += 1;
-                    log::info!("[sync] synced sale {}", row.id);
+                let body = match res.text().await {
+                    Ok(body) => body,
+                    Err(e) => {
+                        let msg = format!("response read error: {e}");
+                        log::warn!("[sync] failed to read response for {}: {}", row.id, msg);
+                        let _ = outbox::mark_failed(&conn, &row.id, &msg, MAX_ATTEMPTS);
+                        failed += 1;
+                        break;
+                    }
+                };
+                let response_error = if status.is_success() {
+                    validate_graphql_response(&body).err()
                 } else {
-                    let msg = format!("HTTP {status}: {}", &body[..body.len().min(300)]);
+                    Some(body.clone())
+                };
+
+                if let Some(response_error) = response_error {
+                    let response_summary: String = response_error.chars().take(300).collect();
+                    let msg = format!("HTTP {status}: {response_summary}");
                     if status.as_u16() == 401 || status.as_u16() == 403 {
                         log::warn!("[sync] authorization required for queued sale {}", row.id);
                         failed += 1;
@@ -198,6 +231,10 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
                     if !is_retryable {
                         continue;
                     }
+                } else {
+                    let _ = outbox::remove(&conn, &row.id);
+                    synced += 1;
+                    log::info!("[sync] synced sale {}", row.id);
                 }
             }
             Err(e) => {
@@ -333,7 +370,7 @@ pub fn spawn_daemon(app: AppHandle, cfg: std::sync::Arc<Mutex<SyncConfig>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_retryable_status, next_probe_delay};
+    use super::{is_retryable_status, next_probe_delay, validate_graphql_response};
     use std::time::Duration;
 
     #[test]
@@ -349,5 +386,14 @@ mod tests {
         assert_eq!(next_probe_delay(false, 0), Duration::from_secs(8));
         assert_eq!(next_probe_delay(true, 3), Duration::from_secs(15));
         assert_eq!(next_probe_delay(true, 0), Duration::from_secs(45));
+    }
+
+    #[test]
+    fn only_valid_graphql_data_responses_are_accepted() {
+        assert!(validate_graphql_response(r#"{"data":{"createSale":{"id":"sale-1"}}}"#).is_ok());
+        assert!(validate_graphql_response(r#"{"data":{},"errors":[]}"#).is_ok());
+        assert!(validate_graphql_response(r#"{"data":{"createSale":null},"errors":[{"message":"rejected"}]}"#).is_err());
+        assert!(validate_graphql_response(r#"{"errors":[{"message":"rejected"}]}"#).is_err());
+        assert!(validate_graphql_response("not json").is_err());
     }
 }

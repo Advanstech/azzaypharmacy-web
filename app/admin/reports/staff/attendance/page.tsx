@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
@@ -43,9 +43,10 @@ export default function StaffAttendancePage() {
 
   const { staff: allStaff, sales: allSales, refetchStaff } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
+  const filterByActiveBranch = useBranchFilter();
   const { session } = useCustomAuth();
-  const staff = useMemo(() => activeBranchId ? allStaff.filter(m => m.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
-  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const staff = useMemo(() => filterByActiveBranch(allStaff), [allStaff, filterByActiveBranch]);
+  const sales = useMemo(() => filterByActiveBranch(allSales), [allSales, filterByActiveBranch]);
 
   useEffect(() => {
     if (allStaff.length === 0 && session?.access_token) refetchStaff();

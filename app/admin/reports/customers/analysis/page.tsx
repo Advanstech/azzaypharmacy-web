@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { 
@@ -21,7 +21,8 @@ export default function CustomerAnalysisReportPage() {
 
   const { sales: allSales, customers } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
+  const filterByBranch = useBranchFilter();
+  const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'spent' | 'visits' | 'name'>('spent');
 

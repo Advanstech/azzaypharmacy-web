@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { 
@@ -22,8 +22,9 @@ export default function StaffPerformanceReportPage() {
 
   const { sales: allSales, staff: allStaff, products } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
-  const sales = useMemo(() => activeBranchId ? allSales.filter(s => s.branchId === activeBranchId) : allSales, [allSales, activeBranchId]);
-  const staff = useMemo(() => activeBranchId ? allStaff.filter(s => s.branchId === activeBranchId) : allStaff, [allStaff, activeBranchId]);
+  const filterByBranch = useBranchFilter();
+  const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
+  const staff = useMemo(() => filterByBranch(allStaff), [allStaff, filterByBranch]);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState<'revenue' | 'sales' | 'items' | 'name'>('revenue');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');

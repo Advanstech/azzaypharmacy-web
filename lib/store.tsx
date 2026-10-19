@@ -27,6 +27,7 @@ import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, getPendingSa
 import { enqueueOfflineOp, initTauriSync, isNetworkishError, manualSync, onSyncEvent } from './tauri-sync';
 import { getConnectivity, isApiReachable } from './connectivity';
 import { isTauri, nativeEnqueueSale, nativeSetSyncAuth, nativeListQueue, nativeRemoveFromQueue } from './tauri-native';
+import { MANAGERIAL_ROLES } from './branch-context';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,30 @@ export interface Product {
   nafdacNo?: string;
   manufacturer?: string;
   stockItems?: StockItem[];
+}
+
+function scopeProductToBranch(product: Product, branchId: string | null): Product {
+  if (!branchId || !product.stockItems?.length) return product;
+  return {
+    ...product,
+    stockItems: product.stockItems.filter(item => item.branchId === branchId),
+  };
+}
+
+function decrementBranchStock(product: Product, branchId: string, quantity: number): Product {
+  const hasStockRows = Boolean(product.stockItems?.length);
+  const hasBranchRows = product.stockItems?.some(item => item.branchId === branchId) ?? false;
+  if (hasStockRows && !hasBranchRows && product.branchId !== branchId) return product;
+
+  return {
+    ...product,
+    stockQuantity: !hasStockRows || product.branchId === branchId
+      ? Math.max(0, Number(product.stockQuantity || 0) - quantity)
+      : product.stockQuantity,
+    stockItems: product.stockItems?.map(item => item.branchId === branchId
+      ? { ...item, quantity: Math.max(0, Number(item.quantity || 0) - quantity) }
+      : item),
+  };
 }
 
 export interface Supplier {
@@ -496,8 +521,8 @@ interface StoreState {
   todayTransactions: number;
 
   // Refetch helpers
-  refetchProducts: (branchId?: string) => Promise<void>;
-  refetchProductsPOS: (branchId?: string) => Promise<void>;
+  refetchProducts: (branchId?: string | null) => Promise<void>;
+  refetchProductsPOS: (branchId?: string | null) => Promise<void>;
   refetchSuppliers: () => Promise<void>;
   refetchSales: (branchId?: string, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchStaff: () => Promise<void>;
@@ -526,6 +551,8 @@ interface StoreState {
     items: CartItem[];
     paymentMethod: string;
     amountPaid: number;
+    branchId?: string | null;
+    branchName?: string;
     cashAmount?: number;
     momoAmount?: number;
     customerId?: string;
@@ -536,6 +563,8 @@ interface StoreState {
 
   createPendingSale: (args: {
     items: CartItem[];
+    branchId?: string | null;
+    branchName?: string;
     customerId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -715,6 +744,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   // Monotonic counter guarding refetchSales against out-of-order resolution
   // (see refetchSales below for details).
   const salesRequestIdRef = useRef(0);
+  const productsRequestIdRef = useRef(0);
   const transferRequestIdRef = useRef(0);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -888,7 +918,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [me]);
 
-  const refetchProducts = useCallback(async (branchId?: string) => {
+  const refetchProducts = useCallback(async (branchId?: string | null) => {
+    const requestId = ++productsRequestIdRef.current;
     setLoadingProducts(true);
     try {
       // Try cache first. The IndexedDB products_cache store accumulates
@@ -897,13 +928,19 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       // being used as an instant paint — otherwise stale/other-branch stock
       // levels flash (or persist if offline) alongside the real data.
       const cached = await getFromCache('products_cache');
-      const cacheScopeBranchId = branchId || me?.branchId;
-      const scopedCached = cacheScopeBranchId ? cached.filter((p: any) => p.branchId === cacheScopeBranchId) : cached;
-      if (scopedCached?.length) setProducts(scopedCached);
+      const cacheScopeBranchId: string | null = branchId === undefined
+        ? (MANAGERIAL_ROLES.includes(me?.role ?? '') ? null : me?.branchId ?? null)
+        : branchId;
+      const scopedCached = cacheScopeBranchId
+        ? cached.filter((p: any) => p.branchId === cacheScopeBranchId || p.stockItems?.some((item: any) => item.branchId === cacheScopeBranchId))
+        : cached;
+      if (requestId === productsRequestIdRef.current) {
+        setProducts(scopedCached.map((product: Product) => scopeProductToBranch(product, cacheScopeBranchId)));
+      }
 
       const data = await gql<{ products: Product[] }>(Q_PRODUCTS, { branchId: branchId || undefined });
       if (data.products) {
-        setProducts(data.products);
+        if (requestId === productsRequestIdRef.current) setProducts(data.products);
         await saveToCache('products_cache', data.products);
       }
     } catch (e: any) {
@@ -912,18 +949,25 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         setError('Session expired. Please log out and back in to sync NEXUS data.');
       }
     } finally {
-      setLoadingProducts(false);
+      if (requestId === productsRequestIdRef.current) setLoadingProducts(false);
     }
-  }, [me?.branchId]);
+  }, [me?.branchId, me?.role]);
 
   // Lean POS product fetch — skips stockItems relation for faster payload
-  const refetchProductsPOS = useCallback(async (branchId?: string) => {
+  const refetchProductsPOS = useCallback(async (branchId?: string | null) => {
+    const requestId = ++productsRequestIdRef.current;
     setLoadingProducts(true);
     try {
       const cached = await getFromCache('products_cache');
-      const cacheScopeBranchId = branchId || me?.branchId;
-      const scopedCached = cacheScopeBranchId ? cached.filter((p: any) => p.branchId === cacheScopeBranchId) : cached;
-      if (scopedCached?.length) setProducts(scopedCached);
+      const cacheScopeBranchId: string | null = branchId === undefined
+        ? (MANAGERIAL_ROLES.includes(me?.role ?? '') ? null : me?.branchId ?? null)
+        : branchId;
+      const scopedCached = cacheScopeBranchId
+        ? cached.filter((p: any) => p.branchId === cacheScopeBranchId || p.stockItems?.some((item: any) => item.branchId === cacheScopeBranchId))
+        : cached;
+      if (requestId === productsRequestIdRef.current) {
+        setProducts(scopedCached.map((product: Product) => scopeProductToBranch(product, cacheScopeBranchId)));
+      }
 
       const data = await gql<{ products: Product[] }>(Q_PRODUCTS_POS, { branchId: branchId || undefined });
       if (data.products) {
@@ -932,17 +976,23 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         // wipe them. The cache write uses the same merge so offline inventory
         // keeps batch detail too.
         const fetched = data.products;
-        const preserveBatches = (prev: Product[] | undefined) => {
+        const preserveBatches = (prev: Product[] | undefined, batchBranchId: string | null) => {
           if (!prev?.length) return fetched;
           const byId = new Map(prev.map(p => [p.id, p]));
           return fetched.map(p => {
             const old = byId.get(p.id);
-            return old?.stockItems?.length ? { ...p, stockItems: old.stockItems } : p;
+            if (!old?.stockItems?.length) return p;
+            const stockItems = batchBranchId
+              ? old.stockItems.filter(item => item.branchId === batchBranchId)
+              : old.stockItems;
+            return { ...p, stockItems };
           });
         };
-        setProducts(prev => preserveBatches(prev));
+        if (requestId === productsRequestIdRef.current) {
+          setProducts(prev => preserveBatches(prev, cacheScopeBranchId));
+        }
         const cachedNow = await getFromCache('products_cache');
-        await saveToCache('products_cache', preserveBatches(cachedNow));
+        await saveToCache('products_cache', preserveBatches(cachedNow, null));
       }
     } catch (e: any) {
       console.warn('[store] products (POS) fetch failed:', e.message);
@@ -950,9 +1000,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         setError('Session expired. Please log out and back in to sync NEXUS data.');
       }
     } finally {
-      setLoadingProducts(false);
+      if (requestId === productsRequestIdRef.current) setLoadingProducts(false);
     }
-  }, [me?.branchId]);
+  }, [me?.branchId, me?.role]);
 
   const refetchSuppliers = useCallback(async () => {
     setLoadingSuppliers(true);
@@ -1427,10 +1477,25 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
+  const resolveTransactionBranchId = useCallback((requestedBranchId?: string | null) => {
+    if (MANAGERIAL_ROLES.includes(me?.role ?? '')) {
+      if (!requestedBranchId) {
+        throw new Error('Select a specific branch before processing a POS transaction.');
+      }
+      return requestedBranchId;
+    }
+    if (!me?.branchId) {
+      throw new Error('The signed-in operator does not have an assigned branch.');
+    }
+    return me.branchId;
+  }, [me?.branchId, me?.role]);
+
   const createSale = useCallback(async (args: {
     items: CartItem[];
     paymentMethod: string;
     amountPaid: number;
+    branchId?: string | null;
+    branchName?: string;
     cashAmount?: number;
     momoAmount?: number;
     customerId?: string;
@@ -1439,6 +1504,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     customerEmail?: string;
   }): Promise<Sale> => {
     if (!me) throw new Error('Not authenticated');
+    const saleBranchId = resolveTransactionBranchId(args.branchId);
 
     // Real API reachability (probe-based), not just navigator.onLine.
     // PROBING counts as "try online" — the sale queues safely if the fetch fails.
@@ -1455,7 +1521,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
     const variables = {
       userId: me.id,
-      branchId: me.branchId || '',
+      branchId: saleBranchId,
       items: args.items.map(i => ({ productId: i.product.id, quantity: i.quantity })),
       paymentMethod: args.paymentMethod.toUpperCase(),
       amountPaid: args.amountPaid,
@@ -1479,7 +1545,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       try {
         console.log('[store] 📤 Sending createSale mutation...', variables);
         const data = await gql<{ createSale: Sale }>(M_CREATE_SALE, variables, { timeout: 8000 });
-        newSale = data.createSale;
+        newSale = { ...data.createSale, branchId: saleBranchId };
         isSynced = true;
         console.log('[store] ✅ Sale synced to backend!', { id: newSale.id, total: newSale.totalAmount });
       } catch (err: any) {
@@ -1505,7 +1571,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       newSale = {
         id: clientRef,
         clientRef,
-        branchId: me?.branchId,
+        branchId: saleBranchId,
         cashierId: me?.id,
         totalAmount,
         amountPaid: args.amountPaid,
@@ -1537,8 +1603,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           payment_method: args.paymentMethod,
           cashier_name: me?.name || 'Unknown',
           cashier_id: me?.id,
-          branch_name: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
-          branch_id: me?.branchId,
+          branch_name: args.branchName || me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
+          branch_id: saleBranchId,
           customerId: args.customerId,
           customerName: args.customerName,
           customerPhone: args.customerPhone,
@@ -1547,23 +1613,6 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           momoAmount: args.momoAmount,
           timestamp: Date.now()
         });
-      }
-
-      // Persist the stock decrement into products_cache too, so a restart shows
-      // the correct offline-adjusted stock (in-memory decrement alone is lost on reload).
-      try {
-        const cached = await getFromCache('products_cache');
-        if (cached.length) {
-          const adjusted = cached.map((p: any) => {
-            const soldItem = args.items.find(i => i.product.id === p.id);
-            return soldItem
-              ? { ...p, stockQuantity: Math.max(0, (p.stockQuantity ?? 0) - soldItem.quantity) }
-              : p;
-          });
-          await saveToCache('products_cache', adjusted);
-        }
-      } catch (e) {
-        console.warn('[store] Failed to persist offline stock adjustment:', e);
       }
 
       // Flush immediately if the API is actually reachable right now
@@ -1612,36 +1661,44 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         reference: newSale.id,
         user: me?.name,
         date: new Date().toISOString(),
-        branchId: me?.branchId,
-        branchName: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : ''),
+        branchId: saleBranchId,
+        branchName: args.branchName || me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : ''),
       });
-      return { ...p, stockQuantity: Math.max(0, p.stockQuantity - soldItem.quantity) };
+      return decrementBranchStock(p, saleBranchId, soldItem.quantity);
     }));
     if (newMovements.length > 0) {
       setStockMovements(prev => [...newMovements, ...prev].slice(0, 200));
     }
 
-    // Also update the products cache with new stock quantities
-    const updatedProducts = products.map(p => {
-      const soldItem = args.items.find(i => i.product.id === p.id);
-      if (!soldItem) return p;
-      return { ...p, stockQuantity: Math.max(0, p.stockQuantity - soldItem.quantity) };
-    });
-    await saveToCache('products_cache', updatedProducts);
+    // Update only the sold branch's stock in the durable cache. The cache can
+    // contain batch rows for other branches that must remain untouched.
+    try {
+      const cached = await getFromCache('products_cache');
+      const source = cached.length ? cached as Product[] : products;
+      const updatedProducts = source.map(p => {
+        const soldItem = args.items.find(i => i.product.id === p.id);
+        return soldItem ? decrementBranchStock(p, saleBranchId, soldItem.quantity) : p;
+      });
+      await saveToCache('products_cache', updatedProducts);
+    } catch (error) {
+      console.warn('[store] Failed to persist branch stock adjustment:', error);
+    }
 
     // Schedule background re-sync after sale completes
     // Short delay to let the DB transaction commit before re-fetching
     setTimeout(() => {
-      refetchSales().catch(() => { });
-      refetchProducts().catch(() => { });
-      refetchLedger().catch(() => { });
+      refetchSales(saleBranchId).catch(() => { });
+      refetchProducts(saleBranchId).catch(() => { });
+      refetchLedger(saleBranchId).catch(() => { });
     }, 500);
 
     return newSale;
-  }, [me, products, refetchSales, refetchProducts]);
+  }, [me, products, refetchSales, refetchProducts, refetchLedger, resolveTransactionBranchId]);
 
   const createPendingSale = useCallback(async (args: {
     items: CartItem[];
+    branchId?: string | null;
+    branchName?: string;
     customerId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -1649,13 +1706,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }): Promise<Sale> => {
     if (!me) throw new Error('Not authenticated');
     if (args.items.length === 0) throw new Error('Cannot hold an empty cart');
+    const saleBranchId = resolveTransactionBranchId(args.branchId);
 
     const totalAmount = args.items.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0);
     const clientRef = crypto.randomUUID();
 
     const variables = {
       userId: me.id,
-      branchId: me.branchId || '',
+      branchId: saleBranchId,
       items: args.items.map(i => ({ productId: i.product.id, quantity: i.quantity })),
       customerId: args.customerId,
       customerName: args.customerName,
@@ -1684,6 +1742,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       newSale = {
         id: `held-${clientRef}`,
         clientRef,
+        branchId: saleBranchId,
         totalAmount,
         amountPaid: 0,
         change: 0,
@@ -1719,8 +1778,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
             payment_method: 'CASH',
             cashier_name: me?.name || 'Unknown',
             cashier_id: me?.id,
-            branch_name: me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
-            branch_id: me?.branchId,
+            branch_name: args.branchName || me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
+            branch_id: saleBranchId,
             customerId: args.customerId,
             customerName: args.customerName,
             customerPhone: args.customerPhone,
@@ -1750,7 +1809,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
 
     return newSale;
-  }, [me, refetchSales]);
+  }, [me, refetchSales, resolveTransactionBranchId]);
 
   const completePendingSale = useCallback(async (args: {
     saleId: string;

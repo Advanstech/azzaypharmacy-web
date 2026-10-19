@@ -13,6 +13,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
 import { gql } from './gql';
 import { Q_BRANCHES } from './gql';
+import { getKV, saveKV } from './offline';
 
 export interface Branch {
   id: string;
@@ -102,11 +103,26 @@ export function BranchProvider({
   // Fetch branches list for managers
   useEffect(() => {
     if (!isManager) return;
+    let cancelled = false;
     setLoadingBranches(true);
-    gql<{ branches: Branch[] }>(Q_BRANCHES)
-      .then(d => setBranches(d.branches ?? []))
-      .catch(console.warn)
-      .finally(() => setLoadingBranches(false));
+    void (async () => {
+      try {
+        const cached = await getKV('branches_cache');
+        if (!cancelled && Array.isArray(cached) && cached.length > 0) {
+          setBranches(normalizeBranches(cached));
+        }
+
+        const data = await gql<{ branches: Branch[] }>(Q_BRANCHES);
+        const nextBranches = normalizeBranches(data.branches ?? []);
+        await saveKV('branches_cache', nextBranches);
+        if (!cancelled) setBranches(nextBranches);
+      } catch (error) {
+        console.warn('[branch] Failed to refresh branch list; using cached branches when available:', error);
+      } finally {
+        if (!cancelled) setLoadingBranches(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [isManager]);
 
   const setActiveBranch = useCallback((id: string | null) => {

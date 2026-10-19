@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore, Product } from '@/lib/store';
-import { useBranch } from '@/lib/branch-context';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { 
@@ -24,21 +24,22 @@ export default function StockLevelReportPage() {
 
   const { products: allProducts, refetchProducts, loadingProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
+  const filterByBranch = useBranchFilter();
   const products = useMemo(() => {
     if (!activeBranchId) return allProducts;
-    return allProducts.filter(p => p.branchId === activeBranchId || p.stockItems?.some(si => si.branchId === activeBranchId));
-  }, [allProducts, activeBranchId]);
+    return allProducts.filter(p => filterByBranch([p]).length > 0 || p.stockItems?.some(si => filterByBranch([si]).length > 0));
+  }, [allProducts, activeBranchId, filterByBranch]);
 
   const branchStock = (p: Product) => {
     if (!activeBranchId) return Number(p.stockQuantity || 0);
-    const items = (p.stockItems || []).filter(si => si.branchId === activeBranchId);
+    const items = (p.stockItems || []).filter(si => filterByBranch([si]).length > 0);
     if (items.length) return items.reduce((sum, si) => sum + Number(si.quantity || 0), 0);
-    return p.branchId === activeBranchId ? Number(p.stockQuantity || 0) : 0;
+    return filterByBranch([p]).length > 0 ? Number(p.stockQuantity || 0) : 0;
   };
 
   const branchStockValue = (p: Product) => {
     const items = activeBranchId
-      ? (p.stockItems || []).filter(si => si.branchId === activeBranchId)
+      ? (p.stockItems || []).filter(si => filterByBranch([si]).length > 0)
       : (p.stockItems || []);
     if (!items.length) return Number(p.costPrice || 0) * branchStock(p);
     return items.reduce((sum, si) => sum + Number(si.costPrice || p.costPrice || 0) * Number(si.quantity || 0), 0);
@@ -63,7 +64,7 @@ export default function StockLevelReportPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
-    refetchProducts(activeBranchId ?? undefined);
+    refetchProducts(activeBranchId);
   }, [activeBranchId, refetchProducts]);
 
   useEffect(() => {
@@ -79,7 +80,7 @@ export default function StockLevelReportPage() {
   // the selected window on expiryDate or receivedAt.
   const matchesDateFilter = (p: Product) => {
     if (dateMode === 'all') return true;
-    const batches = (p.stockItems || []).filter(si => !activeBranchId || si.branchId === activeBranchId);
+    const batches = (p.stockItems || []).filter(si => filterByBranch([si]).length > 0);
     if (batches.length === 0) return false;
     const now = Date.now();
     const DAY = 86400000;
