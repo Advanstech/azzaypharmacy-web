@@ -39,9 +39,10 @@ export default function EndOfDayDashboardPage() {
   // History pagination, search & filter
   const [historyPage, setHistoryPage] = useState(1);
   const [historySearch, setHistorySearch] = useState('');
-  const [historyDateFilter, setHistoryDateFilter] = useState('');
+  const [historyStartDate, setHistoryStartDate] = useState('');
+  const [historyEndDate, setHistoryEndDate] = useState('');
   const [historyStatusFilter, setHistoryStatusFilter] = useState<string>('ALL');
-  const historyLimit = 5;
+  const [historyLimit, setHistoryLimit] = useState(5);
 
   const suggestedNotes = [
     "All balanced perfectly",
@@ -179,11 +180,13 @@ export default function EndOfDayDashboardPage() {
       result = result.filter(s => s.status === historyStatusFilter);
     }
 
-    // Date filter
-    if (historyDateFilter) {
+    // Date range filter
+    if (historyStartDate || historyEndDate) {
       result = result.filter(s => {
         const shiftDate = new Date(s.createdAt).toISOString().split('T')[0];
-        return shiftDate === historyDateFilter;
+        if (historyStartDate && shiftDate < historyStartDate) return false;
+        if (historyEndDate && shiftDate > historyEndDate) return false;
+        return true;
       });
     }
 
@@ -199,7 +202,7 @@ export default function EndOfDayDashboardPage() {
     }
 
     return result;
-  }, [pastShifts, historyStatusFilter, historyDateFilter, historySearch]);
+  }, [pastShifts, historyStatusFilter, historyStartDate, historyEndDate, historySearch]);
 
   const historyTotalPages = Math.max(1, Math.ceil(filteredShifts.length / historyLimit));
   const paginatedShifts = filteredShifts.slice((historyPage - 1) * historyLimit, historyPage * historyLimit);
@@ -207,7 +210,7 @@ export default function EndOfDayDashboardPage() {
   // Reset page when filters change
   useEffect(() => {
     setHistoryPage(1);
-  }, [historyStatusFilter, historyDateFilter, historySearch]);
+  }, [historyStatusFilter, historyStartDate, historyEndDate, historySearch, historyLimit]);
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const c = {
@@ -371,16 +374,33 @@ export default function EndOfDayDashboardPage() {
                   style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
                 />
               </div>
-              {/* Date Filter */}
-              <div className="relative">
-                <CalendarSearch className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: c.muted }} />
-                <input
-                  type="date"
-                  value={historyDateFilter}
-                  onChange={e => setHistoryDateFilter(e.target.value)}
-                  className="pl-9 pr-3 py-2 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-500"
-                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
-                />
+              {/* Date Range Filter */}
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <CalendarSearch className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: c.muted }} />
+                  <input
+                    type="date"
+                    value={historyStartDate}
+                    onChange={e => setHistoryStartDate(e.target.value)}
+                    max={historyEndDate || undefined}
+                    title="From date"
+                    className="pl-9 pr-3 py-2 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+                  />
+                </div>
+                <span className="text-[10px] font-bold" style={{ color: c.muted }}>TO</span>
+                <div className="relative">
+                  <CalendarSearch className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: c.muted }} />
+                  <input
+                    type="date"
+                    value={historyEndDate}
+                    onChange={e => setHistoryEndDate(e.target.value)}
+                    min={historyStartDate || undefined}
+                    title="To date"
+                    className="pl-9 pr-3 py-2 rounded-xl text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                    style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+                  />
+                </div>
               </div>
               {/* Status Filter */}
               <select
@@ -395,9 +415,9 @@ export default function EndOfDayDashboardPage() {
                 <option value="REJECTED">Rejected</option>
               </select>
               {/* Clear filters */}
-              {(historySearch || historyDateFilter || historyStatusFilter !== 'ALL') && (
+              {(historySearch || historyStartDate || historyEndDate || historyStatusFilter !== 'ALL') && (
                 <button
-                  onClick={() => { setHistorySearch(''); setHistoryDateFilter(''); setHistoryStatusFilter('ALL'); }}
+                  onClick={() => { setHistorySearch(''); setHistoryStartDate(''); setHistoryEndDate(''); setHistoryStatusFilter('ALL'); }}
                   className="text-[10px] font-bold px-3 py-2 rounded-xl transition-colors"
                   style={{ background: isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.1)', color: '#EF4444' }}
                 >
@@ -489,12 +509,22 @@ export default function EndOfDayDashboardPage() {
             </div>
 
             {/* Pagination */}
-            {historyTotalPages > 1 && (
-              <div className="px-4 md:px-6 py-3 border-t flex justify-between items-center" style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC' }}>
+            <div className="px-4 md:px-6 py-3 border-t flex flex-col sm:flex-row gap-3 justify-between items-center" style={{ borderColor: c.border, background: isDark ? 'rgba(15,23,42,0.4)' : '#F8FAFC' }}>
+              <div className="flex items-center gap-3">
                 <p className="text-xs" style={{ color: c.muted }}>
                   Page {historyPage} of {historyTotalPages} · {filteredShifts.length} records
                 </p>
-                <div className="flex gap-2">
+                <select
+                  value={historyLimit}
+                  onChange={e => setHistoryLimit(Number(e.target.value))}
+                  className="px-2 py-1 rounded-lg text-[10px] font-bold outline-none"
+                  style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+                >
+                  {[5, 10, 20, 50].map(n => <option key={n} value={n}>{n} / page</option>)}
+                </select>
+              </div>
+              {historyTotalPages > 1 && (
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
                     disabled={historyPage === 1}
@@ -503,6 +533,29 @@ export default function EndOfDayDashboardPage() {
                   >
                     <ChevronLeft size={16} />
                   </button>
+                  {Array.from({ length: historyTotalPages }, (_, i) => i + 1)
+                    .filter(p => p === 1 || p === historyTotalPages || Math.abs(p - historyPage) <= 1)
+                    .reduce<(number | '…')[]>((acc, p, i, arr) => {
+                      if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('…');
+                      acc.push(p);
+                      return acc;
+                    }, [])
+                    .map((p, i) => p === '…' ? (
+                      <span key={`gap-${i}`} className="px-1 text-xs" style={{ color: c.muted }}>…</span>
+                    ) : (
+                      <button
+                        key={p}
+                        onClick={() => setHistoryPage(p)}
+                        className="min-w-[28px] h-7 px-1.5 rounded-lg border text-xs font-bold transition-all"
+                        style={{
+                          borderColor: p === historyPage ? c.primary : c.border,
+                          background: p === historyPage ? (isDark ? 'rgba(0,217,255,0.15)' : 'rgba(14,165,233,0.1)') : 'transparent',
+                          color: p === historyPage ? c.primary : c.text,
+                        }}
+                      >
+                        {p}
+                      </button>
+                    ))}
                   <button
                     onClick={() => setHistoryPage(p => Math.min(historyTotalPages, p + 1))}
                     disabled={historyPage === historyTotalPages}
@@ -512,8 +565,8 @@ export default function EndOfDayDashboardPage() {
                     <ChevronRight size={16} />
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
         </div>

@@ -8,7 +8,18 @@ export function ServiceWorkerRegister() {
   useEffect(() => {
     // Don't register SW inside Tauri desktop app
     const isTauri = typeof window !== 'undefined' && ('__TAURI__' in window || '__TAURI_INTERNALS__' in window);
-    if (isTauri) return;
+    if (isTauri) {
+      // Older builds registered the PWA worker inside Tauri (detection missed
+      // it before withGlobalTauri was enabled) — evict it so it can't serve a
+      // stale app shell.
+      navigator.serviceWorker?.getRegistrations?.().then(regs => {
+        regs.forEach(r => {
+          r.unregister();
+          console.log('[NEXUS] Unregistered SW inside Tauri:', r.scope);
+        });
+      }).catch(() => { });
+      return;
+    }
 
     if (!('serviceWorker' in navigator)) return;
 

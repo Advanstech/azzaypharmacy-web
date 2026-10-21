@@ -20,6 +20,7 @@
     }
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "Azzay Pharmacy Pro \u2014 NEXUS v2.0",

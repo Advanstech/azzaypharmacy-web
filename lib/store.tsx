@@ -1593,26 +1593,34 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       // Queue for sync — SQLite outbox owned by the native daemon in Tauri,
       // IndexedDB in the browser. The id IS the clientRef sent in `variables`,
       // so retries dedupe server-side either way.
+      const pendingRecord = {
+        id: clientRef,
+        items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
+        total: totalAmount,
+        payment_method: args.paymentMethod,
+        cashier_name: me?.name || 'Unknown',
+        cashier_id: me?.id,
+        branch_name: args.branchName || me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
+        branch_id: saleBranchId,
+        customerId: args.customerId,
+        customerName: args.customerName,
+        customerPhone: args.customerPhone,
+        customerEmail: args.customerEmail,
+        cashAmount: args.cashAmount,
+        momoAmount: args.momoAmount,
+        timestamp: Date.now()
+      };
       if (isTauri()) {
-        await nativeEnqueueSale(clientRef, variables);
+        try {
+          await nativeEnqueueSale(clientRef, variables);
+        } catch (e) {
+          // Native outbox unavailable (older binary / DB error) — fall back to
+          // the webview IndexedDB queue so the sale is never lost.
+          console.warn('[store] Native outbox failed, queuing in IndexedDB:', e);
+          await savePendingSale(pendingRecord);
+        }
       } else {
-        await savePendingSale({
-          id: clientRef,
-          items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
-          total: totalAmount,
-          payment_method: args.paymentMethod,
-          cashier_name: me?.name || 'Unknown',
-          cashier_id: me?.id,
-          branch_name: args.branchName || me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
-          branch_id: saleBranchId,
-          customerId: args.customerId,
-          customerName: args.customerName,
-          customerPhone: args.customerPhone,
-          customerEmail: args.customerEmail,
-          cashAmount: args.cashAmount,
-          momoAmount: args.momoAmount,
-          timestamp: Date.now()
-        });
+        await savePendingSale(pendingRecord);
       }
 
       // Flush immediately if the API is actually reachable right now

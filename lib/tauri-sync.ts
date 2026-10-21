@@ -186,9 +186,10 @@ export async function initTauriSync() {
 /** Push all queued sales to the server, oldest first. */
 export async function syncPendingSales(): Promise<{ synced: number; failed: number }> {
   if (isTauri()) {
-    // Rust daemon owns the drain — kick it; progress arrives via nexus://sync-status
+    // Rust daemon owns the native SQLite outbox — kick it; progress arrives
+    // via nexus://sync-status. Then keep going: sales that fell back to the
+    // webview IndexedDB queue (native bridge failure) still drain below.
     nativeSyncNow().catch(e => console.warn('[sync] native drain kick failed:', e));
-    return { synced: 0, failed: 0 };
   }
   if (isSyncing) return { synced: 0, failed: 0 };
   if (!isApiReachable()) {
@@ -488,6 +489,8 @@ export async function manualSync() {
     if (reachable) {
       await retryDeadQueue();
       await nativeSyncNow().catch(() => {});
+      // Drain any IndexedDB fallback rows the native daemon doesn't own
+      return syncPendingSales();
     }
     return { synced: 0, failed: 0 };
   }
