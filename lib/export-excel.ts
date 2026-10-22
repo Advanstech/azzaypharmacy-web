@@ -224,13 +224,13 @@ export function exportToExcel(opts: ExcelExportOptions) {
       }
       if (c === statusColumn && cell.v !== undefined && cell.v !== null) {
         const v = String(cell.v).toUpperCase();
-        if (v.includes('OUT')) {
+        if (/OUT|REJECT|SHORT|FAIL|EXPIRED/.test(v)) {
           baseStyle.font = { bold: true, color: { rgb: 'FFEF4444' } };
           baseStyle.fill = { patternType: 'solid', fgColor: { rgb: 'FFFEE2E2' } };
-        } else if (v.includes('LOW')) {
+        } else if (/LOW|PENDING|WARN|ATTENTION|CRITICAL/.test(v)) {
           baseStyle.font = { bold: true, color: { rgb: 'FFF59E0B' } };
           baseStyle.fill = { patternType: 'solid', fgColor: { rgb: 'FFFEF3C7' } };
-        } else if (v.includes('OK')) {
+        } else if (/OK|APPROVED|BALANCED|COMPLETE|PAID/.test(v)) {
           baseStyle.font = { bold: true, color: { rgb: 'FF10B981' } };
           baseStyle.fill = { patternType: 'solid', fgColor: { rgb: 'FFD1FAE5' } };
         }

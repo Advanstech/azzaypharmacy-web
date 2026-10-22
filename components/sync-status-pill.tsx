@@ -4,8 +4,10 @@ import { useEffect, useState } from 'react';
 import { Wifi, WifiOff, RefreshCw, CloudUpload, RotateCcw } from 'lucide-react';
 import { manualSync, onSyncEvent, retryDeadQueue } from '@/lib/tauri-sync';
 import { getConnectivity, onConnectivityChange, type ConnectivityStatus } from '@/lib/connectivity';
-import { getPendingSalesCount } from '@/lib/offline';
-import { isTauri, nativeQueueStats } from '@/lib/tauri-native';
+import { getPendingSales } from '@/lib/offline';
+import { getAuthUserId } from '@/lib/gql';
+import { canSyncQueuedOperation } from '@/lib/offline-ops';
+import { isTauri, nativeListQueue } from '@/lib/tauri-native';
 
 /**
  * Live connectivity + pending-sync indicator.
@@ -13,27 +15,52 @@ import { isTauri, nativeQueueStats } from '@/lib/tauri-native';
  * Shows the pending-sale count when the outbox has items queued.
  */
 export function SyncStatusPill({ onSyncClick }: { onSyncClick?: () => void }) {
-  const [conn, setConn] = useState<ConnectivityStatus>('PROBING');
+  const [conn, setConn] = useState<ConnectivityStatus>(() => getConnectivity());
   const [syncing, setSyncing] = useState(false);
   const [pending, setPending] = useState(0);
   const [dead, setDead] = useState(0);
 
   const refreshPending = async () => {
     try {
+      const authUserId = getAuthUserId();
+      if (!authUserId) {
+        setPending(0);
+        setDead(0);
+        return;
+      }
       if (isTauri()) {
-        const s = await nativeQueueStats();
-        setPending(s.pending);
-        setDead(s.dead);
+        const [pendingRows, deadRows] = await Promise.all([
+          nativeListQueue('pending'),
+          nativeListQueue('dead'),
+        ]);
+        const belongsToUser = (row: { variables: string }) => {
+          try {
+            const variables = JSON.parse(row.variables);
+            const ownerUserId = variables._syncOwnerId ?? variables.userId;
+            return typeof ownerUserId === 'string' && canSyncQueuedOperation(ownerUserId, authUserId);
+          } catch {
+            return false;
+          }
+        };
+        setPending(pendingRows.filter(belongsToUser).length);
+        setDead(deadRows.filter(belongsToUser).length);
       } else {
-        setPending(await getPendingSalesCount());
+        const sales = await getPendingSales();
+        setPending(sales.filter(sale =>
+          canSyncQueuedOperation(
+            sale.cashier_id
+              || (typeof sale.op?.variables._syncOwnerId === 'string' ? sale.op.variables._syncOwnerId : undefined)
+              || (typeof sale.op?.variables.userId === 'string' ? sale.op.variables.userId : undefined),
+            authUserId,
+          )
+        ).length);
         setDead(0);
       }
     } catch {}
   };
 
   useEffect(() => {
-    setConn(getConnectivity());
-    refreshPending();
+    const initialRefresh = window.setTimeout(refreshPending, 0);
 
     const offConn = onConnectivityChange(s => {
       setConn(s);
@@ -44,15 +71,16 @@ export function SyncStatusPill({ onSyncClick }: { onSyncClick?: () => void }) {
     const offSync = onSyncEvent(e => {
       if (e.status === 'syncing') setSyncing(true);
       if (e.type === 'sync:complete' || e.type === 'sync:error') setSyncing(false);
-      if (e.pendingCount !== undefined) setPending(e.pendingCount);
-      else refreshPending();
-      if (e.type === 'sync:progress' && typeof e.failedCount === 'number') {
-        setDead(Math.max(0, e.failedCount));
-      }
+      refreshPending();
     });
 
     const t = setInterval(refreshPending, 10_000);
-    return () => { offConn(); offSync(); clearInterval(t); };
+    return () => {
+      window.clearTimeout(initialRefresh);
+      offConn();
+      offSync();
+      clearInterval(t);
+    };
   }, []);
 
   const offline = conn === 'OFFLINE';

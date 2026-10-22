@@ -27,8 +27,8 @@ import {
   type PendingSale 
 } from './offline';
 import { errorHandler, ErrorCategory, ErrorSeverity } from './error-handler';
-import { gql } from './gql';
-import { shouldQueueOfflineMutation } from './offline-ops';
+import { getAuthUserId, gql } from './gql';
+import { canSyncQueuedOperation, shouldQueueOfflineMutation } from './offline-ops';
 import {
   startConnectivityMonitor,
   onConnectivityChange,
@@ -198,12 +198,20 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
     return { synced: 0, failed: 0 };
   }
 
+  const authUserId = getAuthUserId();
+  if (!authUserId) return { synced: 0, failed: 0 };
+
   isSyncing = true;
   let syncedCount = 0;
   let failedCount = 0;
 
   try {
-    const pendingSales = await getPendingSales();
+    const pendingSales = (await getPendingSales()).filter(sale => {
+      const ownerUserId = sale.cashier_id
+        || (typeof sale.op?.variables._syncOwnerId === 'string' ? sale.op.variables._syncOwnerId : undefined)
+        || (typeof sale.op?.variables.userId === 'string' ? sale.op.variables.userId : undefined);
+      return canSyncQueuedOperation(ownerUserId, authUserId);
+    });
     const totalPending = pendingSales.length;
 
     if (totalPending === 0) return { synced: 0, failed: 0 };
@@ -431,7 +439,7 @@ export async function enqueueOfflineOp(args: {
 }): Promise<void> {
   if (isTauri()) {
     const { nativeEnqueueSale } = await import('./tauri-native');
-    await nativeEnqueueSale(args.clientRef, args.variables, args.mutation);
+    await nativeEnqueueSale(args.clientRef, args.variables, args.mutation, args.flat?.cashier_id);
     return;
   }
   await savePendingSale({
@@ -458,18 +466,40 @@ export async function retryDeadQueue(): Promise<number> {
   if (!isTauri()) return 0;
 
   try {
+    const authUserId = getAuthUserId();
+    if (!authUserId) return 0;
     const rows = await nativeListQueue('dead');
+    let retried = 0;
     for (const row of rows) {
+      let variables: Record<string, unknown>;
+      try {
+        variables = JSON.parse(row.variables);
+      } catch {
+        continue;
+      }
+      const ownerUserId = variables._syncOwnerId ?? variables.userId;
+      if (typeof ownerUserId !== 'string' || !canSyncQueuedOperation(ownerUserId, authUserId)) continue;
       await nativeRetryQueuedSale(row.id).catch(() => {});
+      retried++;
     }
-    return rows.length;
+    return retried;
   } catch {
     return 0;
   }
 }
 
 export async function retryQueuedOperation(id: string): Promise<void> {
+  const authUserId = getAuthUserId();
+  if (!authUserId) throw new Error('Sign in as the queued operation owner before retrying it.');
+
   if (isTauri()) {
+    const row = (await nativeListQueue('dead')).find(item => item.id === id);
+    if (!row) throw new Error(`Queued operation ${id} was not found`);
+    const variables = JSON.parse(row.variables) as Record<string, unknown>;
+    const ownerUserId = variables._syncOwnerId ?? variables.userId;
+    if (typeof ownerUserId !== 'string' || !canSyncQueuedOperation(ownerUserId, authUserId)) {
+      throw new Error('Only the user who created this queued operation can retry it.');
+    }
     await nativeRetryQueuedSale(id);
     await updateOfflineTransfer(id, undefined, true);
     await nativeSyncNow();
@@ -477,6 +507,12 @@ export async function retryQueuedOperation(id: string): Promise<void> {
   }
   const queued = (await getPendingSales()).find(sale => sale.id === id);
   if (!queued) throw new Error(`Queued operation ${id} was not found`);
+  const ownerUserId = queued.cashier_id
+    || (typeof queued.op?.variables._syncOwnerId === 'string' ? queued.op.variables._syncOwnerId : undefined)
+    || (typeof queued.op?.variables.userId === 'string' ? queued.op.variables.userId : undefined);
+  if (!canSyncQueuedOperation(ownerUserId, authUserId)) {
+    throw new Error('Only the user who created this queued operation can retry it.');
+  }
   await savePendingSale({ ...queued, _retryCount: 0, _lastError: undefined } as any);
   if (queued.op?.kind === 'transfer-create') await updateOfflineTransfer(id, undefined, true);
   await manualSync();

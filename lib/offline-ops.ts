@@ -10,3 +10,7 @@ export function shouldQueueOfflineMutation(err: any): boolean {
 
   return looksNetworkish && !looksAuth && !looksValidation;
 }
+
+export function canSyncQueuedOperation(ownerUserId: string | undefined, currentUserId: string | null): boolean {
+  return !!ownerUserId && !!currentUserId && ownerUserId === currentUserId;
+}

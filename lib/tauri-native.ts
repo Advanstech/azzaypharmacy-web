@@ -32,8 +32,13 @@ export interface QueueStats {
   oldest_pending?: number;
 }
 
-export async function nativeEnqueueSale(id: string, variables: unknown, mutation?: string): Promise<void> {
-  await tauriInvoke('outbox_enqueue', { id, variables: JSON.stringify(variables), mutation: mutation ?? null });
+export async function nativeEnqueueSale(id: string, variables: unknown, mutation?: string, ownerUserId?: string): Promise<void> {
+  const payload: Record<string, unknown> = variables && typeof variables === 'object' && !Array.isArray(variables)
+    ? { ...variables }
+    : {};
+  const owner = ownerUserId || (typeof payload.userId === 'string' ? payload.userId : undefined);
+  if (owner) payload._syncOwnerId = owner;
+  await tauriInvoke('outbox_enqueue', { id, variables: JSON.stringify(payload), mutation: mutation ?? null });
 }
 
 export async function nativeQueueStats(): Promise<QueueStats> {
@@ -53,8 +58,8 @@ export async function nativeRetryQueuedSale(id: string): Promise<void> {
 }
 
 /** Feed the daemon the API URL + JWT so it can push sales natively. */
-export async function nativeSetSyncAuth(apiUrl: string | null, token: string | null): Promise<void> {
-  await tauriInvoke('set_sync_auth', { apiUrl: apiUrl ?? null, token: token ?? null });
+export async function nativeSetSyncAuth(apiUrl: string | null, token: string | null, userId: string | null): Promise<void> {
+  await tauriInvoke('set_sync_auth', { apiUrl: apiUrl ?? null, token: token ?? null, userId: userId ?? null });
 }
 
 /** Kick the daemon's drain loop immediately (manual "sync now"). */

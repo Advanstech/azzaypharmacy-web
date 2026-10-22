@@ -17,7 +17,6 @@ import { useBranch } from '@/lib/branch-context';
 import { manualSync } from '@/lib/tauri-sync';
 import { tryThermalPrint } from '@/lib/print';
 import { isTauri } from '@/lib/tauri-native';
-import { PrinterSettings } from '@/components/printer-settings';
 import { SyncStatusPill } from '@/components/sync-status-pill';
 import { BranchSwitcher } from '@/components/BranchSwitcher';
 
@@ -958,8 +957,6 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
               }
             }}
           />
-
-          <PrinterSettings buttonClass="flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-1.5 rounded-full border border-white/30 hover:bg-white/10 transition-colors text-[10px] sm:text-xs font-medium" />
 
           <button 
             onClick={() => setShowPendingPanel(true)}

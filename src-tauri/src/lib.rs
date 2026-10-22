@@ -135,13 +135,20 @@ fn delete_backup(path: String) -> Result<(), String> {
 // ── Sync config ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn set_sync_auth(app: AppHandle, cfg: State<SharedConfig>, api_url: Option<String>, token: Option<String>) {
+fn set_sync_auth(
+    app: AppHandle,
+    cfg: State<SharedConfig>,
+    api_url: Option<String>,
+    token: Option<String>,
+    user_id: Option<String>,
+) {
     let has_token = token.is_some();
     if let Ok(mut c) = cfg.lock() {
         if let Some(u) = api_url {
             c.api_url = Some(u);
         }
         c.token = token;
+        c.user_id = user_id;
         log::info!(
             "[sync] auth config updated (token set: {})",
             c.token.is_some()
@@ -157,19 +164,11 @@ fn set_sync_auth(app: AppHandle, cfg: State<SharedConfig>, api_url: Option<Strin
 /// Kick the daemon's drain loop immediately (manual "sync now").
 #[tauri::command]
 async fn sync_now(app: AppHandle, cfg: State<'_, SharedConfig>) -> Result<(), String> {
-    let snapshot = cfg
-        .lock()
-        .map_err(|_| "config lock".to_string())?
-        .api_url
-        .clone();
-    let token = cfg
-        .lock()
-        .map_err(|_| "config lock".to_string())?
-        .token
-        .clone();
+    let snapshot = cfg.lock().map_err(|_| "config lock".to_string())?.clone();
     let c = sync::SyncConfig {
-        api_url: snapshot,
-        token,
+        api_url: snapshot.api_url,
+        token: snapshot.token,
+        user_id: snapshot.user_id,
     };
     sync::drain_once(&app, &c).await;
     Ok(())

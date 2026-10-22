@@ -40,10 +40,11 @@ const SYNC_MUTATION: &str = r#"mutation SyncSale(
   ) { id receiptNo totalAmount }
 }"#;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SyncConfig {
     pub api_url: Option<String>,
     pub token: Option<String>,
+    pub user_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -110,6 +111,14 @@ fn is_permanent_error(msg: &str) -> bool {
         || m.contains("graphql")
 }
 
+fn belongs_to_sync_user(variables: &serde_json::Value, user_id: Option<&str>) -> bool {
+    let owner_user_id = variables
+        .get("_syncOwnerId")
+        .or_else(|| variables.get("userId"))
+        .and_then(serde_json::Value::as_str);
+    user_id.is_some() && owner_user_id == user_id
+}
+
 fn validate_graphql_response(body: &str) -> Result<(), String> {
     let response: serde_json::Value =
         serde_json::from_str(body).map_err(|e| format!("invalid GraphQL response: {e}"))?;
@@ -148,6 +157,10 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
         None => return,
     };
     let token = cfg.token.clone();
+    let user_id = cfg.user_id.clone();
+    if token.is_none() || user_id.is_none() {
+        return;
+    }
 
     let conn = match outbox::open_for_app(app) {
         Ok(c) => c,
@@ -172,7 +185,7 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
     let mut failed = 0i64;
 
     for row in rows {
-        let variables: serde_json::Value = match serde_json::from_str(&row.variables) {
+        let mut variables: serde_json::Value = match serde_json::from_str(&row.variables) {
             Ok(v) => v,
             Err(e) => {
                 let _ = outbox::mark_failed(&conn, &row.id, &format!("bad payload: {e}"), 1);
@@ -180,6 +193,14 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
                 continue;
             }
         };
+
+        if !belongs_to_sync_user(&variables, user_id.as_deref()) {
+            log::info!("[sync] leaving queued operation {} for its owner", row.id);
+            continue;
+        }
+        if let Some(values) = variables.as_object_mut() {
+            values.remove("_syncOwnerId");
+        }
 
         let mutation = row.mutation.as_deref().unwrap_or(SYNC_MUTATION);
         let mut req = client
@@ -320,6 +341,7 @@ pub fn spawn_daemon(app: AppHandle, cfg: std::sync::Arc<Mutex<SyncConfig>>) {
                 let snapshot = cfg.lock().ok().map(|c| SyncConfig {
                     api_url: c.api_url.clone(),
                     token: c.token.clone(),
+                    user_id: c.user_id.clone(),
                 });
                 if let Some(c) = snapshot {
                     drain_queue(&app, &client, &c).await;
@@ -370,7 +392,9 @@ pub fn spawn_daemon(app: AppHandle, cfg: std::sync::Arc<Mutex<SyncConfig>>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_retryable_status, next_probe_delay, validate_graphql_response};
+    use super::{
+        belongs_to_sync_user, is_retryable_status, next_probe_delay, validate_graphql_response,
+    };
     use std::time::Duration;
 
     #[test]
@@ -395,5 +419,18 @@ mod tests {
         assert!(validate_graphql_response(r#"{"data":{"createSale":null},"errors":[{"message":"rejected"}]}"#).is_err());
         assert!(validate_graphql_response(r#"{"errors":[{"message":"rejected"}]}"#).is_err());
         assert!(validate_graphql_response("not json").is_err());
+    }
+
+    #[test]
+    fn queued_operations_only_sync_for_their_owner() {
+        let variables = serde_json::json!({ "userId": "cashier-a" });
+        let tagged_variables = serde_json::json!({ "_syncOwnerId": "cashier-a" });
+        let unowned_variables = serde_json::json!({ "branchId": "branch-a" });
+
+        assert!(belongs_to_sync_user(&variables, Some("cashier-a")));
+        assert!(belongs_to_sync_user(&tagged_variables, Some("cashier-a")));
+        assert!(!belongs_to_sync_user(&variables, Some("cashier-b")));
+        assert!(!belongs_to_sync_user(&unowned_variables, Some("cashier-a")));
+        assert!(!belongs_to_sync_user(&variables, None));
     }
 }

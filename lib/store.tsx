@@ -10,7 +10,7 @@ import {
   useCallback, useRef, ReactNode
 } from 'react';
 import {
-  gql, setAuthToken,
+  gql, getAuthUserId, setAuthToken,
   Q_PRODUCTS, Q_PRODUCTS_POS, Q_SUPPLIERS, Q_SALES, Q_SALES_PAGINATED, Q_SALES_PAGINATED_LEGACY, Q_STAFF, Q_ME, Q_CUSTOMERS,
   Q_PRODUCTS_BY_SUPPLIER, Q_PRESCRIPTIONS, Q_PURCHASES, Q_EXPENSES, Q_EXPENSE_CATEGORIES, Q_LEDGER, Q_FINANCIAL_SUMMARY, Q_BUDGETS, Q_BUDGET_VS_ACTUAL, Q_INVOICES, Q_REFUND_REQUESTS, Q_ALL_SHIFT_RECONCILIATIONS,
   M_CREATE_SALE, M_CREATE_PENDING_SALE, M_COMPLETE_PENDING_SALE, M_CANCEL_PENDING_SALE, M_CLOSE_TERMINAL, M_INVITE_STAFF, M_CREATE_STAFF_ACCOUNT, M_RECORD_SUPPLIER_PAYMENT, M_DELETE_INVOICE, M_DELETE_SALE,
@@ -1021,7 +1021,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   // Re-inject locally-held sales that haven't synced yet, and retire
   // placeholders whose clientRef now exists server-side (synced PENDING sale).
-  const mergeHeldSales = async (serverSales: Sale[]): Promise<Sale[]> => {
+  const mergeHeldSales = async (serverSales: Sale[], ownerUserId: string | null): Promise<Sale[]> => {
     try {
       const serverRefs = new Set(serverSales.map(s => s.clientRef).filter(Boolean));
       const serverIds = new Set(serverSales.map(s => s.id));
@@ -1031,7 +1031,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       const remaining: typeof entries = [];
       let changed = false;
       for (const h of entries) {
-        if (h.sale.clientRef && serverRefs.has(h.sale.clientRef)) changed = true;
+        const saleOwnerId = h.sale.cashierId || h.sale.user?.id || h.variables?.userId;
+        if (saleOwnerId === ownerUserId && h.sale.clientRef && serverRefs.has(h.sale.clientRef)) changed = true;
         else remaining.push(h);
       }
       if (changed) {
@@ -1045,14 +1046,20 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       let offlineChanged = false;
       for (const sale of Object.values(offline)) {
         const ref = sale.clientRef || sale.id;
-        if (serverRefs.has(ref) || serverIds.has(sale.id)) offlineChanged = true;
+        const saleOwnerId = sale.cashierId || sale.user?.id;
+        if (saleOwnerId === ownerUserId && (serverRefs.has(ref) || serverIds.has(sale.id))) offlineChanged = true;
         else offlineRemaining.push(sale);
       }
       if (offlineChanged) {
         await saveKV(OFFLINE_SALES_KEY, Object.fromEntries(offlineRemaining.map(s => [s.clientRef || s.id, s])));
       }
 
-      return [...remaining.map(h => h.sale), ...offlineRemaining, ...serverSales];
+      const currentHeldSales = remaining
+        .filter(h => (h.sale.cashierId || h.sale.user?.id || h.variables?.userId) === ownerUserId)
+        .map(h => h.sale);
+      const currentOfflineSales = offlineRemaining
+        .filter(sale => (sale.cashierId || sale.user?.id) === ownerUserId);
+      return [...currentHeldSales, ...currentOfflineSales, ...serverSales];
     } catch {
       return serverSales;
     }
@@ -1069,9 +1076,10 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     try {
       // Serve stale cache instantly so dashboard paints immediately
       const rangeKey = dateFrom || dateTo ? `${dateFrom}_${dateTo}` : '';
-      const cacheKey = ['sales_cache', branchId || '', rangeKey].filter(Boolean).join('_');
+      const ownerUserId = getAuthUserId();
+      const cacheKey = ['sales_cache', ownerUserId || 'unknown-user', branchId || '', rangeKey].filter(Boolean).join('_');
       const cached = await getKV(cacheKey);
-      if (cached?.length && requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(cached));
+      if (cached?.length && requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(cached, ownerUserId));
 
       // No cap — return all sales in the requested range. Revenue totals
       // are computed from this list, so capping it undercounts long ranges.
@@ -1099,7 +1107,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
 
       if (data?.sales) {
-        if (requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(data.sales));
+        if (requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(data.sales, ownerUserId));
         await saveKV(cacheKey, data.sales);
       }
     } catch (e: any) {
@@ -1111,11 +1119,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const refetchStaff = useCallback(async () => {
     setLoadingStaff(true);
+    const authUserId = getAuthUserId();
     try {
       const [staffCached, meCached] = await Promise.all([
         getFromCache('staff_cache'),
-        getKV('me'),
+        getKV(`me_${authUserId || 'unknown-user'}`),
       ]);
+      if (getAuthUserId() !== authUserId) return;
       if (staffCached?.length) setStaff(staffCached);
       // Hydrate `me` from cache immediately — lets the app boot offline with the
       // last known session identity before the network call resolves (or fails).
@@ -1125,12 +1135,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         gql<{ staff: StaffMember[] }>(Q_STAFF),
         gql<{ me: StaffMember }>(Q_ME),
       ]);
+      if (getAuthUserId() !== authUserId) return;
       if (staffData.staff) {
         setStaff(staffData.staff);
         await saveToCache('staff_cache', staffData.staff);
       }
       setMe(meData.me ?? null);
-      if (meData.me) await saveKV('me', meData.me);
+      if (meData.me && authUserId) await saveKV(`me_${authUserId}`, meData.me);
     } catch (e: any) {
       console.warn('[store] staff fetch failed:', e.message);
       if (e.message.includes('Unauthorized') || e.message.includes('not authenticated')) {
@@ -1389,19 +1400,23 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [refetchProductsPOS, refetchSuppliers, refetchSales, refetchStaff, refetchCustomers, refetchPrescriptions, refetchPurchases, refetchInvoices, refetchExpenses, refetchShiftReconciliations, refetchExpenseCategories, refetchLedger, refetchRefundRequests]);
 
-  // Track previous token to only fetch on null→token transitions, not on every refresh
-  const prevTokenRef = useRef<string | null | undefined>(undefined);
+  const prevAuthUserIdRef = useRef<string | null | undefined>(undefined);
 
-  // Set token and fetch when it becomes available
+  // Refresh identity-scoped data when accounts change, but not on token refreshes.
   useEffect(() => {
     setAuthToken(token ?? null);
-    const wasEmpty = !prevTokenRef.current;
-    const hasToken = !!token;
-    prevTokenRef.current = token ?? null;
+    const authUserId = getAuthUserId(token ?? null);
+    const previousUserId = prevAuthUserIdRef.current;
+    prevAuthUserIdRef.current = authUserId;
 
-    if (hasToken && wasEmpty) {
-      // Only fetch on first token arrival (null→token), not on silent token refreshes
-      console.log('[store] Token acquired — initiating data sync');
+    if (previousUserId !== undefined && previousUserId !== authUserId) {
+      salesRequestIdRef.current++;
+      setSales([]);
+      setMe(null);
+    }
+
+    if (authUserId && authUserId !== previousUserId) {
+      console.log('[store] Authenticated user changed — initiating data sync');
       try {
         initTauriSync().catch(err => console.warn('[store] Tauri sync init failed:', err));
       } catch (err) {
@@ -1409,7 +1424,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
       refetchAll();
     }
-  }, [token]);
+  }, [token, refetchAll]);
 
   // ── Pull-sync: after reconnecting or after queued writes are pushed, re-pull
   // server data so changes made at other branches arrive without a restart.

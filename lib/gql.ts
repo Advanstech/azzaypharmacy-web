@@ -86,12 +86,26 @@ export function getCurrentApiUrl(): string {
 // Token can be set externally by the StoreProvider once auth is ready
 let _token: string | null = null;
 
+export function getAuthUserId(token = _token): string | null {
+  const encodedPayload = token?.split('.')[1];
+  if (!encodedPayload) return null;
+
+  try {
+    const base64 = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - base64.length % 4) % 4), '=');
+    const payload = JSON.parse(atob(padded));
+    return typeof payload.sub === 'string' ? payload.sub : null;
+  } catch {
+    return null;
+  }
+}
+
 function syncNativeAuth() {
   if (typeof window === 'undefined' || (!('__TAURI__' in window) && !('__TAURI_INTERNALS__' in window))) return;
 
   const apiForNative = currentActiveApi || API;
   import('./tauri-native')
-    .then(m => m.nativeSetSyncAuth(apiForNative, _token))
+    .then(m => m.nativeSetSyncAuth(apiForNative, _token, getAuthUserId()))
     .catch(() => {});
 }
 

@@ -11,7 +11,7 @@ import {
   FileText, Download, BarChart3, Package, DollarSign, Users, Calendar, 
   ChevronRight, TrendingUp, AlertTriangle, Eye, ArrowRight, Activity,
   ShoppingCart, Boxes, CreditCard, Receipt, PiggyBank, Clock, CalendarDays,
-  TrendingDown, PackageCheck, UserCircle, Store, Percent, Shield
+  TrendingDown, PackageCheck, UserCircle, Store, Percent, Shield, ClipboardCheck
 } from 'lucide-react';
 
 const CATEGORIES = ['All', 'Sales', 'Inventory', 'Staff', 'Financial', 'Customers', 'Suppliers', 'Authorizations'];
@@ -444,6 +444,15 @@ export default function ReportsPage() {
       },
     },
     // STAFF REPORTS
+    {
+      id: 'staff-end-of-day',
+      title: 'End of Day Report',
+      desc: 'Review and export shift reconciliations by date and staff member',
+      icon: ClipboardCheck, color: '#10B981', category: 'Staff',
+      lastGenerated: today,
+      detailPath: '/admin/reports/end-of-day',
+      onExport: () => router.push('/admin/reports/end-of-day'),
+    },
     {
       id: 'staff-performance',
       title: 'Staff Performance Report',
