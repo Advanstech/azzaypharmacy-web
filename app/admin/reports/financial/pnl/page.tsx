@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveDateRange } from '@/lib/effective-date';
@@ -16,11 +17,15 @@ import {
 export default function ProfitLossReportPage() {
   const router = useRouter();
   const { theme, resolvedTheme } = useTheme();
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales: allSales, products, expenses: allExpenses, refetchSales, refetchExpenses } = useStore();
+  const {
+    sales: allSales, products, expenses: allExpenses, refetchSales, refetchExpenses,
+    loadingSales, loadingProducts, loadingExpenses,
+  } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
@@ -35,14 +40,22 @@ export default function ProfitLossReportPage() {
 
   // Date range filter — default to month of most recent sales data
   const effectiveRange = useMemo(() => getEffectiveDateRange(sales), [sales]);
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(searchParams?.get('from') || '');
+  const [dateTo, setDateTo] = useState(searchParams?.get('to') || '');
   useEffect(() => {
     if (sales.length > 0 && !dateFrom) {
       setDateFrom(effectiveRange.from);
       setDateTo(effectiveRange.to);
     }
   }, [sales.length, effectiveRange, dateFrom]);
+  useEffect(() => {
+    if (!dateFrom || !dateTo) return;
+    void refetchSales(
+      activeBranchId ?? undefined,
+      `${dateFrom}T00:00:00.000Z`,
+      `${dateTo}T23:59:59.999Z`,
+    );
+  }, [activeBranchId, dateFrom, dateTo, refetchSales]);
 
   // Calculate all financial metrics
   const metrics = useMemo(() => {
@@ -134,6 +147,8 @@ export default function ProfitLossReportPage() {
       sheetName: 'Profit & Loss',
     });
   };
+
+  useAutoExport(Boolean(dateFrom && dateTo) && !loadingSales && !loadingProducts && !loadingExpenses, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

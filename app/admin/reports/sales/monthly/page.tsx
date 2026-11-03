@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { getEffectiveToday } from '@/lib/effective-date';
@@ -22,7 +23,7 @@ export default function MonthlyRevenueReportPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const searchParams = useSearchParams();
-  const { sales: allSales, products } = useStore();
+  const { sales: allSales, products, refetchSales, loadingSales, loadingProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
@@ -56,6 +57,12 @@ export default function MonthlyRevenueReportPage() {
       router.replace(`?${params.toString()}`, { scroll: false });
     }
   }, [selectedMonth, router, searchParams]);
+  useEffect(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const from = new Date(year, month - 1, 1).toISOString();
+    const to = new Date(year, month, 0, 23, 59, 59, 999).toISOString();
+    void refetchSales(activeBranchId ?? undefined, from, to);
+  }, [activeBranchId, selectedMonth, refetchSales]);
 
   // Parse selected month
   const [year, month] = selectedMonth.split('-').map(Number);
@@ -187,6 +194,8 @@ export default function MonthlyRevenueReportPage() {
       sheetName: 'By Payment Method',
     });
   };
+
+  useAutoExport(!loadingSales && !loadingProducts, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

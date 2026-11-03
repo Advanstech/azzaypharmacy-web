@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { 
   ArrowLeft, Download, Calendar, AlertTriangle, Clock,
   Search, ChevronLeft, ChevronRight, AlertCircle, CheckCircle2
@@ -19,12 +20,15 @@ export default function ExpiryTrackingReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { products: allProducts } = useStore();
+  const { products: allProducts, refetchProducts, loadingProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const products = useMemo(() => activeBranchId
     ? allProducts.filter(p => filterByBranch([p]).length > 0 || p.stockItems?.some(item => filterByBranch([item]).length > 0))
     : allProducts, [allProducts, activeBranchId, filterByBranch]);
+  useEffect(() => {
+    void refetchProducts(activeBranchId);
+  }, [activeBranchId, refetchProducts]);
   const [searchTerm, setSearchTerm] = useState('');
   const [daysFilter, setDaysFilter] = useState('90');
 
@@ -43,6 +47,7 @@ export default function ExpiryTrackingReportPage() {
 
     products.forEach(p => {
       p.stockItems?.forEach(item => {
+        if (activeBranchId && filterByBranch([item]).length === 0) return;
         if (item.expiryDate && item.quantity > 0) {
           const expiry = new Date(item.expiryDate);
           const daysLeft = Math.ceil((expiry.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
@@ -61,7 +66,7 @@ export default function ExpiryTrackingReportPage() {
     });
 
     return data.sort((a, b) => a.daysLeft - b.daysLeft);
-  }, [products]);
+  }, [products, activeBranchId, filterByBranch]);
 
   // Filter by days
   const filteredData = useMemo(() => {
@@ -122,6 +127,8 @@ export default function ExpiryTrackingReportPage() {
       sheetName: 'Expiry Tracking',
     });
   };
+
+  useAutoExport(!loadingProducts, handleExport);
 
   const getStatusBadge = (days: number) => {
     if (days <= 0) return { text: 'EXPIRED', bg: 'rgba(239,68,68,0.15)', color: '#EF4444', icon: AlertCircle };

@@ -7,6 +7,7 @@ import { useStore, Product } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { 
   ArrowLeft, Download, Package, AlertTriangle, CheckCircle,
   Search, Filter, ChevronLeft, ChevronRight, ArrowUpDown
@@ -222,6 +223,8 @@ export default function StockLevelReportPage() {
       setSortDirection('asc');
     }
   };
+
+  useAutoExport(!loadingProducts, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import {
   ArrowLeft, Download, PackageCheck, Search, Filter,
   ChevronDown, ChevronUp, TrendingUp, Clock, CheckCircle,
@@ -27,7 +28,7 @@ export default function PurchaseOrdersReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { purchases: allPurchases, suppliers, refetchPurchases } = useStore();
+  const { purchases: allPurchases, suppliers, refetchPurchases, loadingPurchases } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const purchases = useMemo(() => filterByBranch(allPurchases), [allPurchases, filterByBranch]);
@@ -145,6 +146,8 @@ export default function PurchaseOrdersReportPage() {
     else { setSortField(field); setSortDir('desc'); }
     goToPage(1);
   };
+
+  useAutoExport(!loadingPurchases, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

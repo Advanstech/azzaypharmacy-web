@@ -184,35 +184,87 @@ export default function ReportsPage() {
       lastGenerated: today,
       detailPath: '/admin/reports/sales/daily',
       onExport: () => {
-        const rows = rangeSales.map(s => {
-          const saleCogs = s.items.reduce((sum, item) => {
-            const product = products.find(p => p.id === item.product.id);
-            const cost = product ? product.costPrice : (item.unitPrice * 0.5);
-            return sum + (cost * item.quantity);
-          }, 0);
+        const getItemCost = (sale: typeof rangeSales[number], item: typeof sale.items[number]) => {
+          const product = products.find(p => p.id === item.product.id);
+          const batchCost = product?.stockItems?.find(stockItem =>
+            stockItem.batchNo === item.batchNo &&
+            (sale.branchId ? stockItem.branchId === sale.branchId : filterByBranch([stockItem]).length > 0)
+          )?.costPrice;
+          const cost = batchCost ?? product?.costPrice;
+          return typeof cost === 'number' && Number.isFinite(cost) && cost >= 0
+            ? { unitCost: cost, basis: batchCost === undefined ? 'Current product cost price' : `Batch ${item.batchNo} cost price` }
+            : { unitCost: null, basis: 'Unavailable — add product cost price' };
+        };
+        const itemRows = rangeSales.flatMap(sale => sale.items.map(item => {
+          const { unitCost, basis } = getItemCost(sale, item);
+          const quantity = Number(item.quantity || 0);
+          const sellingTotal = Number(item.total ?? item.unitPrice * quantity);
+          const costTotal = unitCost === null ? null : unitCost * quantity;
+          const grossProfit = costTotal === null ? null : sellingTotal - costTotal;
+
           return [
-            s.id, s.customerName || 'Walk-in',
-            s.items.length, s.paymentMethod,
-            s.totalAmount, (s.totalAmount - saleCogs),
-            new Date(s.createdAt).toLocaleString('en-GB'),
+            sale.id,
+            sale.receiptNo || '',
+            sale.customerName || 'Walk-in',
+            sale.paymentMethod,
+            new Date(sale.createdAt).toLocaleString('en-GB'),
+            item.product?.name || 'Unknown product',
+            item.product?.category || 'Uncategorized',
+            item.batchNo || '',
+            quantity,
+            item.unitPrice,
+            `${quantity} × GH₵ ${item.unitPrice.toFixed(2)}`,
+            sellingTotal,
+            unitCost,
+            unitCost === null ? 'Unavailable' : `${quantity} × GH₵ ${unitCost.toFixed(2)}`,
+            costTotal,
+            grossProfit,
+            grossProfit === null || sellingTotal === 0 ? null : (grossProfit / sellingTotal) * 100,
+            basis,
           ];
-        });
+        }));
+        const itemSalesTotal = rangeSales.reduce((sum, sale) => (
+          sum + sale.items.reduce((itemSum, item) => itemSum + Number(item.total ?? item.unitPrice * item.quantity), 0)
+        ), 0);
+        const missingCostItems = rangeSales.reduce((sum, sale) => (
+          sum + sale.items.filter(item => getItemCost(sale, item).unitCost === null).length
+        ), 0);
+        const knownCostTotal = rangeSales.reduce((sum, sale) => (
+          sum + sale.items.reduce((itemSum, item) => {
+            const { unitCost } = getItemCost(sale, item);
+            return itemSum + (unitCost === null ? 0 : unitCost * Number(item.quantity || 0));
+          }, 0)
+        ), 0);
+        const grossProfit = missingCostItems === 0 ? itemSalesTotal - knownCostTotal : null;
+
         exportToExcel({
           filename: `daily-sales-report-${activeBranchName.replace(/\s+/g, '-').toLowerCase()}-${dateFrom}-to-${dateTo}`,
           title: 'Daily Sales Report',
-          subtitle: 'Azzay Pharmacy — Transaction Ledger',
+          subtitle: 'Azzay Pharmacy — Item sales, cost of goods and gross profit',
           meta: [
             { label: 'Branch', value: activeBranchName },
             { label: 'Period', value: `${dateFrom} to ${dateTo}` },
+            { label: 'Cost Basis', value: 'Matching batch cost when available; otherwise current product cost price' },
           ],
           summary: [
             { label: 'Total Transactions', value: rangeSales.length },
-            { label: 'Total Revenue', value: `GH₵ ${rangeRevenue.toFixed(2)}` },
+            { label: 'Units Sold', value: rangeSales.reduce((sum, sale) => sum + sale.items.reduce((n, item) => n + Number(item.quantity || 0), 0), 0) },
+            { label: 'Transaction Revenue', value: `GH₵ ${rangeRevenue.toFixed(2)}` },
+            { label: 'Item Sales Before Transaction Discounts/Tax', value: `GH₵ ${itemSalesTotal.toFixed(2)}` },
+            { label: 'Cost of Goods Sold (known costs)', value: `GH₵ ${knownCostTotal.toFixed(2)}` },
+            { label: 'Item Gross Profit Before Transaction Discounts/Tax', value: grossProfit === null ? 'Unavailable — add missing product cost prices' : `GH₵ ${grossProfit.toFixed(2)}` },
+            { label: 'Items Missing Cost Price', value: missingCostItems },
           ],
-          headers: ['Sale ID', 'Customer', 'Items', 'Payment', 'Amount', 'Profit', 'Date & Time'],
-          rows,
-          currencyColumns: [4, 5],
-          numberColumns: [2],
+          headers: [
+            'Sale ID', 'Receipt', 'Customer', 'Payment', 'Date & Time',
+            'Product', 'Category', 'Batch', 'Quantity', 'Selling Price / Unit',
+            'Selling Price Calculation', 'Item Sales Total', 'Unit Cost Price',
+            'Cost Calculation', 'Total Item Cost (COGS)', 'Gross Profit', 'Gross Margin %', 'Cost Price Basis',
+          ],
+          rows: itemRows,
+          currencyColumns: [9, 11, 12, 14, 15],
+          numberColumns: [8],
+          percentColumns: [16],
           sheetName: 'Daily Sales',
         });
       },
@@ -409,7 +461,6 @@ export default function ReportsPage() {
       desc: 'Complete stock valuation with cost and retail values',
       icon: Boxes, color: '#14B8A6', category: 'Inventory',
       lastGenerated: today,
-      detailPath: '/admin/reports/inventory/valuation',
       onExport: () => {
         const totalCost = products.reduce((sum, p) => sum + (p.costPrice * p.stockQuantity), 0);
         const totalRetail = products.reduce((sum, p) => sum + (p.sellingPrice * p.stockQuantity), 0);
@@ -871,17 +922,22 @@ export default function ReportsPage() {
               <div className="flex items-center gap-3 mt-auto relative z-10">
                 <button
                   onClick={() => {
+                    if (!report.detailPath) return;
                     const params = new URLSearchParams();
                     if (dateFrom) params.set('from', dateFrom);
                     if (dateTo) params.set('to', dateTo);
                     const query = params.toString();
                     router.push(`${report.detailPath}${query ? `?${query}` : ''}`);
                   }}
+                  disabled={!report.detailPath}
+                  title={report.detailPath ? undefined : 'No detailed report page is available'}
                   className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all hover:scale-[1.03] active:scale-95"
                   style={{
                     background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
                     color: card.text,
                     border: `1px solid ${card.border}`,
+                    opacity: report.detailPath ? 1 : 0.5,
+                    cursor: report.detailPath ? 'pointer' : 'not-allowed',
                   }}>
                   <Eye size={14} />
                   View
@@ -889,8 +945,16 @@ export default function ReportsPage() {
                 <button
                   onClick={async () => {
                     setGenerating(report.id);
-                    await new Promise(r => setTimeout(r, 400));
-                    report.onExport();
+                    if (report.id === 'inventory-valuation' || !report.detailPath) {
+                      report.onExport();
+                      setGenerating(null);
+                      return;
+                    }
+                    const params = new URLSearchParams();
+                    if (dateFrom) params.set('from', dateFrom);
+                    if (dateTo) params.set('to', dateTo);
+                    params.set('export', '1');
+                    router.push(`${report.detailPath}?${params.toString()}`);
                     setGenerating(null);
                   }}
                   disabled={isGenerating}

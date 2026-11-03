@@ -8,6 +8,7 @@ import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
 import { getEffectiveDateRange } from '@/lib/effective-date';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { 
   ArrowLeft, Download, Package, Search, TrendingUp, ShoppingCart,
   ChevronLeft, ChevronRight, Star, Award, Calendar
@@ -145,7 +146,7 @@ export default function SalesByProductReportPage() {
     return filtered;
   }, [productAnalysis, searchTerm, categoryFilter]);
 
-  const { currentPage, totalPages, paginatedData: paginatedProducts, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredProducts });
+  const { currentPage, totalPages, paginatedData: paginatedProducts, nextPage, prevPage, goToPage, startIndex, endIndex } = usePagination({ data: filteredProducts, itemsPerPage: 10 });
 
   // Metrics
   const metrics = useMemo(() => {
@@ -225,6 +226,8 @@ export default function SalesByProductReportPage() {
     });
   };
 
+  useAutoExport(!loadingSales && !loadingProducts, handleExport);
+
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
     border: isDark ? 'rgba(148,163,184,0.12)' : 'rgba(203,213,225,0.5)',
@@ -255,7 +258,9 @@ export default function SalesByProductReportPage() {
         </div>
         <button 
           onClick={handleExport}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90"
+          disabled={loadingSales || loadingProducts}
+          title={loadingSales || loadingProducts ? 'Wait for report data to finish loading before exporting.' : undefined}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: card.primaryBg, color: card.primary, border: `1px solid ${card.primary}30` }}>
           <Download size={16} />
           Export Excel

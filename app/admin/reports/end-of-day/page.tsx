@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Calendar, ChevronLeft, ChevronRight, ClipboardCheck, Download, RefreshCw, Search, UserRound } from 'lucide-react';
 import { useBranch } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { gql, Q_ALL_SHIFT_RECONCILIATIONS } from '@/lib/gql';
 import type { ShiftReconciliation } from '@/lib/store';
 
@@ -28,6 +29,7 @@ function errorMessage(error: unknown): string {
 
 export default function AdminEndOfDayReportPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { theme, resolvedTheme } = useTheme();
   const { activeBranchId, activeBranchName } = useBranch();
   const [result, setResult] = useState<{
@@ -37,11 +39,13 @@ export default function AdminEndOfDayReportPage() {
   } | null>(null);
   const today = localDateString(new Date());
   const [dateFrom, setDateFrom] = useState(() => {
+    const from = searchParams?.get('from');
+    if (from) return from;
     const start = new Date();
     start.setDate(1);
     return localDateString(start);
   });
-  const [dateTo, setDateTo] = useState(today);
+  const [dateTo, setDateTo] = useState(() => searchParams?.get('to') || today);
   const [staffId, setStaffId] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [search, setSearch] = useState('');
@@ -184,6 +188,8 @@ export default function AdminEndOfDayReportPage() {
       sheetName: 'End of Day',
     });
   };
+
+  useAutoExport(!loading && !error, handleExport);
 
   const colors = {
     panel: isDark ? 'rgba(15,23,42,0.72)' : '#FFFFFF',

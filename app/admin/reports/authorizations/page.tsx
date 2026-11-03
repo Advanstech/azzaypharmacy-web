@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import {
   ArrowLeft, Download, Search, CheckCircle, Clock, XCircle,
   Receipt, RotateCcw, Calendar, Shield, Filter, FileCheck,
@@ -40,6 +41,7 @@ type AuthItem = {
 
 export default function AuthorizationsReportPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -53,12 +55,19 @@ export default function AuthorizationsReportPage() {
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
 
+  const [loadedBranchId, setLoadedBranchId] = useState<string | null | undefined>();
   useEffect(() => {
-    if (allExpenses.length === 0) refetchExpenses();
-    if (allRefunds.length === 0) refetchRefundRequests(activeBranchId);
-    if (allShifts.length === 0) refetchShiftReconciliations(activeBranchId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let active = true;
+    void Promise.all([
+      refetchExpenses(),
+      refetchRefundRequests(activeBranchId),
+      refetchShiftReconciliations(activeBranchId),
+    ]).then(() => {
+      if (active) setLoadedBranchId(activeBranchId);
+    });
+    return () => { active = false; };
+  }, [activeBranchId, refetchExpenses, refetchRefundRequests, refetchShiftReconciliations]);
+  const loadingBranchData = loadedBranchId !== activeBranchId;
 
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -67,8 +76,8 @@ export default function AuthorizationsReportPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
-  const [dateFrom, setDateFrom] = useState(firstOfMonth);
-  const [dateTo, setDateTo] = useState(todayStr);
+  const [dateFrom, setDateFrom] = useState(searchParams?.get('from') || firstOfMonth);
+  const [dateTo, setDateTo] = useState(searchParams?.get('to') || todayStr);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   const items = useMemo(() => {
@@ -213,7 +222,8 @@ export default function AuthorizationsReportPage() {
     });
   };
 
-  const isLoading = loadingExpenses || loadingShiftReconciliations;
+  const isLoading = loadingExpenses || loadingShiftReconciliations || loadingBranchData;
+  useAutoExport(!isLoading, handleExport);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

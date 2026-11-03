@@ -18,6 +18,17 @@ export interface ExcelMetaRow {
   value: string | number;
 }
 
+export interface ExcelAdditionalSheet {
+  sheetName: string;
+  headers: string[];
+  rows: (string | number | null | undefined)[][];
+  currencyColumns?: number[];
+  numberColumns?: number[];
+  percentColumns?: number[];
+  totalRowIndices?: number[];
+  statusColumn?: number;
+}
+
 export interface ExcelExportOptions {
   /** File name WITHOUT extension, e.g. "stock-level-report-2026-07-19" */
   filename: string;
@@ -45,6 +56,8 @@ export interface ExcelExportOptions {
   totalRowIndices?: number[];
   /** 0-based column index for status labels (OK/LOW/OUT OF STOCK) to color-code cells */
   statusColumn?: number;
+  /** Optional additional detail sheets to include in the same workbook */
+  additionalSheets?: ExcelAdditionalSheet[];
 }
 
 const HEADER_FILL = 'FF0EA5E9';
@@ -83,6 +96,7 @@ export function exportToExcel(opts: ExcelExportOptions) {
     sheetName = 'Report',
     totalRowIndices = [],
     statusColumn,
+    additionalSheets = [],
   } = opts;
 
   const colCount = headers.length;
@@ -254,6 +268,98 @@ export function exportToExcel(opts: ExcelExportOptions) {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+  additionalSheets.forEach(sheet => {
+    const sheetHeaders = sheet.headers;
+    const sheetRows = sheet.rows;
+    const detailSheet = XLSX.utils.aoa_to_sheet([sheetHeaders, ...sheetRows]);
+    const detailColCount = sheetHeaders.length;
+    const detailDataStartRow = 1;
+    const detailTotalRows = sheet.totalRowIndices ?? [];
+    const detailCurrencyColumns = sheet.currencyColumns ?? [];
+    const detailNumberColumns = sheet.numberColumns ?? [];
+    const detailPercentColumns = sheet.percentColumns ?? [];
+
+    detailSheet['!cols'] = sheetHeaders.map((header, ci) => {
+      const max = sheetRows.reduce((longest, row) => Math.max(longest, String(row[ci] ?? '').length), String(header ?? '').length);
+      return { wch: Math.min(Math.max(max + 3, 10), 42) };
+    });
+
+    for (let c = 0; c < detailColCount; c++) {
+      const ref = XLSX.utils.encode_cell({ r: 0, c });
+      if (!detailSheet[ref]) detailSheet[ref] = { t: 's', v: '' };
+      detailSheet[ref].s = {
+        font: { bold: true, color: { rgb: 'FFFFFFFF' }, sz: 11 },
+        fill: { patternType: 'solid', fgColor: { rgb: HEADER_FILL } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border: {
+          top: { style: 'thin', color: { rgb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { rgb: 'FFCBD5E1' } },
+        },
+      };
+    }
+
+    sheetRows.forEach((row, ri) => {
+      for (let c = 0; c < detailColCount; c++) {
+        const ref = XLSX.utils.encode_cell({ r: detailDataStartRow + ri, c });
+        const cell = detailSheet[ref];
+        if (!cell) continue;
+
+        if (detailCurrencyColumns.includes(c)) {
+          const value = typeof cell.v === 'number' ? cell.v : Number(cell.v);
+          if (Number.isFinite(value)) {
+            cell.v = value;
+            cell.t = 'n';
+            cell.z = '"GH₵" #,##0.00';
+          }
+        } else if (detailPercentColumns.includes(c)) {
+          const value = typeof cell.v === 'number' ? cell.v : Number(cell.v);
+          if (Number.isFinite(value)) {
+            cell.v = value / 100;
+            cell.t = 'n';
+            cell.z = '0.0%';
+          }
+        } else if (detailNumberColumns.includes(c)) {
+          const value = typeof cell.v === 'number' ? cell.v : Number(cell.v);
+          if (Number.isFinite(value)) {
+            cell.v = value;
+            cell.t = 'n';
+            cell.z = '#,##0';
+          }
+        }
+
+        const isTotal = detailTotalRows.includes(ri);
+        cell.s = {
+          ...(cell.s || {}),
+          border: { bottom: { style: 'thin', color: { rgb: 'FFE2E8F0' } } },
+          ...(isTotal
+            ? { font: { bold: true, color: { rgb: 'FF0F172A' } }, fill: { patternType: 'solid', fgColor: { rgb: TOTAL_FILL } } }
+            : ri % 2 === 1
+              ? { fill: { patternType: 'solid', fgColor: { rgb: 'FFF8FAFC' } } }
+              : {}),
+        };
+        if (c === sheet.statusColumn && cell.v !== undefined && cell.v !== null) {
+          const value = String(cell.v).toUpperCase();
+          if (/OUT|REJECT|SHORT|FAIL|EXPIRED/.test(value)) {
+            cell.s = { ...cell.s, font: { bold: true, color: { rgb: 'FFEF4444' } }, fill: { patternType: 'solid', fgColor: { rgb: 'FFFEE2E2' } } };
+          } else if (/LOW|PENDING|WARN|ATTENTION|CRITICAL/.test(value)) {
+            cell.s = { ...cell.s, font: { bold: true, color: { rgb: 'FFF59E0B' } }, fill: { patternType: 'solid', fgColor: { rgb: 'FFFEF3C7' } } };
+          } else if (/OK|APPROVED|BALANCED|COMPLETE|PAID/.test(value)) {
+            cell.s = { ...cell.s, font: { bold: true, color: { rgb: 'FF10B981' } }, fill: { patternType: 'solid', fgColor: { rgb: 'FFD1FAE5' } } };
+          }
+        }
+      }
+    });
+
+    detailSheet['!freeze'] = { xSplit: 0, ySplit: 1 };
+    (detailSheet as ExtendedWorksheet)['!view'] = [{ state: 'frozen', ySplit: 1 }];
+    detailSheet['!autofilter'] = {
+      ref: `${colLetter(0)}1:${colLetter(detailColCount - 1)}${Math.max(sheetRows.length + 1, 1)}`,
+    };
+    detailSheet['!rows'] = [{ hpt: 22 }, ...sheetRows.map(() => ({ hpt: 18 }))];
+    (detailSheet as ExtendedWorksheet)['!pageSetup'] = { orientation: detailColCount > 8 ? 'landscape' : 'portrait', fitToWidth: 1, fitToHeight: 0 };
+    (detailSheet as ExtendedWorksheet)['!margins'] = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+    XLSX.utils.book_append_sheet(wb, detailSheet, sheet.sheetName.slice(0, 31));
+  });
   XLSX.writeFile(wb, `${filename}.xlsx`);
 }
 

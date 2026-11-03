@@ -8,6 +8,7 @@ import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import {
   ArrowLeft, Download, Users, Clock, CheckCircle, XCircle,
   Search, UserCircle, Wifi, WifiOff, Shield, Building2, Calendar,
@@ -41,7 +42,9 @@ export default function StaffAttendancePage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { staff: allStaff, sales: allSales, refetchStaff } = useStore();
+  const {
+    staff: allStaff, sales: allSales, refetchStaff, refetchSales, loadingStaff, loadingSales,
+  } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByActiveBranch = useBranchFilter();
   const { session } = useCustomAuth();
@@ -55,7 +58,17 @@ export default function StaffAttendancePage() {
 
   const searchParams = useSearchParams();
   const defaultDate = new Date().toISOString().split('T')[0];
-  const [selectedDate, setSelectedDate] = useState(searchParams?.get('date') || defaultDate);
+  const [selectedDate, setSelectedDate] = useState(
+    searchParams?.get('date') || searchParams?.get('to') || searchParams?.get('from') || defaultDate,
+  );
+
+  useEffect(() => {
+    void refetchSales(
+      activeBranchId ?? undefined,
+      `${selectedDate}T00:00:00.000Z`,
+      `${selectedDate}T23:59:59.999Z`,
+    );
+  }, [activeBranchId, refetchSales, selectedDate]);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
@@ -186,6 +199,8 @@ export default function StaffAttendancePage() {
       sheetName: 'Attendance',
     });
   };
+
+  useAutoExport(!loadingStaff && !loadingSales, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

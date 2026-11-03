@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { 
   ArrowLeft, Download, Users, TrendingUp, ShoppingBag,
   Search, ChevronLeft, ChevronRight, Award, Clock, Store
@@ -20,7 +21,7 @@ export default function StaffPerformanceReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales: allSales, staff: allStaff, products } = useStore();
+  const { sales: allSales, staff: allStaff, products, loadingSales, loadingStaff, loadingProducts } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
@@ -165,6 +166,8 @@ export default function StaffPerformanceReportPage() {
       sheetName: 'Staff Performance',
     });
   };
+
+  useAutoExport(!loadingSales && !loadingStaff && !loadingProducts, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

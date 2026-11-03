@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { 
   ArrowLeft, Download, Users, Search, Phone, ShoppingBag,
   ChevronLeft, ChevronRight, Crown, Star, TrendingUp
@@ -19,7 +20,7 @@ export default function CustomerAnalysisReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { sales: allSales, customers } = useStore();
+  const { sales: allSales, customers, loadingSales, loadingCustomers } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const sales = useMemo(() => filterByBranch(allSales), [allSales, filterByBranch]);
@@ -130,6 +131,8 @@ export default function CustomerAnalysisReportPage() {
       sheetName: 'Customer Analysis',
     });
   };
+
+  useAutoExport(!loadingSales && !loadingCustomers, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

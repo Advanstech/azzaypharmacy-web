@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import {
   ArrowLeft, Download, Receipt, Search, ChevronLeft, ChevronRight,
   CheckCircle, Clock, XCircle, TrendingDown, Tag, Calendar,
@@ -26,7 +27,7 @@ export default function ExpenseReportPage() {
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
   const searchParams = useSearchParams();
-  const { expenses: allExpenses, refetchExpenses } = useStore();
+  const { expenses: allExpenses, refetchExpenses, loadingExpenses } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const expenses = useMemo(() => filterByBranch(allExpenses), [allExpenses, filterByBranch]);
@@ -159,6 +160,8 @@ export default function ExpenseReportPage() {
       sheetName: 'Expenses',
     });
   };
+
+  useAutoExport(!loadingExpenses, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',

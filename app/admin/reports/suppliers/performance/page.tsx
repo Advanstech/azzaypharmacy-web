@@ -7,6 +7,7 @@ import { useStore } from '@/lib/store';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { exportToExcel } from '@/lib/export-excel';
 import { usePagination } from '@/hooks/use-pagination';
+import { useAutoExport } from '@/hooks/use-auto-export';
 import { 
   ArrowLeft, Download, Store, Phone, Mail, Package,
   Search, ChevronLeft, ChevronRight, TrendingUp, Award,
@@ -20,7 +21,7 @@ export default function SupplierPerformanceReportPage() {
   useEffect(() => setMounted(true), []);
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { suppliers, purchases: allPurchases } = useStore();
+  const { suppliers, purchases: allPurchases, loadingSuppliers, loadingPurchases } = useStore();
   const { activeBranchId, activeBranchName } = useBranch();
   const filterByBranch = useBranchFilter();
   const purchases = useMemo(() => filterByBranch(allPurchases), [allPurchases, filterByBranch]);
@@ -123,6 +124,8 @@ export default function SupplierPerformanceReportPage() {
       sheetName: 'Supplier Performance',
     });
   };
+
+  useAutoExport(!loadingSuppliers && !loadingPurchases, handleExport);
 
   const card = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
