@@ -57,6 +57,14 @@ Relevant files:
 - Manager branch choices and the last successful branch list are cached locally. A manager can switch among branches already known to that device while offline; the selected branch is also persisted across reloads.
 - Dashboard and report pages render cached snapshots first. A report can be generated offline for branches and date ranges that were loaded successfully on that device before going offline. Offline reports reflect the last cached snapshot and may not include newer activity from other devices until sync.
 - The sync indicator and pending-sales panel show queued work. Reconnect, periodic checks, or **Sync now** drains the queue and refreshes server-backed data.
+- Report exports from the Reports overview use the same branch-aware, formatted export as their detail pages. The reports release includes item-level sales and cost calculations where product costs are available; profit is not treated as reliable when costs are missing.
+- The PWA and desktop app use the same report pages. The PWA service-worker cache is versioned per release, and the desktop installer bundles the static app. Generating reports offline still requires the relevant report data to have been loaded on that device while online.
+
+### Build release 2.0.7
+
+- PWA/web: run `npm run build` and deploy the web build. The service-worker cache version is bumped so installed PWAs replace the previous cached app shell when the new worker activates.
+- Windows desktop offline app: run `npm run tauri:build`. Tauri bundles the same report changes into the offline-capable desktop installer.
+- Publishing a desktop auto-update still requires the configured signing key and release hosting; a local build does not publish an update.
 
 ## Learn More
 
