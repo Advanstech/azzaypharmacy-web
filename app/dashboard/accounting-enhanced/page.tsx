@@ -115,7 +115,7 @@ export default function EnhancedAccountingPage() {
     // Use real sales data for revenue — only count COMPLETED sales
     // (refunded/voided sales keep positive totalAmount but money was returned)
     const salesRevenue = branchSales
-      .filter((sale: any) => sale.status !== 'REFUNDED' && sale.status !== 'VOIDED')
+      .filter((sale: any) => !sale.status || sale.status === 'COMPLETED')
       .reduce((sum, sale: any) => sum + (sale.totalAmount || 0), 0);
     
     // Use real purchases for COGS

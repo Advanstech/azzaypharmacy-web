@@ -1,29 +1,100 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { useTheme } from 'next-themes';
 import { 
-  DollarSign, Receipt, TrendingDown, Calendar, Plus, Search, 
-  Filter, ArrowDownRight, CreditCard, Wallet, Smartphone, Landmark,
-  CheckCircle, XCircle, Clock
+  DollarSign, Plus, Search, CreditCard, Wallet, Landmark,
+  CheckCircle, XCircle, Upload, ExternalLink
 } from 'lucide-react';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
 import { gql } from '@/lib/gql';
-import { Q_AUTHORIZATIONS_EXPENSE, M_REQUEST_EXPENSE, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
+import { Q_AUTHORIZATIONS_EXPENSE, M_UPDATE_EXPENSE_STATUS } from '@/lib/gql';
+import { getPendingSales } from '@/lib/offline';
+import { onSyncEvent } from '@/lib/tauri-sync';
+import { isTauri, nativeListQueue } from '@/lib/tauri-native';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
+import {
+  validateExpenseAttachment,
+  isSafeExpenseAttachmentUrl,
+  type ExpenseAttachmentFiles,
+  type ExpenseAttachmentKind,
+  type QueuedExpenseAttachment,
+} from '@/lib/expense-attachments';
+
+type ExpenseRecord = {
+  id: string;
+  amount: number;
+  description: string;
+  date: string;
+  status: string;
+  branchId?: string;
+  category?: { id: string; name: string };
+  requestedBy?: { id: string; name: string };
+  approvedBy?: { id: string; name: string };
+  receiptUrl?: string;
+  invoiceUrl?: string;
+  paymentReceiptUrl?: string;
+  queued?: boolean;
+};
+
+const subscribeToMount = () => () => {};
+const getClientMountSnapshot = () => true;
+const getServerMountSnapshot = () => false;
+
+function buildQueuedExpense(
+  id: string,
+  variables: Record<string, unknown>,
+  user: { id?: string; name?: string } | null | undefined,
+  categories: { id: string; name: string }[],
+): ExpenseRecord | null {
+  if (
+    typeof variables.amount !== 'number'
+    || typeof variables.description !== 'string'
+    || typeof variables.date !== 'string'
+  ) return null;
+
+  const localFiles = variables._offlineAttachments as
+    | Partial<Record<ExpenseAttachmentKind, QueuedExpenseAttachment>>
+    | undefined;
+  const categoryId = typeof variables.categoryId === 'string' ? variables.categoryId : '';
+  return {
+    id,
+    amount: variables.amount,
+    description: variables.description,
+    date: variables.date,
+    branchId: typeof variables.branchId === 'string' ? variables.branchId : undefined,
+    category: categories.find(category => category.id === categoryId),
+    requestedBy: { id: user?.id || '', name: user?.name || 'Unknown' },
+    receiptUrl: typeof variables.receiptUrl === 'string'
+      ? variables.receiptUrl
+      : localFiles?.receiptUrl?.dataUrl,
+    invoiceUrl: typeof variables.invoiceUrl === 'string'
+      ? variables.invoiceUrl
+      : localFiles?.invoiceUrl?.dataUrl,
+    paymentReceiptUrl: typeof variables.paymentReceiptUrl === 'string'
+      ? variables.paymentReceiptUrl
+      : localFiles?.paymentReceiptUrl?.dataUrl,
+    status: 'PENDING',
+    queued: true,
+  };
+}
 
 export default function ExpensesPage() {
   const { theme, resolvedTheme } = useTheme();
   const { user } = useCustomAuth();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(
+    subscribeToMount,
+    getClientMountSnapshot,
+    getServerMountSnapshot,
+  );
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
 
-  const { me, expenses: storeExpenses } = useStore();
+  const { me, expenses: storeExpenses, expenseCategories, refetchExpenseCategories, requestExpense } = useStore();
   const role = me?.role || user?.role || user?.user_metadata?.role;
-  const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(role || '');
+  const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER'].includes(role || '');
+  const canApproveAcrossBranches = ['SE_ADMIN', 'ROOT', 'OWNER'].includes(role || '');
 
   const c = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
@@ -36,80 +107,122 @@ export default function ExpensesPage() {
     warning: '#F59E0B',
   };
 
-  const [expenses, setExpenses] = useState<any[]>([]);
-  const [rawExpenses, setRawExpenses] = useState<any[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
   const branchFilter = useBranchFilter();
   const { activeBranchId } = useBranch();
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  const [pageSelection, setPageSelection] = useState({ branchId: activeBranchId, page: 1 });
+  const page = pageSelection.branchId === activeBranchId ? pageSelection.page : 1;
   const [totalPages, setTotalPages] = useState(1);
+  const [syncVersion, setSyncVersion] = useState(0);
   const limit = 10;
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
-  const [newExp, setNewExp] = useState({ amount: '', desc: '', date: new Date().toISOString().split('T')[0] });
+  const [newExp, setNewExp] = useState({
+    amount: '',
+    desc: '',
+    date: new Date().toISOString().split('T')[0],
+    categoryId: '',
+  });
+  const [attachments, setAttachments] = useState<ExpenseAttachmentFiles>({});
   const [submitting, setSubmitting] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setPage(1);
-  }, [activeBranchId]);
-
-  useEffect(() => {
-    fetchExpenses();
-  }, [me, page, activeBranchId]);
-
-  const fetchExpenses = async () => {
+  const fetchExpenses = useCallback(async () => {
+    let allExp: ExpenseRecord[] = storeExpenses;
     try {
-      const data = await gql<any>(Q_AUTHORIZATIONS_EXPENSE, { page, limit, branchId: isManager ? (activeBranchId ?? undefined) : undefined });
-      const response = data.expenses || { items: [], totalPages: 1 };
-      
-      let allExp = response.items || [];
-      if (!isManager) {
-        allExp = allExp.filter((e: any) => e.requestedBy?.id === me?.id);
-      }
-      setExpenses(allExp);
-      setRawExpenses(allExp);
-      setTotalPages(response.totalPages || 1);
+      const data = await gql<{ expenses?: { items: ExpenseRecord[]; totalPages?: number } }>(
+        Q_AUTHORIZATIONS_EXPENSE,
+        { page, limit, branchId: isManager ? (activeBranchId ?? undefined) : undefined },
+      );
+      const response = data.expenses;
+      allExp = response?.items || [];
+      setTotalPages(response?.totalPages || 1);
     } catch (err) {
       console.error(err);
-    } finally {
-      setLoading(false);
     }
-  };
+
+    const queuedExpenses: ExpenseRecord[] = [];
+    try {
+      const queuedRows = await getPendingSales();
+      for (const row of queuedRows) {
+        if (row.cashier_id !== me?.id || !/RequestExpense|CreateExpense/.test(row.op?.mutation || '')) continue;
+        const queued = buildQueuedExpense(row.id, row.op?.variables ?? {}, me, expenseCategories);
+        if (queued) queuedExpenses.push(queued);
+      }
+      if (isTauri()) {
+        const nativeRows = await nativeListQueue('pending');
+        for (const row of nativeRows) {
+          if (!/RequestExpense|CreateExpense/.test(row.mutation || '')) continue;
+          try {
+            const variables = JSON.parse(row.variables) as Record<string, unknown>;
+            if (variables._syncOwnerId === me?.id) {
+              const queued = buildQueuedExpense(row.id, variables, me, expenseCategories);
+              if (queued) queuedExpenses.push(queued);
+            }
+          } catch (error) {
+            console.error(`[expenses] Could not restore queued request ${row.id}:`, error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[expenses] Could not restore queued requests:', error);
+    } finally {
+      if (!isManager) allExp = allExp.filter(expense => expense.requestedBy?.id === me?.id);
+      const seenIds = new Set(allExp.map(expense => expense.id));
+      setExpenses([...queuedExpenses.filter(expense => !seenIds.has(expense.id)), ...allExp]);
+    }
+  }, [activeBranchId, expenseCategories, isManager, limit, me, page, storeExpenses]);
+
+  useEffect(() => {
+    if (expenseCategories.length === 0) refetchExpenseCategories();
+  }, [expenseCategories.length, refetchExpenseCategories]);
+
+  useEffect(() => {
+    // This starts an asynchronous API/cache refresh.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void fetchExpenses();
+  }, [fetchExpenses, syncVersion]);
+
+  useEffect(() => onSyncEvent(event => {
+    if (event.type === 'sync:complete') setSyncVersion(version => version + 1);
+  }), []);
 
   const handleUpdateStatus = async (id: string, status: string) => {
+    setProcessingId(id);
     try {
       await gql(M_UPDATE_EXPENSE_STATUS, { id, status });
       fetchExpenses(); // Re-fetch to update status and approver name
     } catch (err) {
       console.error('Failed to update status', err);
-      alert('Failed to update status');
+      alert(err instanceof Error ? err.message : 'Failed to update status');
+    } finally {
+      setProcessingId(null);
     }
   };
 
   const handleRequestExpense = async () => {
     setSubmitting(true);
     try {
-      const branchId = me?.branchId || me?.branch?.id || '';
-      // We assume a generic category ID for now if we don't fetch them, but backend requires a categoryId.
-      // We will hardcode a dummy one or fetch the first category.
-      const res = await gql<any>(`
-        query { expenseCategories { id } }
-      `);
-      const catId = res.expenseCategories[0]?.id || 'dummy_cat_id';
-
-      const created = await gql<any>(M_REQUEST_EXPENSE, {
-        branchId,
-        categoryId: catId,
-        amount: parseFloat(newExp.amount),
-        description: newExp.desc,
-        date: new Date(newExp.date).toISOString(),
+      const created = await requestExpense({
+        branchId: canApproveAcrossBranches ? (activeBranchId || me?.branchId || undefined) : (me?.branchId || undefined),
+        categoryId: newExp.categoryId || expenseCategories[0]?.id || '',
+        amount: Number(newExp.amount),
+        description: newExp.desc.trim(),
+        date: new Date(`${newExp.date}T12:00:00`).toISOString(),
+        attachments,
       });
-      setExpenses([created.requestExpense, ...expenses]);
+      setExpenses(current => [created, ...current]);
       setShowModal(false);
-      setNewExp({ amount: '', desc: '', date: new Date().toISOString().split('T')[0] });
+      setNewExp({
+        amount: '',
+        desc: '',
+        date: new Date().toISOString().split('T')[0],
+        categoryId: expenseCategories[0]?.id || '',
+      });
+      setAttachments({});
     } catch (err) {
-      alert('Error requesting expense. Please ensure categories exist in DB.');
+      alert(err instanceof Error ? err.message : 'Could not submit the expense request.');
       console.error(err);
     } finally {
       setSubmitting(false);
@@ -131,7 +244,7 @@ export default function ExpensesPage() {
           className="flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all"
           style={{ background: c.primary, color: isDark ? '#060B14' : '#fff' }}>
           <Plus size={18} />
-          Record Expense
+          Request Expense
         </button>
       </div>
 
@@ -205,24 +318,53 @@ export default function ExpensesPage() {
                   </div>
                   <p className="text-[10px] uppercase font-bold tracking-widest" style={{ color: c.muted }}>
                     {e.category?.name || 'General'} • Requested by <span className="text-emerald-400">{e.requestedBy?.name || 'Unknown'}</span>
-                    {e.status === 'APPROVED' && e.approvedBy && (
+                    {e.approvedBy && (
                       <span className="ml-2 border-l pl-2" style={{ borderColor: c.border }}>
-                        Approved by <span style={{ color: c.primary }}>{e.approvedBy.name}</span>
+                        {e.status === 'APPROVED' ? 'Approved' : 'Rejected'} by{' '}
+                        <span style={{ color: c.primary }}>{e.approvedBy.name}</span>
                       </span>
                     )}
+                    {e.queued && <span className="ml-2 border-l pl-2 text-amber-500" style={{ borderColor: c.border }}>Queued for sync</span>}
                   </p>
+                  {(e.receiptUrl || e.invoiceUrl || e.paymentReceiptUrl) && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {([
+                        ['Receipt', e.receiptUrl],
+                        ['Invoice', e.invoiceUrl],
+                        ['Payment receipt', e.paymentReceiptUrl],
+                      ] as [string, string | undefined][]).filter(([, url]) => (
+                        typeof url === 'string' && isSafeExpenseAttachmentUrl(url, Boolean(e.queued))
+                      )).map(([label, url]) => (
+                        <a
+                          key={label}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-bold"
+                          style={{ borderColor: c.border, color: c.primary }}
+                        >
+                          <ExternalLink size={11} />
+                          {label}{e.queued ? ' (queued)' : ''}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-6">
                 <div className="text-right">
                   <p className="text-sm font-black" style={{ color: c.danger }}>- GH₵ {Number(e.amount).toFixed(2)}</p>
                 </div>
-                {isManager && e.status === 'PENDING' && (
+                {isManager
+                  && e.status === 'PENDING'
+                  && e.requestedBy?.id !== me?.id
+                  && (canApproveAcrossBranches || e.branchId === me?.branchId)
+                  && (
                   <div className="flex gap-2">
-                    <button onClick={() => handleUpdateStatus(e.id, 'APPROVED')} className="p-1 rounded-md hover:bg-emerald-500/20 text-emerald-500 transition-colors">
+                    <button disabled={processingId === e.id} onClick={() => handleUpdateStatus(e.id, 'APPROVED')} aria-label="Approve expense" className="p-1 rounded-md hover:bg-emerald-500/20 text-emerald-500 transition-colors disabled:opacity-50">
                       <CheckCircle size={18} />
                     </button>
-                    <button onClick={() => handleUpdateStatus(e.id, 'REJECTED')} className="p-1 rounded-md hover:bg-rose-500/20 text-rose-500 transition-colors">
+                    <button disabled={processingId === e.id} onClick={() => handleUpdateStatus(e.id, 'REJECTED')} aria-label="Reject expense" className="p-1 rounded-md hover:bg-rose-500/20 text-rose-500 transition-colors disabled:opacity-50">
                       <XCircle size={18} />
                     </button>
                   </div>
@@ -234,14 +376,14 @@ export default function ExpensesPage() {
         <div className="p-4 border-t flex items-center justify-between" style={{ borderColor: c.border }}>
           <button 
             disabled={page <= 1}
-            onClick={() => setPage(p => Math.max(1, p - 1))}
+          onClick={() => setPageSelection({ branchId: activeBranchId, page: Math.max(1, page - 1) })}
             className="text-xs font-bold uppercase tracking-widest disabled:opacity-50" style={{ color: c.primary }}>
             Previous
           </button>
           <span className="text-xs font-bold" style={{ color: c.muted }}>Page {page} of {totalPages}</span>
           <button 
             disabled={page >= totalPages || totalPages === 0}
-            onClick={() => setPage(p => p + 1)}
+            onClick={() => setPageSelection({ branchId: activeBranchId, page: page + 1 })}
             className="text-xs font-bold uppercase tracking-widest disabled:opacity-50" style={{ color: c.primary }}>
             Next
           </button>
@@ -260,9 +402,26 @@ export default function ExpensesPage() {
 
             <div className="space-y-4">
               <div>
+                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Category</label>
+                <select
+                  value={newExp.categoryId || expenseCategories[0]?.id || ''}
+                  onChange={e => setNewExp({ ...newExp, categoryId: e.target.value })}
+                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
+                  style={{ borderColor: c.border, color: c.text }}
+                  required
+                >
+                  <option value="" disabled>Select a category</option>
+                  {expenseCategories.map(category => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Amount (GH₵)</label>
                 <input 
                   type="number"
+                  min="0.01"
+                  step="0.01"
                   value={newExp.amount}
                   onChange={e => setNewExp({...newExp, amount: e.target.value})}
                   className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
@@ -291,10 +450,42 @@ export default function ExpensesPage() {
                   style={{ borderColor: c.border, color: c.text }}
                 />
               </div>
+              <div className="space-y-3 rounded-xl border p-3" style={{ borderColor: c.border }}>
+                <p className="text-xs font-bold" style={{ color: c.text }}>Supporting documents (optional)</p>
+                {([
+                  ['receiptUrl', 'Receipt'],
+                  ['invoiceUrl', 'Invoice'],
+                  ['paymentReceiptUrl', 'Payment receipt'],
+                ] as [ExpenseAttachmentKind, string][]).map(([kind, label]) => (
+                  <label key={kind} className="flex items-center justify-between gap-3 text-xs" style={{ color: c.muted }}>
+                    <span className="flex min-w-32 items-center gap-2">
+                      <Upload size={14} />
+                      {label}
+                    </span>
+                    <input
+                      type="file"
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={event => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          validateExpenseAttachment(file);
+                          setAttachments(current => ({ ...current, [kind]: file }));
+                        } catch (error) {
+                          event.target.value = '';
+                          alert(error instanceof Error ? error.message : 'Invalid attachment.');
+                        }
+                      }}
+                      className="max-w-[65%] text-[10px]"
+                    />
+                  </label>
+                ))}
+                <p className="text-[10px]" style={{ color: c.muted }}>PDF, JPEG, PNG, or WebP; up to 5 MB each. Attachments are securely uploaded when online or queued with the request while offline.</p>
+              </div>
 
               <button 
                 onClick={handleRequestExpense}
-                disabled={submitting || !newExp.amount || !newExp.desc}
+                disabled={submitting || !(activeBranchId || me?.branchId) || !(newExp.categoryId || expenseCategories[0]?.id) || !newExp.amount || Number(newExp.amount) <= 0 || !newExp.desc.trim()}
                 className="w-full py-3 mt-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all disabled:opacity-50"
                 style={{ background: c.primary, color: '#fff' }}
               >

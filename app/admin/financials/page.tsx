@@ -402,13 +402,23 @@ export default function FinancialsPage() {
     setIsSubmitting(true);
     try {
       const amount = parseFloat(expenseForm.amount);
-      await createExpense({
+      const created = await createExpense({
+        branchId: ['ROOT', 'SE_ADMIN', 'OWNER'].includes(role || '')
+          ? (activeBranchId || me?.branchId || undefined)
+          : (me?.branchId || undefined),
         categoryId: expenseForm.categoryId,
         amount,
         description: expenseForm.description,
         date: expenseForm.date,
       });
-      addToast({ type: 'success', title: 'Expense Recorded', message: `GH₵ ${amount.toFixed(2)} expense recorded successfully.`, duration: 4000 });
+      addToast({
+        type: 'success',
+        title: created.queued ? 'Expense Queued' : 'Expense Submitted',
+        message: created.queued
+          ? `GH₵ ${amount.toFixed(2)} saved offline and will sync for approval when you reconnect.`
+          : `GH₵ ${amount.toFixed(2)} sent for approval. It will post to the ledger after approval.`,
+        duration: 4000,
+      });
       setShowRecordModal(false);
       setExpenseForm({ categoryId: '', amount: '', description: '', date: new Date().toISOString().split('T')[0] });
     } catch (err: any) {

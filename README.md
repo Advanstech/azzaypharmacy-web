@@ -53,12 +53,37 @@ Relevant files:
 
 ## Offline POS, branch views, and reports
 
-- Staff POS transactions stay locked to the signed-in operator's assigned branch. Owners and managers can select a specific branch in POS; an "All Branches" view is read-only until they choose one. When the API cannot be reached, desktop sales are written to the native SQLite outbox (browser sessions use IndexedDB) and retried automatically when connectivity returns. Each queued operation is tied to its originating user and only syncs while that user is signed in; local offline sale history and cached profile data are also user-scoped. The sale keeps its original assigned/selected branch and idempotency reference across retries.
+- Staff POS transactions stay locked to the signed-in operator's assigned branch. Owners and managers can select a specific branch in POS; an "All Branches" view is read-only until they choose one. POS sales and held-sale completions are written to the durable outbox before the API request (desktop SQLite; browser IndexedDB), so timeouts, weak connections, and restarts do not drop a transaction. Retries keep the original branch and idempotency reference; sale, payment, stock, customer, and revenue-ledger writes are applied together by the API. Queued work is tied to its originating user and only syncs while that user is signed in. Offline POS history/accounting includes local completed-sale overlays for the original branch until the server confirms the transaction.
 - Manager branch choices and the last successful branch list are cached locally. A manager can switch among branches already known to that device while offline; the selected branch is also persisted across reloads.
 - Dashboard and report pages render cached snapshots first. A report can be generated offline for branches and date ranges that were loaded successfully on that device before going offline. Offline reports reflect the last cached snapshot and may not include newer activity from other devices until sync.
 - The sync indicator and pending-sales panel show queued work. Reconnect, periodic checks, or **Sync now** drains the queue and refreshes server-backed data.
 - Report exports from the Reports overview use the same branch-aware, formatted export as their detail pages. The reports release includes item-level sales and cost calculations where product costs are available; profit is not treated as reliable when costs are missing.
 - The PWA and desktop app use the same report pages. The PWA service-worker cache is versioned per release, and the desktop installer bundles the static app. Generating reports offline still requires the relevant report data to have been loaded on that device while online.
+
+## Expense requests and supporting documents
+
+- Expense requests support a category, amount, description, date, and optional receipt, invoice, and payment-receipt attachments. Attachments accept PDF, JPEG, PNG, and WebP files up to 5 MB each.
+- The expense categories include **Server & Hosting** for recurring monthly server subscriptions and **DevOps** for infrastructure and tooling costs.
+- Requests are always created as **Pending**. Managers can approve or reject requests for their assigned branch; owners and system administrators can decide across branches. The requester cannot decide their own request, and only pending requests can be decided. Approved expenses post to the ledger once.
+- Offline requests, including selected document data, are stored in the browser's IndexedDB queue or desktop's durable SQLite outbox and uploaded when that same user signs in online. Pending writes are preserved when signing out.
+- Expense documents are stored in a **private** Supabase Storage bucket named `expense-support`. Uploads go through the authenticated API; configure `SUPABASE_SERVICE_ROLE_KEY` in the API environment (never in the web app), ensure `SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL` point to the same project, create the bucket below, then apply the Prisma schema change with `npx prisma db push` from `api`.
+
+```sql
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'expense-support',
+  'expense-support',
+  false,
+  5242880,
+  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update
+set public = false,
+    file_size_limit = 5242880,
+    allowed_mime_types = excluded.allowed_mime_types;
+```
+
+The app stores signed document links with each expense; those links expire after one year. Re-upload a document if a link has expired.
 
 ### Build release 2.0.7
 

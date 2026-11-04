@@ -198,6 +198,10 @@ async fn drain_queue(app: &AppHandle, client: &reqwest::Client, cfg: &SyncConfig
             log::info!("[sync] leaving queued operation {} for its owner", row.id);
             continue;
         }
+        if variables.get("_offlineAttachments").is_some() {
+            log::debug!("[sync] leaving expense attachments {} for the webview uploader", row.id);
+            continue;
+        }
         if let Some(values) = variables.as_object_mut() {
             values.remove("_syncOwnerId");
         }

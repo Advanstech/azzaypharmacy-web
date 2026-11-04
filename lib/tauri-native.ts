@@ -20,6 +20,7 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
 export interface OutboxRow {
   id: string;
   variables: string;
+  mutation?: string | null;
   status: string;
   attempts: number;
   last_error?: string;

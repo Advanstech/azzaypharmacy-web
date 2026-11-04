@@ -120,26 +120,48 @@ function POSInner() {
 
   // POS state
   const [search, setSearch] = useState('');
-  const [cart, setCart] = useState<CartItem[]>(() => {
-    if (typeof window !== 'undefined') {
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cartHydrated, setCartHydrated] = useState(false);
+  const cartBranchRef = useRef(posBranchId);
+
+  // Wait for the authenticated branch before hydrating or overwriting the cart.
+  useEffect(() => {
+    if (!me || cartHydrated) return;
+    if (!branchRequired) {
       try {
         const savedBranch = localStorage.getItem('pos_cart_branch');
-        const currentBranch = canSwitchBranch ? activeBranchId ?? '' : me?.branchId ?? '';
-        if (savedBranch && savedBranch !== currentBranch) return [];
         const saved = localStorage.getItem('pos_cart');
-        if (saved) return JSON.parse(saved);
-      } catch(e) {}
+        if (saved && savedBranch === (posBranchId ?? '')) {
+          const parsed = JSON.parse(saved);
+          // Hydration waits for the authenticated branch to avoid overwriting a valid cart.
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          if (Array.isArray(parsed)) setCart(parsed);
+        }
+      } catch (error) {
+        console.warn('[POS] Failed to restore saved cart:', error);
+      }
     }
-    return [];
-  });
+    cartBranchRef.current = posBranchId;
+    setCartHydrated(true);
+  }, [me, cartHydrated, branchRequired, posBranchId]);
 
-  // Persist cart to localStorage
+  // Keep the cart tied to the branch where it was created. A branch switch
+  // clears the persisted cart rather than relabelling it as the new branch.
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (!cartHydrated) return;
+    try {
+      if (cartBranchRef.current !== posBranchId) {
+        localStorage.setItem('pos_cart', '[]');
+        localStorage.setItem('pos_cart_branch', posBranchId ?? '');
+        cartBranchRef.current = posBranchId;
+        return;
+      }
       localStorage.setItem('pos_cart', JSON.stringify(cart));
       localStorage.setItem('pos_cart_branch', posBranchId ?? '');
+    } catch (error) {
+      console.warn('[POS] Failed to persist the current cart:', error);
     }
-  }, [cart, posBranchId]);
+  }, [cart, cartHydrated, posBranchId]);
 
   const [activeCategory, setActiveCategory] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cash');
@@ -167,6 +189,7 @@ function POSInner() {
   const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing'>('synced');
   const [showPendingPanel, setShowPendingPanel] = useState(false);
   const [resumedPendingId, setResumedPendingId] = useState<string | null>(null);
+  const [resumedPendingSale, setResumedPendingSale] = useState<any>(null);
   const categoryScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -181,6 +204,7 @@ function POSInner() {
       setCart([]);
       setSelectedCustomer(null);
       setResumedPendingId(null);
+      setResumedPendingSale(null);
       setTendered('');
       previousBranchIdRef.current = posBranchId;
     }
@@ -679,6 +703,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
         // Completing a previously held pending sale (no duplicate)
         sale = await completePendingSale({
           saleId: resumedPendingId,
+          sale: resumedPendingSale,
           paymentMethod: paymentMethod === 'SPLIT' ? 'SPLIT' : paymentMethod.toUpperCase(),
           amountPaid: paymentMethod === 'Cash' ? tenderedNum || total : total,
           cashAmount: paymentMethod === 'SPLIT' ? (parseFloat(splitCash) || 0) : undefined,
@@ -735,6 +760,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       setCart([]);
       setTendered('');
       setResumedPendingId(null);
+      setResumedPendingSale(null);
       setSelectedCustomer(null);
     } catch (err: any) {
       console.error('❌ Sale creation failed:', err);
@@ -808,6 +834,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       setSelectedCustomer({ id: sale.customerId, name: sale.customerName, phone: sale.customerPhone, email: sale.customerEmail });
     }
     setResumedPendingId(sale.id);
+    setResumedPendingSale(sale);
     setShowPendingPanel(false);
     setTendered('');
   };
@@ -818,6 +845,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       await cancelPendingSale(saleId);
       if (resumedPendingId === saleId) {
         setResumedPendingId(null);
+        setResumedPendingSale(null);
         setCart([]);
         setTendered('');
         setSelectedCustomer(null);
@@ -843,13 +871,29 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
   const [pendingSales, setPendingSales] = useState<any[]>([]);
 
   const fetchPendingSales = useCallback(async () => {
+    const localPending = sales.filter(sale =>
+      sale.status === 'PENDING' && (!posBranchId || sale.branchId === posBranchId)
+    );
+    const locallyCompletedRefs = new Set(sales
+      .filter(sale => sale.status === 'COMPLETED' && sale._syncStatus === 'PENDING')
+      .flatMap(sale => [sale.id, sale.clientRef].filter(Boolean)));
     try {
       const data = await gql<{ sales: any[] }>(Q_SALES, { status: 'PENDING' });
-      setPendingSales(data.sales || []);
+      const serverPending = (data.sales || []).filter(sale =>
+        (!posBranchId || sale.branchId === posBranchId)
+        && !locallyCompletedRefs.has(sale.id)
+        && !(sale.clientRef && locallyCompletedRefs.has(sale.clientRef))
+      );
+      const seen = new Set(serverPending.flatMap(sale => [sale.id, sale.clientRef].filter(Boolean)));
+      const localOnly = localPending.filter(sale =>
+        !seen.has(sale.id) && !(sale.clientRef && seen.has(sale.clientRef))
+      );
+      setPendingSales([...localOnly, ...serverPending]);
     } catch (err) {
       console.warn('[POS] Failed to fetch pending sales:', err);
+      setPendingSales(localPending);
     }
-  }, []);
+  }, [sales, posBranchId]);
 
   useEffect(() => {
     fetchPendingSales();

@@ -86,6 +86,10 @@ export function getCurrentApiUrl(): string {
 // Token can be set externally by the StoreProvider once auth is ready
 let _token: string | null = null;
 
+export function getAuthToken(): string | null {
+  return _token;
+}
+
 export function getAuthUserId(token = _token): string | null {
   const encodedPayload = token?.split('.')[1];
   if (!encodedPayload) return null;
@@ -720,9 +724,10 @@ export const M_CANCEL_PENDING_SALE = `
 `;
 
 export const M_REQUEST_EXPENSE = `
-  mutation RequestExpense($branchId: String!, $categoryId: String!, $amount: Float!, $description: String!, $date: String!, $receiptUrl: String) {
-    requestExpense(branchId: $branchId, categoryId: $categoryId, amount: $amount, description: $description, date: $date, receiptUrl: $receiptUrl) {
+  mutation RequestExpense($branchId: String!, $categoryId: String!, $amount: Float!, $description: String!, $date: String!, $clientRef: String, $receiptUrl: String, $invoiceUrl: String, $paymentReceiptUrl: String) {
+    requestExpense(branchId: $branchId, categoryId: $categoryId, amount: $amount, description: $description, date: $date, clientRef: $clientRef, receiptUrl: $receiptUrl, invoiceUrl: $invoiceUrl, paymentReceiptUrl: $paymentReceiptUrl) {
       id amount description date status
+      receiptUrl invoiceUrl paymentReceiptUrl
       category { id name }
       createdAt
     }
@@ -776,7 +781,7 @@ export const Q_AUTHORIZATIONS_EXPENSE = `
   query GetExpensesPaginated($page: Float, $limit: Float, $branchId: String) {
     expenses(page: $page, limit: $limit, branchId: $branchId) {
       items {
-        id amount description date status createdAt
+        id amount description date status createdAt receiptUrl invoiceUrl paymentReceiptUrl
         branchId
         category { id name }
         requestedBy { id name }
@@ -806,7 +811,7 @@ export const M_REJECT_SHIFT = `
 `;
 
 export const M_UPDATE_EXPENSE_STATUS = `
-  mutation UpdateExpenseStatus($id: ID!, $status: String!) {
+  mutation UpdateExpenseStatus($id: ID!, $status: AuthorizationStatus!) {
     updateExpenseStatus(id: $id, status: $status) {
       id status
       approvedBy { id name }
@@ -823,9 +828,10 @@ export const M_REJECT_EXPENSE = `
 `;
 
 export const M_CREATE_EXPENSE = `
-  mutation CreateExpense($branchId: String!, $categoryId: String!, $amount: Float!, $description: String!, $date: String!, $receiptUrl: String) {
-    createExpense(branchId: $branchId, categoryId: $categoryId, amount: $amount, description: $description, date: $date, receiptUrl: $receiptUrl) {
+  mutation CreateExpense($branchId: String!, $categoryId: String!, $amount: Float!, $description: String!, $date: String!, $clientRef: String, $receiptUrl: String, $invoiceUrl: String, $paymentReceiptUrl: String) {
+    createExpense(branchId: $branchId, categoryId: $categoryId, amount: $amount, description: $description, date: $date, clientRef: $clientRef, receiptUrl: $receiptUrl, invoiceUrl: $invoiceUrl, paymentReceiptUrl: $paymentReceiptUrl) {
       id amount description date status
+      receiptUrl invoiceUrl paymentReceiptUrl
       category { id name }
       createdAt
     }
@@ -1032,7 +1038,7 @@ export const Q_EXPENSES = `
   query GetExpenses($page: Float, $limit: Float) {
     expenses(page: $page, limit: $limit) {
       items {
-        id amount description date receiptUrl status createdAt branchId
+        id amount description date receiptUrl invoiceUrl paymentReceiptUrl status createdAt branchId
         category { id name }
       }
     }

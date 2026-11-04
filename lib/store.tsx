@@ -19,19 +19,60 @@ import {
   M_UPDATE_PRODUCT_PRICES, M_BULK_UPDATE_PRODUCT_PRICES, M_UPDATE_PRODUCT_SUPPLIER, M_BULK_UPDATE_PRODUCT_SUPPLIER,
   M_CREATE_CUSTOMER, M_UPDATE_CUSTOMER,
   M_CREATE_PRODUCT, M_DELETE_PRODUCT, M_UPDATE_PRODUCT_STOCK, M_UPDATE_PRODUCT,
-  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_CREATE_EXPENSE,
+  M_CREATE_SUPPLIER, M_UPDATE_SUPPLIER, M_DELETE_SUPPLIER, M_CREATE_EXPENSE, M_REQUEST_EXPENSE,
   M_REQUEST_REFUND, M_APPROVE_REFUND, M_REJECT_REFUND,
   Q_STOCK_TRANSFERS, M_INITIATE_TRANSFER
 } from './gql';
-import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, getPendingSales, deletePendingSale } from './offline';
+import { saveToCache, getFromCache, saveKV, getKV, savePendingSale, getPendingSales, deletePendingSale, type PendingSale } from './offline';
 import { enqueueOfflineOp, initTauriSync, isNetworkishError, manualSync, onSyncEvent } from './tauri-sync';
 import { getConnectivity, isApiReachable } from './connectivity';
 import { isTauri, nativeEnqueueSale, nativeSetSyncAuth, nativeListQueue, nativeRemoveFromQueue } from './tauri-native';
 import { MANAGERIAL_ROLES } from './branch-context';
+import {
+  fileToDataUrl,
+  uploadExpenseAttachment,
+  validateExpenseAttachment,
+  type ExpenseAttachmentFiles,
+  type ExpenseAttachmentKind,
+  type QueuedExpenseAttachment,
+} from './expense-attachments';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 const OFFLINE_SALES_KEY = 'offline_sales';
+
+type PosQueueStorage = 'native' | 'indexeddb';
+
+async function persistPosOperation(
+  id: string,
+  variables: Record<string, any>,
+  sale: PendingSale,
+  mutation?: string,
+): Promise<PosQueueStorage> {
+  if (isTauri()) {
+    try {
+      await nativeEnqueueSale(id, variables, mutation, sale.cashier_id);
+      return 'native';
+    } catch (error) {
+      console.warn('[store] Native POS outbox unavailable; falling back to IndexedDB:', error);
+    }
+  }
+
+  await savePendingSale({
+    ...sale,
+    id,
+    op: mutation ? { mutation, variables } : undefined,
+  });
+  return 'indexeddb';
+}
+
+async function removePosOperation(id: string, storage: PosQueueStorage): Promise<void> {
+  if (storage === 'native') {
+    await nativeRemoveFromQueue(id);
+    return;
+  }
+  await deletePendingSale(id);
+}
 
 export interface StockItem {
   id: string;
@@ -139,7 +180,9 @@ export interface Sale {
   cashAmount?: number;
   momoAmount?: number;
   customerName?: string;
+  customerId?: string;
   customerPhone?: string;
+  customerEmail?: string;
   receiptNo?: string;
   subtotal?: number;
   discountAmt?: number;
@@ -160,6 +203,10 @@ export interface Sale {
   createdAt: string;
   cashierId?: string;
   branchId?: string;
+  branchName?: string;
+  _syncOwnerId?: string;
+  _syncStatus?: 'SYNCED' | 'PENDING';
+  _isSynced?: boolean;
   user?: { id: string; name: string; role: string };
   items: SaleItem[];
 }
@@ -273,9 +320,12 @@ export interface Expense {
   description: string;
   date: string;
   receiptUrl?: string;
+  invoiceUrl?: string;
+  paymentReceiptUrl?: string;
   category?: ExpenseCategory;
   status: string;
   branchId?: string;
+  queued?: boolean;
   createdAt: string;
 }
 
@@ -555,6 +605,7 @@ interface StoreState {
     branchName?: string;
     cashAmount?: number;
     momoAmount?: number;
+    clientRef?: string;
     customerId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -573,6 +624,7 @@ interface StoreState {
 
   completePendingSale: (args: {
     saleId: string;
+    sale?: Sale;
     paymentMethod: string;
     amountPaid: number;
     cashAmount?: number;
@@ -705,11 +757,20 @@ interface StoreState {
 
   // Financials
   createExpense: (args: {
+    branchId?: string;
     categoryId: string;
     amount: number;
     description: string;
     date: string;
-    receiptUrl?: string;
+    attachments?: ExpenseAttachmentFiles;
+  }) => Promise<Expense>;
+  requestExpense: (args: {
+    branchId?: string;
+    categoryId: string;
+    amount: number;
+    description: string;
+    date: string;
+    attachments?: ExpenseAttachmentFiles;
   }) => Promise<Expense>;
 
   createBudget: (args: {
@@ -1021,10 +1082,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   // Re-inject locally-held sales that haven't synced yet, and retire
   // placeholders whose clientRef now exists server-side (synced PENDING sale).
-  const mergeHeldSales = async (serverSales: Sale[], ownerUserId: string | null): Promise<Sale[]> => {
+  const mergeHeldSales = async (
+    serverSales: Sale[],
+    ownerUserId: string | null,
+    branchId?: string,
+  ): Promise<Sale[]> => {
     try {
       const serverRefs = new Set(serverSales.map(s => s.clientRef).filter(Boolean));
-      const serverIds = new Set(serverSales.map(s => s.id));
 
       const held = ((await getKV('held_sales')) || {}) as Record<string, { sale: Sale; variables: any }>;
       const entries = Object.values(held);
@@ -1042,24 +1106,59 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       // Completed-offline sales that haven't reached the server yet. They must
       // survive reloads/restarts so cashiers still see them in history.
       const offline = ((await getKV(OFFLINE_SALES_KEY)) || {}) as Record<string, Sale>;
-      const offlineRemaining: Sale[] = [];
+      const offlineRemaining = Object.values(offline);
       let offlineChanged = false;
-      for (const sale of Object.values(offline)) {
-        const ref = sale.clientRef || sale.id;
-        const saleOwnerId = sale.cashierId || sale.user?.id;
-        if (saleOwnerId === ownerUserId && (serverRefs.has(ref) || serverIds.has(sale.id))) offlineChanged = true;
-        else offlineRemaining.push(sale);
-      }
-      if (offlineChanged) {
-        await saveKV(OFFLINE_SALES_KEY, Object.fromEntries(offlineRemaining.map(s => [s.clientRef || s.id, s])));
-      }
 
       const currentHeldSales = remaining
-        .filter(h => (h.sale.cashierId || h.sale.user?.id || h.variables?.userId) === ownerUserId)
+        .filter(h =>
+          (h.sale.cashierId || h.sale.user?.id || h.variables?.userId) === ownerUserId
+          && (!branchId || h.sale.branchId === branchId)
+          && !offlineRemaining.some(sale =>
+            sale.clientRef === h.sale.clientRef
+            && sale.status === 'COMPLETED'
+            && sale._syncStatus === 'PENDING'
+            && (sale._syncOwnerId || sale.cashierId || sale.user?.id) === ownerUserId
+          )
+        )
         .map(h => h.sale);
-      const currentOfflineSales = offlineRemaining
-        .filter(sale => (sale.cashierId || sale.user?.id) === ownerUserId);
-      return [...currentHeldSales, ...currentOfflineSales, ...serverSales];
+      const localOverlays = new Map<string, Sale>();
+      const currentOfflineSales: Sale[] = [];
+      const offlineToKeep: Sale[] = [];
+      for (const sale of offlineRemaining) {
+        const saleOwnerId = sale._syncOwnerId || sale.cashierId || sale.user?.id;
+        if (saleOwnerId !== ownerUserId) {
+          offlineToKeep.push(sale);
+          continue;
+        }
+        const serverSale = serverSales.find(server =>
+          server.id === sale.id || (!!sale.clientRef && server.clientRef === sale.clientRef)
+        );
+        if (serverSale) {
+          if (
+            sale._syncStatus === 'PENDING'
+            && sale.status === 'COMPLETED'
+            && serverSale.status !== 'COMPLETED'
+          ) {
+            localOverlays.set(serverSale.id, sale);
+            offlineToKeep.push(sale);
+          } else {
+            offlineChanged = true;
+          }
+          continue;
+        }
+
+        offlineToKeep.push(sale);
+        if (!branchId || sale.branchId === branchId) currentOfflineSales.push(sale);
+      }
+      if (offlineChanged) {
+        await saveKV(OFFLINE_SALES_KEY, Object.fromEntries(offlineToKeep.map(s => [s.clientRef || s.id, s])));
+      }
+
+      return [
+        ...currentHeldSales,
+        ...currentOfflineSales,
+        ...serverSales.map(sale => localOverlays.get(sale.id) ?? sale),
+      ];
     } catch {
       return serverSales;
     }
@@ -1073,13 +1172,13 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     // silently overwrite fresher/wider data with stale/narrow results.
     const requestId = ++salesRequestIdRef.current;
     setLoadingSales(true);
+    const rangeKey = dateFrom || dateTo ? `${dateFrom}_${dateTo}` : '';
+    const ownerUserId = getAuthUserId();
+    const cacheKey = ['sales_cache', ownerUserId || 'unknown-user', branchId || '', rangeKey].filter(Boolean).join('_');
     try {
       // Serve stale cache instantly so dashboard paints immediately
-      const rangeKey = dateFrom || dateTo ? `${dateFrom}_${dateTo}` : '';
-      const ownerUserId = getAuthUserId();
-      const cacheKey = ['sales_cache', ownerUserId || 'unknown-user', branchId || '', rangeKey].filter(Boolean).join('_');
       const cached = await getKV(cacheKey);
-      if (cached?.length && requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(cached, ownerUserId));
+      if (cached?.length && requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(cached, ownerUserId, branchId));
 
       // No cap — return all sales in the requested range. Revenue totals
       // are computed from this list, so capping it undercounts long ranges.
@@ -1107,11 +1206,16 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
 
       if (data?.sales) {
-        if (requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(data.sales, ownerUserId));
+        if (requestId === salesRequestIdRef.current) setSales(await mergeHeldSales(data.sales, ownerUserId, branchId));
         await saveKV(cacheKey, data.sales);
       }
     } catch (e: any) {
       console.warn('[store] sales fetch failed:', e.message);
+      if (requestId === salesRequestIdRef.current) {
+        const cached = await getKV(cacheKey);
+        const cachedSales = Array.isArray(cached) ? cached as Sale[] : [];
+        setSales(await mergeHeldSales(cachedSales, ownerUserId, branchId));
+      }
     } finally {
       if (requestId === salesRequestIdRef.current) setLoadingSales(false);
     }
@@ -1486,9 +1590,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   // Exclude refunded/voided sales from revenue — they still have positive
   // totalAmount but the money was returned to the customer.
   const todayRevenue = todaySales
-    .filter(s => (s as any).status !== 'REFUNDED' && (s as any).status !== 'VOIDED')
+    .filter(s => !s.status || s.status === 'COMPLETED')
     .reduce((sum, s) => sum + s.totalAmount, 0);
-  const todayTransactions = todaySales.filter(s => (s as any).status !== 'REFUNDED' && (s as any).status !== 'VOIDED').length;
+  const todayTransactions = todaySales.filter(s => !s.status || s.status === 'COMPLETED').length;
 
   // ── Mutations ─────────────────────────────────────────────────────────────
 
@@ -1513,6 +1617,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     branchName?: string;
     cashAmount?: number;
     momoAmount?: number;
+    clientRef?: string;
     customerId?: string;
     customerName?: string;
     customerPhone?: string;
@@ -1532,7 +1637,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     // Stable idempotency key for THIS sale — sent to the server on every attempt.
     // If a response is lost mid-request, the retry dedupes server-side instead of
     // creating a duplicate sale + double stock decrement.
-    const clientRef = `sale-${crypto.randomUUID()}`;
+    const clientRef = args.clientRef || `sale-${crypto.randomUUID()}`;
 
     const variables = {
       userId: me.id,
@@ -1549,125 +1654,117 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       clientRef,
     };
 
-    let newSale: Sale | undefined;
-    let isSynced = false;
-
     // Calculate total amount for both online and offline paths
     const totalAmount = args.items.reduce((sum, i) => sum + i.product.sellingPrice * i.quantity, 0);
+    const now = new Date().toISOString();
+    const pendingRecord: PendingSale = {
+      id: clientRef,
+      items: args.items.map(i => ({
+        productId: i.product.id,
+        name: i.product.name,
+        qty: i.quantity,
+        price: i.product.sellingPrice,
+      })),
+      total: totalAmount,
+      payment_method: args.paymentMethod,
+      cashier_name: me.name || 'Unknown',
+      cashier_id: me.id,
+      branch_name: args.branchName || me.branch?.name || (typeof me.branch === 'string' ? me.branch : 'Unknown'),
+      branch_id: saleBranchId,
+      customerId: args.customerId,
+      customerName: args.customerName,
+      customerPhone: args.customerPhone,
+      customerEmail: args.customerEmail,
+      cashAmount: args.cashAmount,
+      momoAmount: args.momoAmount,
+      timestamp: Date.now(),
+    };
+    const offlineSale: Sale = {
+      id: clientRef,
+      clientRef,
+      branchId: saleBranchId,
+      cashierId: me.id,
+      totalAmount,
+      amountPaid: args.amountPaid,
+      change: Math.max(0, args.amountPaid - totalAmount),
+      paymentMethod: args.paymentMethod,
+      cashAmount: args.cashAmount,
+      momoAmount: args.momoAmount,
+      status: 'COMPLETED',
+      customerName: args.customerName || 'Walk-in',
+      customerId: args.customerId,
+      customerPhone: args.customerPhone,
+      customerEmail: args.customerEmail,
+      createdAt: now,
+      user: { id: me.id, name: me.name, role: me.role },
+      items: args.items.map(i => ({
+        id: `item-${crypto.randomUUID()}`,
+        quantity: i.quantity,
+        unitPrice: i.product.sellingPrice,
+        total: i.product.sellingPrice * i.quantity,
+        batchNo: 'OFFLINE',
+        product: { id: i.product.id, name: i.product.name, category: i.product.category },
+      })),
+      _isSynced: false,
+      _syncStatus: 'PENDING',
+    };
 
-    // Only try API if online
+    // Persist before the request so a timeout, app restart, or lost response
+    // cannot leave an accepted transaction without a retryable outbox record.
+    const queueStorage = await persistPosOperation(clientRef, variables, pendingRecord);
+    const offlineSales = ((await getKV(OFFLINE_SALES_KEY)) || {}) as Record<string, Sale>;
+    offlineSales[clientRef] = offlineSale;
+    await saveKV(OFFLINE_SALES_KEY, offlineSales);
+
+    let newSale = offlineSale;
+    let isSynced = false;
     if (online) {
       try {
         console.log('[store] 📤 Sending createSale mutation...', variables);
-        const data = await gql<{ createSale: Sale }>(M_CREATE_SALE, variables, { timeout: 8000 });
+        const data = await gql<{ createSale: Sale }>(
+          M_CREATE_SALE,
+          variables,
+          { timeout: 8000, attempts: 1 },
+        );
+        if (!data?.createSale) throw new Error('Sale creation returned no sale data');
         newSale = { ...data.createSale, branchId: saleBranchId };
         isSynced = true;
+        try {
+          await removePosOperation(clientRef, queueStorage);
+        } catch (error) {
+          console.warn('[store] Sale synced but its outbox record could not be removed; idempotent retry will reconcile it:', error);
+        }
+        delete offlineSales[clientRef];
+        await saveKV(OFFLINE_SALES_KEY, offlineSales);
         console.log('[store] ✅ Sale synced to backend!', { id: newSale.id, total: newSale.totalAmount });
       } catch (err: any) {
-        console.error('[store] ❌ Online sale failed:', {
-          error: err?.message,
-          status: err?.status,
-        });
         const { isNetworkishError } = await import('./tauri-sync');
         if (isNetworkishError(err) || !isApiReachable()) {
-          console.warn('[store] 📶 Network error detected — queuing sale locally in IndexedDB for automatic background sync.');
-          isSynced = false;
+          console.warn('[store] Network error detected — durable POS sale remains queued for automatic sync:', err?.message);
         } else {
-          // If server rejected business logic or validation, pass error up
+          try {
+            await removePosOperation(clientRef, queueStorage);
+          } catch (cleanupError) {
+            console.error('[store] Could not remove rejected sale from the outbox:', cleanupError);
+          }
+          delete offlineSales[clientRef];
+          await saveKV(OFFLINE_SALES_KEY, offlineSales);
           throw err;
         }
       }
+    } else {
+      console.warn('[store] 📱 Sale saved locally (offline mode). Will sync when connection is restored.');
     }
 
-    // If offline or API failed, create offline sale
-    if (!isSynced) {
-      // Create a mock sale for immediate UI — the id IS the clientRef, so the
-      // sync engine's retry sends the same idempotency key the original attempt used.
-      newSale = {
-        id: clientRef,
-        clientRef,
-        branchId: saleBranchId,
-        cashierId: me?.id,
-        totalAmount,
-        amountPaid: args.amountPaid,
-        change: Math.max(0, args.amountPaid - totalAmount),
-        paymentMethod: args.paymentMethod,
-        customerName: args.customerName || 'Walk-in',
-        createdAt: new Date().toISOString(),
-        user: me ? { id: me.id, name: me.name, role: me.role } : undefined,
-        items: args.items.map(i => ({
-          id: `item-${Date.now()}`,
-          quantity: i.quantity,
-          unitPrice: i.product.sellingPrice,
-          total: i.product.sellingPrice * i.quantity,
-          batchNo: 'OFFLINE',
-          product: { id: i.product.id, name: i.product.name, category: i.product.category }
-        }))
-      };
-
-      // Queue for sync — SQLite outbox owned by the native daemon in Tauri,
-      // IndexedDB in the browser. The id IS the clientRef sent in `variables`,
-      // so retries dedupe server-side either way.
-      const pendingRecord = {
-        id: clientRef,
-        items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
-        total: totalAmount,
-        payment_method: args.paymentMethod,
-        cashier_name: me?.name || 'Unknown',
-        cashier_id: me?.id,
-        branch_name: args.branchName || me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
-        branch_id: saleBranchId,
-        customerId: args.customerId,
-        customerName: args.customerName,
-        customerPhone: args.customerPhone,
-        customerEmail: args.customerEmail,
-        cashAmount: args.cashAmount,
-        momoAmount: args.momoAmount,
-        timestamp: Date.now()
-      };
-      if (isTauri()) {
-        try {
-          await nativeEnqueueSale(clientRef, variables);
-        } catch (e) {
-          // Native outbox unavailable (older binary / DB error) — fall back to
-          // the webview IndexedDB queue so the sale is never lost.
-          console.warn('[store] Native outbox failed, queuing in IndexedDB:', e);
-          await savePendingSale(pendingRecord);
-        }
-      } else {
-        await savePendingSale(pendingRecord);
-      }
-
-      // Flush immediately if the API is actually reachable right now
-      if (isApiReachable()) {
-        manualSync().catch(err => console.warn('[store] Manual offline sync failed:', err));
-      }
-
-      console.warn('[store] 📱 Sale saved locally (offline mode). Will sync when connection restored.');
+    if (!isSynced && isApiReachable()) {
+      manualSync().catch(err => console.warn('[store] Manual offline sync failed:', err));
     }
 
-    // Ensure newSale is assigned (TypeScript safety)
-    if (!newSale) {
-      throw new Error('Sale creation failed: no sale data available');
-    }
-
-    // Mark if synced or pending
-    (newSale as any)._isSynced = isSynced;
-    (newSale as any)._syncStatus = isSynced ? 'SYNCED' : 'PENDING';
+    newSale._isSynced = isSynced;
+    newSale._syncStatus = isSynced ? 'SYNCED' : 'PENDING';
 
     // Optimistically update local state
     setSales(prev => [newSale, ...prev]);
-
-    // Persist unsynced sales so offline history survives reloads/restarts
-    if (!isSynced) {
-      try {
-        const offline = ((await getKV(OFFLINE_SALES_KEY)) || {}) as Record<string, Sale>;
-        offline[clientRef] = newSale;
-        await saveKV(OFFLINE_SALES_KEY, offline);
-      } catch (e) {
-        console.warn('[store] Failed to persist offline sale for history:', e);
-      }
-    }
 
     // Decrement product stock locally and record movements
     const newMovements: StockMovement[] = [];
@@ -1745,83 +1842,103 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       clientRef,
     };
 
-    let newSale: Sale | null = null;
-    let isSynced = false;
-
     const conn = getConnectivity();
-    if (conn === 'ONLINE' || (conn === 'PROBING' && navigator.onLine !== false)) {
+    const online = conn === 'ONLINE' || (conn === 'PROBING' && navigator.onLine !== false);
+    const localSale: Sale = {
+      id: `held-${clientRef}`,
+      clientRef,
+      branchId: saleBranchId,
+      branchName: args.branchName || me.branch?.name || (typeof me.branch === 'string' ? me.branch : 'Unknown'),
+      cashierId: me.id,
+      totalAmount,
+      amountPaid: 0,
+      change: 0,
+      status: 'PENDING',
+      paymentMethod: 'CASH',
+      customerName: args.customerName || 'Walk-in',
+      customerId: args.customerId,
+      customerPhone: args.customerPhone,
+      customerEmail: args.customerEmail,
+      createdAt: new Date().toISOString(),
+      user: { id: me.id, name: me.name, role: me.role },
+      items: args.items.map(i => ({
+        id: `item-${crypto.randomUUID()}`,
+        quantity: i.quantity,
+        unitPrice: i.product.sellingPrice,
+        total: i.product.sellingPrice * i.quantity,
+        batchNo: 'HELD',
+        product: { id: i.product.id, name: i.product.name, category: i.product.category },
+      })),
+    };
+    const pendingRecord: PendingSale = {
+      id: clientRef,
+      items: args.items.map(i => ({
+        productId: i.product.id,
+        name: i.product.name,
+        qty: i.quantity,
+        price: i.product.sellingPrice,
+      })),
+      total: totalAmount,
+      payment_method: 'CASH',
+      cashier_name: me.name || 'Unknown',
+      cashier_id: me.id,
+      branch_name: args.branchName || me.branch?.name || (typeof me.branch === 'string' ? me.branch : 'Unknown'),
+      branch_id: saleBranchId,
+      customerId: args.customerId,
+      customerName: args.customerName,
+      customerPhone: args.customerPhone,
+      customerEmail: args.customerEmail,
+      timestamp: Date.now(),
+    };
+    const queueStorage = await persistPosOperation(clientRef, variables, pendingRecord, M_CREATE_PENDING_SALE);
+    const held = ((await getKV('held_sales')) || {}) as Record<string, any>;
+    held[clientRef] = { sale: localSale, variables };
+    await saveKV('held_sales', held);
+
+    let newSale = localSale;
+    let isSynced = false;
+    if (online) {
       try {
         console.log('[store] 📤 Sending createPendingSale mutation...', variables);
-        const data = await gql<{ createPendingSale: Sale }>(M_CREATE_PENDING_SALE, variables);
+        const data = await gql<{ createPendingSale: Sale }>(
+          M_CREATE_PENDING_SALE,
+          variables,
+          { timeout: 8000, attempts: 1 },
+        );
+        if (!data?.createPendingSale) throw new Error('Pending sale creation returned no sale data');
         newSale = data.createPendingSale;
         isSynced = true;
+        try {
+          await removePosOperation(clientRef, queueStorage);
+        } catch (error) {
+          console.warn('[store] Held sale synced but its outbox record could not be removed; idempotent retry will reconcile it:', error);
+        }
+        delete held[clientRef];
+        await saveKV('held_sales', held);
         console.log('[store] ✅ Pending sale created!', { id: newSale.id, total: newSale.totalAmount });
       } catch (err: any) {
-        console.warn('[store] Online pending sale creation failed, storing locally:', err);
-      }
-    }
-
-    if (!newSale) {
-      newSale = {
-        id: `held-${clientRef}`,
-        clientRef,
-        branchId: saleBranchId,
-        totalAmount,
-        amountPaid: 0,
-        change: 0,
-        status: 'PENDING',
-        paymentMethod: 'CASH',
-        customerName: args.customerName || 'Walk-in',
-        createdAt: new Date().toISOString(),
-        user: me ? { id: me.id, name: me.name, role: me.role } : undefined,
-        items: args.items.map(i => ({
-          id: `item-${Date.now()}-${i.product.id}`,
-          quantity: i.quantity,
-          unitPrice: i.product.sellingPrice,
-          total: i.product.sellingPrice * i.quantity,
-          batchNo: 'HELD',
-          product: { id: i.product.id, name: i.product.name, category: i.product.category },
-        })),
-      };
-
-      // Durable held sale — survives reload and syncs to the server as a
-      // PENDING sale at the next opportunity (clientRef dedupes retries).
-      try {
-        const held = ((await getKV('held_sales')) || {}) as Record<string, any>;
-        held[clientRef] = { sale: newSale, variables };
-        await saveKV('held_sales', held);
-
-        if (isTauri()) {
-          await nativeEnqueueSale(clientRef, variables, M_CREATE_PENDING_SALE);
+        const { isNetworkishError } = await import('./tauri-sync');
+        if (isNetworkishError(err) || !isApiReachable()) {
+          console.warn('[store] Network error detected — held sale remains queued for automatic sync:', err?.message);
         } else {
-          await savePendingSale({
-            id: clientRef,
-            items: args.items.map(i => ({ productId: i.product.id, name: i.product.name, qty: i.quantity, price: i.product.sellingPrice })),
-            total: totalAmount,
-            payment_method: 'CASH',
-            cashier_name: me?.name || 'Unknown',
-            cashier_id: me?.id,
-            branch_name: args.branchName || me?.branch?.name || (typeof me?.branch === 'string' ? me.branch : 'Unknown'),
-            branch_id: saleBranchId,
-            customerId: args.customerId,
-            customerName: args.customerName,
-            customerPhone: args.customerPhone,
-            customerEmail: args.customerEmail,
-            timestamp: Date.now(),
-            op: { mutation: M_CREATE_PENDING_SALE, variables },
-          });
+          try {
+            await removePosOperation(clientRef, queueStorage);
+          } catch (cleanupError) {
+            console.error('[store] Could not remove rejected held sale from the outbox:', cleanupError);
+          }
+          delete held[clientRef];
+          await saveKV('held_sales', held);
+          throw err;
         }
-      } catch (e) {
-        console.warn('[store] Failed to persist held sale:', e);
-      }
-
-      if (isApiReachable()) {
-        manualSync().catch(() => { });
       }
     }
 
-    (newSale as any)._isSynced = isSynced;
-    (newSale as any)._syncStatus = 'PENDING';
+    newSale._isSynced = isSynced;
+    newSale._syncStatus = isSynced ? 'SYNCED' : 'PENDING';
+
+    if (!isSynced && isApiReachable()) {
+      manualSync().catch(err => console.warn('[store] Held sale sync failed:', err));
+    }
 
     setSales(prev => [newSale!, ...prev]);
 
@@ -1836,6 +1953,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const completePendingSale = useCallback(async (args: {
     saleId: string;
+    sale?: Sale;
     paymentMethod: string;
     amountPaid: number;
     cashAmount?: number;
@@ -1847,29 +1965,16 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (args.saleId.startsWith('held-')) {
       const clientRef = args.saleId.slice(5);
 
-      // Already synced? The server copy exists under a real id — use it.
-      const synced = sales.find(s => s.clientRef === clientRef && s.status === 'PENDING');
+      // Only treat a real server ID as synced; the local held placeholder also
+      // carries this clientRef while it is still waiting in the outbox.
+      const synced = sales.find(s =>
+        s.clientRef === clientRef && s.status === 'PENDING' && !s.id.startsWith('held-')
+      );
       if (synced) {
         args = { ...args, saleId: synced.id };
       } else {
-        // Still queued → swap the createPendingSale op for a real offline sale
-        // so the cart doesn't sync twice (once held, once completed).
-        if (isTauri()) {
-          const q = await nativeListQueue('pending').catch(() => [] as any[]);
-          if (q.some((r: any) => r.id === clientRef)) {
-            await nativeRemoveFromQueue(clientRef).catch(() => { });
-          }
-        } else {
-          const q = await getPendingSales().catch(() => [] as any[]);
-          if (q.some((r: any) => r.id === clientRef)) {
-            await deletePendingSale(clientRef).catch(() => { });
-          }
-        }
-
         const held = ((await getKV('held_sales').catch(() => null)) || {}) as Record<string, any>;
         const heldSale: Sale | undefined = held[clientRef]?.sale ?? sales.find(s => s.id === args.saleId);
-        delete held[clientRef];
-        await saveKV('held_sales', held).catch(() => { });
 
         if (!heldSale) {
           await refetchSales().catch(() => { });
@@ -1881,18 +1986,30 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
           product: { ...it.product, sellingPrice: it.unitPrice } as Product,
           quantity: it.quantity,
         }));
-        setSales(prev => prev.filter(s => s.id !== args.saleId));
-        return createSale({
+        const completed = await createSale({
           items: cartItems,
+          branchId: heldSale.branchId,
+          branchName: heldSale.branchName || args.sale?.branchName,
+          clientRef,
           paymentMethod: args.paymentMethod,
           amountPaid: args.amountPaid,
           cashAmount: args.cashAmount,
           momoAmount: args.momoAmount,
-          customerId: (heldSale as any).customerId,
+          customerId: heldSale.customerId,
           customerName: heldSale.customerName,
           customerPhone: heldSale.customerPhone,
+          customerEmail: heldSale.customerEmail,
         });
+        delete held[clientRef];
+        await saveKV('held_sales', held);
+        setSales(prev => prev.filter(s => s.id !== args.saleId));
+        return completed;
       }
+    }
+
+    const sourceSale = args.sale ?? sales.find(sale => sale.id === args.saleId);
+    if (!sourceSale) {
+      throw new Error('Pending sale details are unavailable locally. Refresh the pending-sales list before completing it.');
     }
 
     const variables = {
@@ -1904,23 +2021,106 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       momoAmount: args.momoAmount,
     };
 
-    console.log('[store] 📤 Sending completePendingSale mutation...', variables);
-    const data = await gql<{ completePendingSale: Sale }>(M_COMPLETE_PENDING_SALE, variables);
-    const sale = data.completePendingSale;
-    console.log('[store] ✅ Pending sale completed!', { id: sale.id, total: sale.totalAmount });
+    const completionQueueId = `complete-${args.saleId}`;
+    const completionRecord: PendingSale = {
+      id: completionQueueId,
+      items: sourceSale.items.map(item => ({
+        productId: item.product.id,
+        name: item.product.name,
+        qty: item.quantity,
+        price: item.unitPrice,
+      })),
+      total: sourceSale.totalAmount,
+      payment_method: variables.paymentMethod,
+      cashier_name: sourceSale.user?.name || me.name || 'Unknown',
+      cashier_id: me.id,
+      branch_name: sourceSale.branchName || 'Unknown',
+      branch_id: sourceSale.branchId,
+      customerName: sourceSale.customerName,
+      customerPhone: sourceSale.customerPhone,
+      timestamp: Date.now(),
+    };
+    const queueStorage = await persistPosOperation(
+      completionQueueId,
+      variables,
+      completionRecord,
+      M_COMPLETE_PENDING_SALE,
+    );
 
-    (sale as any)._isSynced = true;
-    (sale as any)._syncStatus = 'SYNCED';
+    const offlineCompletedSale: Sale = {
+      ...sourceSale,
+      status: 'COMPLETED',
+      paymentMethod: variables.paymentMethod,
+      amountPaid: variables.amountPaid,
+      cashAmount: variables.cashAmount,
+      momoAmount: variables.momoAmount,
+      change: variables.amountPaid - sourceSale.totalAmount,
+      _syncOwnerId: me.id,
+      _isSynced: false,
+      _syncStatus: 'PENDING',
+    };
+    const offlineSales = ((await getKV(OFFLINE_SALES_KEY)) || {}) as Record<string, Sale>;
+    const offlineSaleKey = offlineCompletedSale.clientRef || offlineCompletedSale.id;
+    offlineSales[offlineSaleKey] = offlineCompletedSale;
+    await saveKV(OFFLINE_SALES_KEY, offlineSales);
 
-    setSales(prev => prev.map(s => s.id === sale.id ? sale : s));
+    let completedSale = offlineCompletedSale;
+    let isSynced = false;
+    const conn = getConnectivity();
+    const online = conn === 'ONLINE' || (conn === 'PROBING' && navigator.onLine !== false);
+    if (online) {
+      try {
+        console.log('[store] 📤 Sending completePendingSale mutation...', variables);
+        const data = await gql<{ completePendingSale: Sale }>(
+          M_COMPLETE_PENDING_SALE,
+          variables,
+          { timeout: 8000, attempts: 1 },
+        );
+        if (!data?.completePendingSale) throw new Error('Pending-sale completion returned no sale data');
+        completedSale = { ...data.completePendingSale, branchId: sourceSale.branchId };
+        isSynced = true;
+        try {
+          await removePosOperation(completionQueueId, queueStorage);
+        } catch (error) {
+          console.warn('[store] Completion synced but its outbox record could not be removed; retry will reconcile it:', error);
+        }
+        delete offlineSales[offlineSaleKey];
+        await saveKV(OFFLINE_SALES_KEY, offlineSales);
+      } catch (error: any) {
+        const { isNetworkishError } = await import('./tauri-sync');
+        if (isNetworkishError(error) || !isApiReachable()) {
+          console.warn('[store] Network error detected — pending-sale completion remains queued:', error?.message);
+        } else {
+          try {
+            await removePosOperation(completionQueueId, queueStorage);
+          } catch (cleanupError) {
+            console.error('[store] Could not remove rejected completion from the outbox:', cleanupError);
+          }
+          delete offlineSales[offlineSaleKey];
+          await saveKV(OFFLINE_SALES_KEY, offlineSales);
+          throw error;
+        }
+      }
+    }
 
-    setTimeout(() => {
-      refetchSales().catch(() => { });
-      refetchProducts().catch(() => { });
-      refetchLedger().catch(() => { });
-    }, 500);
+    completedSale._isSynced = isSynced;
+    completedSale._syncStatus = isSynced ? 'SYNCED' : 'PENDING';
+    setSales(prev => prev.some(s => s.id === completedSale.id)
+      ? prev.map(s => s.id === completedSale.id ? completedSale : s)
+      : [completedSale, ...prev]);
 
-    return sale;
+    if (!isSynced && isApiReachable()) {
+      manualSync().catch(error => console.warn('[store] Pending-sale completion sync failed:', error));
+    }
+    if (isSynced) {
+      setTimeout(() => {
+        refetchSales(sourceSale.branchId).catch(() => { });
+        refetchProducts(sourceSale.branchId).catch(() => { });
+        refetchLedger(sourceSale.branchId).catch(() => { });
+      }, 500);
+    }
+
+    return completedSale;
   }, [me, sales, createSale, refetchSales, refetchProducts, refetchLedger]);
 
   const cancelPendingSale = useCallback(async (saleId: string): Promise<boolean> => {
@@ -1930,9 +2130,9 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     if (saleId.startsWith('held-')) {
       const clientRef = saleId.slice(5);
       if (isTauri()) {
-        await nativeRemoveFromQueue(clientRef).catch(() => { });
+        await nativeRemoveFromQueue(clientRef);
       } else {
-        await deletePendingSale(clientRef).catch(() => { });
+        await deletePendingSale(clientRef);
       }
       const held = ((await getKV('held_sales').catch(() => null)) || {}) as Record<string, any>;
       delete held[clientRef];
@@ -2418,16 +2618,36 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [invoices, me, refetchLedger]);
 
-  const createExpense = useCallback(async (args: {
-    categoryId: string; amount: number; description: string; date: string; receiptUrl?: string;
-  }): Promise<Expense> => {
-    if (!me?.branchId) throw new Error('No branch assigned');
+  const submitExpense = useCallback(async (
+    mutation: string,
+    resultKey: 'createExpense' | 'requestExpense',
+    args: { branchId?: string; categoryId: string; amount: number; description: string; date: string; attachments?: ExpenseAttachmentFiles },
+  ): Promise<Expense> => {
+    const branchId = args.branchId || me?.branchId;
+    if (!branchId) throw new Error('Select a branch before submitting the expense.');
     const clientRef = crypto.randomUUID();
-    const variables = { ...args, branchId: me.branchId };
+    const attachments = args.attachments ?? {};
+    const queuedAttachments: Partial<Record<ExpenseAttachmentKind, QueuedExpenseAttachment>> = {};
+    for (const [kind, file] of Object.entries(attachments) as [ExpenseAttachmentKind, File | undefined][]) {
+      if (!file) continue;
+      validateExpenseAttachment(file);
+      queuedAttachments[kind] = { name: file.name, type: file.type, dataUrl: await fileToDataUrl(file) };
+    }
+    const variables: Record<string, any> = {
+      amount: args.amount,
+      branchId,
+      categoryId: args.categoryId,
+      clientRef,
+      date: args.date,
+      description: args.description,
+    };
 
     try {
-      const data = await gql<{ createExpense: Expense }>(M_CREATE_EXPENSE, variables);
-      const newExpense = data.createExpense;
+      for (const [kind, file] of Object.entries(attachments) as [ExpenseAttachmentKind, File | undefined][]) {
+        if (file) variables[kind] = await uploadExpenseAttachment(kind, file, file.name, clientRef);
+      }
+      const data = await gql<Record<typeof resultKey, Expense>>(mutation, variables);
+      const newExpense = data[resultKey];
       setExpenses(prev => [newExpense, ...prev]);
       refetchLedger();
       return newExpense;
@@ -2440,29 +2660,45 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
         amount: args.amount,
         description: args.description,
         date: args.date,
-        receiptUrl: args.receiptUrl,
+        receiptUrl: queuedAttachments.receiptUrl?.dataUrl,
+        invoiceUrl: queuedAttachments.invoiceUrl?.dataUrl,
+        paymentReceiptUrl: queuedAttachments.paymentReceiptUrl?.dataUrl,
         status: 'PENDING',
-        branchId: me.branchId,
+        branchId,
+        queued: true,
         createdAt: new Date().toISOString(),
       } as Expense;
 
-      setExpenses(prev => [optimistic, ...prev]);
+      const queuedVariables = {
+        ...variables,
+        ...Object.fromEntries(Object.entries(queuedAttachments).map(([kind, attachment]) => [kind, undefined])),
+        _offlineAttachments: queuedAttachments,
+      };
       await enqueueOfflineOp({
         clientRef,
-        mutation: M_CREATE_EXPENSE,
-        variables,
+        mutation,
+        variables: queuedVariables,
         flat: {
           items: [{ productId: clientRef, name: args.description, qty: 1, price: args.amount }],
           total: 0,
           cashier_name: me?.name || 'Unknown',
           cashier_id: me?.id,
           branch_name: 'Expense Create',
-          branch_id: me.branchId,
+          branch_id: branchId,
         },
       });
+      setExpenses(prev => [optimistic, ...prev]);
       return optimistic;
     }
   }, [me?.branchId, me?.id, me?.name, refetchLedger]);
+
+  const createExpense = useCallback((args: {
+    branchId?: string; categoryId: string; amount: number; description: string; date: string; attachments?: ExpenseAttachmentFiles;
+  }) => submitExpense(M_CREATE_EXPENSE, 'createExpense', args), [submitExpense]);
+
+  const requestExpense = useCallback((args: {
+    branchId?: string; categoryId: string; amount: number; description: string; date: string; attachments?: ExpenseAttachmentFiles;
+  }) => submitExpense(M_REQUEST_EXPENSE, 'requestExpense', args), [submitExpense]);
 
   const createBudget = useCallback(async (args: {
     branchId?: string;
@@ -2561,7 +2797,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       createProduct, deleteProduct, adjustProductStock,
       createSupplier, updateSupplier, deleteSupplier,
       recordSupplierPayment, deleteInvoice, deleteSale,
-      createExpense, createBudget, updateBudget, deleteBudget,
+      createExpense, requestExpense, createBudget, updateBudget, deleteBudget,
     }}>
       {children}
     </StoreContext.Provider>

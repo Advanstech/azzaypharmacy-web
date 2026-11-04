@@ -108,7 +108,8 @@ export async function saveToCache(storeName: string, items: any[]) {
 export async function clearCache(): Promise<void> {
   try {
     const db = await openDB();
-    const stores = ['products_cache', 'staff_cache', 'sales_cache', 'pending_sales', 'inventory_deltas', 'kv_cache'];
+    // Queued writes belong to their originating user and must survive sign-out.
+    const stores = ['products_cache', 'staff_cache', 'sales_cache', 'inventory_deltas', 'kv_cache'];
     for (const storeName of stores) {
       if (!db.objectStoreNames.contains(storeName)) continue;
       const tx = db.transaction(storeName, 'readwrite');

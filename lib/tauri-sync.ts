@@ -30,6 +30,11 @@ import { errorHandler, ErrorCategory, ErrorSeverity } from './error-handler';
 import { getAuthUserId, gql } from './gql';
 import { canSyncQueuedOperation, shouldQueueOfflineMutation } from './offline-ops';
 import {
+  uploadQueuedExpenseAttachment,
+  type ExpenseAttachmentKind,
+  type QueuedExpenseAttachment,
+} from './expense-attachments';
+import {
   startConnectivityMonitor,
   onConnectivityChange,
   isApiReachable,
@@ -40,6 +45,7 @@ import {
   nativeClearInventoryDeltas,
   nativeGetPendingDeltas,
   nativeListQueue,
+  nativeRemoveFromQueue,
   nativeRetryQueuedSale,
   nativeSyncNow,
   nativeProbeApi,
@@ -206,6 +212,12 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
   let failedCount = 0;
 
   try {
+    if (isTauri()) {
+      const nativeResults = await syncNativeExpenseAttachments(authUserId);
+      syncedCount += nativeResults.synced;
+      failedCount += nativeResults.failed;
+    }
+
     const pendingSales = (await getPendingSales()).filter(sale => {
       const ownerUserId = sale.cashier_id
         || (typeof sale.op?.variables._syncOwnerId === 'string' ? sale.op.variables._syncOwnerId : undefined)
@@ -214,7 +226,21 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
     });
     const totalPending = pendingSales.length;
 
-    if (totalPending === 0) return { synced: 0, failed: 0 };
+    if (totalPending === 0) {
+      if (syncedCount > 0 || failedCount > 0) {
+        emitSyncEvent({
+          type: 'sync:complete',
+          status: isApiReachable() ? 'online' : 'offline',
+          syncedCount,
+          failedCount,
+          timestamp: Date.now(),
+          message: failedCount
+            ? `Synced ${syncedCount} expense request${syncedCount !== 1 ? 's' : ''}; ${failedCount} remain queued`
+            : `Synced ${syncedCount} expense request${syncedCount !== 1 ? 's' : ''}`,
+        });
+      }
+      return { synced: syncedCount, failed: failedCount };
+    }
 
     emitSyncEvent({
       type: 'sync:start',
@@ -233,9 +259,23 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
         // Generic queued ops (held sales, future non-sale writes) carry their
         // own mutation+variables; regular sales map flat fields → createSale.
         if (sale.op) {
+          const variables = { ...sale.op.variables };
+          const offlineAttachments = variables._offlineAttachments as
+            | Partial<Record<ExpenseAttachmentKind, QueuedExpenseAttachment>>
+            | undefined;
+          if (offlineAttachments) {
+            const clientRef = String(variables.clientRef ?? sale.id);
+            for (const [kind, attachment] of Object.entries(offlineAttachments) as
+              [ExpenseAttachmentKind, QueuedExpenseAttachment | undefined][]) {
+              if (attachment) {
+                variables[kind] = await uploadQueuedExpenseAttachment(kind, attachment, clientRef);
+              }
+            }
+            delete variables._offlineAttachments;
+          }
           const result = await gql<any>(
             sale.op.mutation,
-            sale.op.variables,
+            variables,
             sale.op.kind === 'transfer-create' ? { retryWithoutClientRef: false } : undefined,
           );
           if (result && Object.keys(result).length > 0) {
@@ -351,6 +391,57 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
   return { synced: syncedCount, failed: failedCount };
 }
 
+async function syncNativeExpenseAttachments(authUserId: string): Promise<{ synced: number; failed: number }> {
+  let synced = 0;
+  let failed = 0;
+  let rows;
+  try {
+    rows = await nativeListQueue('pending');
+  } catch (error) {
+    console.error('[sync] Could not inspect native expense queue:', error);
+    return { synced, failed: 1 };
+  }
+  for (const row of rows) {
+    let variables: Record<string, any>;
+    try {
+      variables = JSON.parse(row.variables);
+    } catch (error) {
+      console.error(`[sync] Could not parse native queue row ${row.id}:`, error);
+      failed++;
+      continue;
+    }
+    if (!variables._offlineAttachments || !row.mutation) continue;
+
+    const ownerUserId = variables._syncOwnerId ?? variables.userId;
+    if (typeof ownerUserId !== 'string' || !canSyncQueuedOperation(ownerUserId, authUserId)) continue;
+    try {
+      const attachments = variables._offlineAttachments as
+        Partial<Record<ExpenseAttachmentKind, QueuedExpenseAttachment>>;
+      const clientRef = String(variables.clientRef ?? row.id);
+      for (const [kind, attachment] of Object.entries(attachments) as
+        [ExpenseAttachmentKind, QueuedExpenseAttachment | undefined][]) {
+        if (attachment) {
+          variables[kind] = await uploadQueuedExpenseAttachment(kind, attachment, clientRef);
+        }
+      }
+      delete variables._offlineAttachments;
+      delete variables._syncOwnerId;
+
+      const result = await gql<any>(row.mutation, variables);
+      if (!result || Object.keys(result).length === 0) throw new Error('Empty expense mutation response');
+      await nativeRemoveFromQueue(row.id);
+      synced++;
+    } catch (error) {
+      failed++;
+      console.error(`[sync] Native expense request ${row.id} remains queued:`, error);
+      if (/networkerror|fetch|timeout|unreachable|premature|abort/i.test(String((error as Error)?.message ?? error))) {
+        break;
+      }
+    }
+  }
+  return { synced, failed };
+}
+
 async function syncInventoryDeltasFn() {
   try {
     const pendingDeltas = isTauri()
@@ -435,9 +526,10 @@ export async function enqueueOfflineOp(args: {
   mutation: string;
   variables: Record<string, any>;
   kind?: string;
+  useWebQueue?: boolean;
   flat?: Partial<PendingSale>;
 }): Promise<void> {
-  if (isTauri()) {
+  if (isTauri() && !args.useWebQueue) {
     const { nativeEnqueueSale } = await import('./tauri-native');
     await nativeEnqueueSale(args.clientRef, args.variables, args.mutation, args.flat?.cashier_id);
     return;
