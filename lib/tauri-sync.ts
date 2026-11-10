@@ -73,6 +73,10 @@ const FLUSH_INTERVAL_MS = 60_000;
 const MAX_RETRIES = 10;
 const OFFLINE_TRANSFERS_KEY = 'offline_transfers';
 
+function isAuthorizationFailure(message: string): boolean {
+  return /\b(?:401|403)\b|unauthorized|forbidden|invalid token|token expired/i.test(message);
+}
+
 async function updateOfflineTransfer(clientRef: string, error?: string, queued = false) {
   const transfers = (await getKV(OFFLINE_TRANSFERS_KEY) ?? []) as Array<Record<string, any>>;
   const updated = error
@@ -251,7 +255,9 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
     });
 
     for (const sale of pendingSales) {
-      if (sale.op && Number((sale as any)._retryCount || 0) >= MAX_RETRIES) continue;
+      const retryCount = sale._retryCount || 0;
+      const authPaused = isAuthorizationFailure(sale._lastError || '');
+      if (sale.op && retryCount >= MAX_RETRIES && !authPaused) continue;
       // Re-check reachability mid-loop — bail early if we went offline
       if (!isApiReachable()) break;
 
@@ -322,9 +328,21 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
           break;
         }
 
+        if (isAuthorizationFailure(errorMsg)) {
+          failedCount++;
+          console.warn(`[sync] Authorization required; preserving queued operation ${sale.id} for retry after sign-in`);
+          await savePendingSale({
+            ...sale,
+            _retryCount: 0,
+            _lastError: errorMsg,
+            _lastRetry: Date.now(),
+          });
+          break;
+        }
+
         failedCount++;
-        const retryCount = ((sale as any)._retryCount || 0) + 1;
-        console.error(`[sync] ❌ Sale ${sale.id} failed (${retryCount}/${MAX_RETRIES}):`, errorMsg);
+        const nextRetryCount = retryCount + 1;
+        console.error(`[sync] ❌ Sale ${sale.id} failed (${nextRetryCount}/${MAX_RETRIES}):`, errorMsg);
         
         const isConflict = /conflict|out of sync/i.test(errorMsg);
         if (isConflict) {
@@ -334,16 +352,16 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
         const isPermanent =
           /not found|invalid|validation|unauthorized|forbidden|duplicate|insufficient|must be different|unknown argument|cannot query field/i.test(errorMsg) &&
           !isConflict;
-        if (retryCount >= MAX_RETRIES && isPermanent) {
-          console.warn(`[sync] ⚠️ Pausing queued operation ${sale.id} after ${retryCount} permanent failures`);
+        if (nextRetryCount >= MAX_RETRIES && isPermanent) {
+          console.warn(`[sync] ⚠️ Pausing queued operation ${sale.id} after ${nextRetryCount} permanent failures`);
           if (sale.op) {
             if (sale.op.kind === 'transfer-create') await updateOfflineTransfer(sale.id, errorMsg);
             await savePendingSale({
               ...sale,
-              _retryCount: retryCount,
+              _retryCount: nextRetryCount,
               _lastError: errorMsg,
               _lastRetry: Date.now(),
-            } as any);
+            });
           } else {
             console.warn(`[sync] ⚠️ Retiring permanently invalid sale ${sale.id}`);
             await deletePendingSale(sale.id);
@@ -351,10 +369,10 @@ export async function syncPendingSales(): Promise<{ synced: number; failed: numb
         } else {
           await savePendingSale({
             ...sale,
-            _retryCount: retryCount,
+            _retryCount: nextRetryCount,
             _lastError: errorMsg,
             _lastRetry: Date.now(),
-          } as any);
+          });
         }
       }
 

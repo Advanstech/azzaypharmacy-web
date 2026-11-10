@@ -116,7 +116,7 @@ function syncNativeAuth() {
 export function setAuthToken(token: string | null) {
   _token = token;
   if (token) {
-    console.log('[gql] Auth token set:', token);
+    console.log('[gql] Auth token set');
   } else {
     console.log('[gql] Auth token cleared');
   }
@@ -248,7 +248,7 @@ async function executeGql<T = unknown>(
   const token = resolveAuthToken();
 
   console.log(`[gql] [${queryName}] Requesting...`, {
-    token: token ? `YES (${token.substring(0, 10)}...)` : 'MISSING',
+    authenticated: Boolean(token),
     apiUrl: API,
     apiCandidates: API_CANDIDATES,
   });
@@ -938,7 +938,10 @@ export const Q_REFUND_REQUESTS = `
     refundRequests(page: $page, limit: $limit, branchId: $branchId) {
       items {
         id saleId reason status createdAt
-        sale { id totalAmount paymentMethod branchId }
+        sale {
+          id totalAmount paymentMethod branchId customerName receiptNo createdAt
+          items { id quantity unitPrice total product { id name } }
+        }
         requestedBy { id name }
         approvedBy { id name }
       }

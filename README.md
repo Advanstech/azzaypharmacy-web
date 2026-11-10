@@ -60,6 +60,12 @@ Relevant files:
 - Report exports from the Reports overview use the same branch-aware, formatted export as their detail pages. The reports release includes item-level sales and cost calculations where product costs are available; profit is not treated as reliable when costs are missing.
 - The PWA and desktop app use the same report pages. The PWA service-worker cache is versioned per release, and the desktop installer bundles the static app. Generating reports offline still requires the relevant report data to have been loaded on that device while online.
 
+## Authentication sessions
+
+- The dashboard uses API-issued custom JWTs that expire after seven days. The current custom-auth flow does not use Supabase refresh tokens or automatically refresh these JWTs; staff must sign in online again after expiry.
+- PWA and desktop offline sign-in verify the staff member's password or PIN against a device-local PBKDF2 verifier and restore the last-issued JWT. Offline screens and queued work remain available, but requests cannot sync with the API until the user signs in online and obtains a current JWT.
+- Authorization failures pause queued writes without deleting them or exhausting normal retry limits. PWA sync retries them periodically after valid authentication returns; the desktop sync daemon resumes them after a valid token is set by a later sign-in.
+
 ## Expense requests and supporting documents
 
 - Expense requests support a category, amount, description, date, and optional receipt, invoice, and payment-receipt attachments. Attachments accept PDF, JPEG, PNG, and WebP files up to 5 MB each.
@@ -85,11 +91,11 @@ set public = false,
 
 The app stores signed document links with each expense; those links expire after one year. Re-upload a document if a link has expired.
 
-### Build release 2.0.7
+### Build release 2.0.8
 
 - PWA/web: run `npm run build` and deploy the web build. The service-worker cache version is bumped so installed PWAs replace the previous cached app shell when the new worker activates.
-- Windows desktop offline app: run `npm run tauri:build`. Tauri bundles the same report changes into the offline-capable desktop installer.
-- Publishing a desktop auto-update still requires the configured signing key and release hosting; a local build does not publish an update.
+- Windows desktop offline app: run `pnpm exec tauri build --config src-tauri/tauri.release.conf.json` to build manual MSI and NSIS installers without updater artifacts. The installers are unsigned when no Windows code-signing certificate is configured.
+- A signed desktop auto-update requires the configured Tauri updater signing key and release hosting; a local build does not publish an update.
 
 ## Learn More
 

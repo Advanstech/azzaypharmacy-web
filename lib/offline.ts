@@ -161,6 +161,9 @@ export interface PendingSale {
   momoAmount?: number;
   notes?: string;
   timestamp: number;
+  _retryCount?: number;
+  _lastError?: string;
+  _lastRetry?: number;
   /**
    * Generic queued operation. When present, the drain posts this exact
    * mutation+variables instead of mapping the flat sale fields to createSale.

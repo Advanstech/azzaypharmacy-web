@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { useTheme } from 'next-themes';
 import { 
   DollarSign, Plus, Search, CreditCard, Wallet, Landmark,
-  CheckCircle, XCircle, Upload, ExternalLink
+  CheckCircle, XCircle, Upload, ExternalLink, X, FileText, Trash2
 } from 'lucide-react';
 import { useCustomAuth } from '@/lib/custom-auth';
 import { useStore } from '@/lib/store';
@@ -15,6 +15,7 @@ import { onSyncEvent } from '@/lib/tauri-sync';
 import { isTauri, nativeListQueue } from '@/lib/tauri-native';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
+import { Portal } from '@/components/portal';
 import {
   validateExpenseAttachment,
   isSafeExpenseAttachmentUrl,
@@ -38,6 +39,17 @@ type ExpenseRecord = {
   paymentReceiptUrl?: string;
   queued?: boolean;
 };
+
+function expenseDescriptionSuggestions(category: string): string[] {
+  const name = category.toLowerCase();
+  if (/devops/.test(name)) return ['Infrastructure monitoring subscription', 'Deployment and CI/CD tools', 'Database backup service'];
+  if (/server|hosting|subscription/.test(name)) return ['Monthly application hosting', 'Domain name renewal', 'Cloud database subscription'];
+  if (/water|electric|utility|utilities/.test(name)) return ['Electricity bill for the pharmacy', 'Water bill for the pharmacy', 'Internet service payment'];
+  if (/transport|delivery|logistic|fuel/.test(name)) return ['Supplier delivery transport', 'Fuel for stock collection', 'Courier delivery charges'];
+  if (/staff|perk|food|lunch|allowance/.test(name)) return ['Staff lunch allowance', 'Staff transport allowance', 'Overtime meal expenses'];
+  if (/maintenance|repair/.test(name)) return ['Equipment repair and servicing', 'Pharmacy premises maintenance', 'Printer maintenance'];
+  return ['Cleaning supplies for the pharmacy', 'Drinking water for staff', 'Office stationery purchase', 'Minor operational supplies'];
+}
 
 const subscribeToMount = () => () => {};
 const getClientMountSnapshot = () => true;
@@ -118,6 +130,8 @@ export default function ExpensesPage() {
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showDescriptionSuggestions, setShowDescriptionSuggestions] = useState(false);
   const [newExp, setNewExp] = useState({
     amount: '',
     desc: '',
@@ -229,7 +243,16 @@ export default function ExpensesPage() {
     }
   };
 
-  const displayExpenses = branchFilter(expenses);
+  const displayExpenses = branchFilter(expenses).filter(e => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      (e.description || '').toLowerCase().includes(q) ||
+      (e.category?.name || '').toLowerCase().includes(q) ||
+      (e.requestedBy?.name || '').toLowerCase().includes(q) ||
+      (e.status || '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -296,7 +319,14 @@ export default function ExpensesPage() {
           <div className="flex gap-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2" size={14} style={{ color: c.muted }} />
-              <input type="text" placeholder="Search expenses..." className="pl-9 pr-4 py-1.5 rounded-lg text-xs outline-none" style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search expenses..."
+                className="pl-9 pr-4 py-1.5 rounded-lg text-xs outline-none"
+                style={{ background: isDark ? 'rgba(0,0,0,0.2)' : '#fff', border: `1px solid ${c.border}`, color: c.text }}
+              />
             </div>
           </div>
         </div>
@@ -391,109 +421,302 @@ export default function ExpensesPage() {
       </div>
       {/* Request Modal */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-[32px] border shadow-2xl p-6" style={{ background: c.bg, borderColor: c.border }}>
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="font-display text-xl font-bold" style={{ color: c.text }}>Request Expense</h3>
-              <button onClick={() => setShowModal(false)} className="p-2 rounded-full hover:bg-slate-500/10" style={{ color: c.muted }}>
-                <XCircle size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Category</label>
-                <select
-                  value={newExp.categoryId || expenseCategories[0]?.id || ''}
-                  onChange={e => setNewExp({ ...newExp, categoryId: e.target.value })}
-                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
-                  style={{ borderColor: c.border, color: c.text }}
-                  required
-                >
-                  <option value="" disabled>Select a category</option>
-                  {expenseCategories.map(category => (
-                    <option key={category.id} value={category.id}>{category.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Amount (GH₵)</label>
-                <input 
-                  type="number"
-                  min="0.01"
-                  step="0.01"
-                  value={newExp.amount}
-                  onChange={e => setNewExp({...newExp, amount: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
-                  style={{ borderColor: c.border, color: c.text }}
-                  placeholder="e.g. 50"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Description</label>
-                <input 
-                  type="text"
-                  value={newExp.desc}
-                  onChange={e => setNewExp({...newExp, desc: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
-                  style={{ borderColor: c.border, color: c.text }}
-                  placeholder="e.g. Water for the pharmacy"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-bold block mb-2" style={{ color: c.text }}>Date</label>
-                <input 
-                  type="date"
-                  value={newExp.date}
-                  onChange={e => setNewExp({...newExp, date: e.target.value})}
-                  className="w-full px-4 py-3 rounded-xl border bg-transparent outline-none"
-                  style={{ borderColor: c.border, color: c.text }}
-                />
-              </div>
-              <div className="space-y-3 rounded-xl border p-3" style={{ borderColor: c.border }}>
-                <p className="text-xs font-bold" style={{ color: c.text }}>Supporting documents (optional)</p>
-                {([
-                  ['receiptUrl', 'Receipt'],
-                  ['invoiceUrl', 'Invoice'],
-                  ['paymentReceiptUrl', 'Payment receipt'],
-                ] as [ExpenseAttachmentKind, string][]).map(([kind, label]) => (
-                  <label key={kind} className="flex items-center justify-between gap-3 text-xs" style={{ color: c.muted }}>
-                    <span className="flex min-w-32 items-center gap-2">
-                      <Upload size={14} />
-                      {label}
-                    </span>
-                    <input
-                      type="file"
-                      accept="application/pdf,image/jpeg,image/png,image/webp"
-                      onChange={event => {
-                        const file = event.target.files?.[0];
-                        if (!file) return;
-                        try {
-                          validateExpenseAttachment(file);
-                          setAttachments(current => ({ ...current, [kind]: file }));
-                        } catch (error) {
-                          event.target.value = '';
-                          alert(error instanceof Error ? error.message : 'Invalid attachment.');
-                        }
-                      }}
-                      className="max-w-[65%] text-[10px]"
-                    />
-                  </label>
-                ))}
-                <p className="text-[10px]" style={{ color: c.muted }}>PDF, JPEG, PNG, or WebP; up to 5 MB each. Attachments are securely uploaded when online or queued with the request while offline.</p>
-              </div>
-
-              <button 
-                onClick={handleRequestExpense}
-                disabled={submitting || !(activeBranchId || me?.branchId) || !(newExp.categoryId || expenseCategories[0]?.id) || !newExp.amount || Number(newExp.amount) <= 0 || !newExp.desc.trim()}
-                className="w-full py-3 mt-4 rounded-xl font-bold uppercase tracking-widest text-xs transition-all disabled:opacity-50"
-                style={{ background: c.primary, color: '#fff' }}
+        <Portal>
+          <div
+            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200"
+            style={{ background: 'rgba(2, 6, 23, 0.72)', backdropFilter: 'blur(12px)' }}
+            onClick={() => !submitting && setShowModal(false)}
+          >
+            <div
+              onClick={e => e.stopPropagation()}
+              className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl border shadow-2xl overflow-hidden"
+              style={{
+                background: isDark ? '#0F172A' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(148,163,184,0.18)' : '#E2E8F0',
+              }}
+            >
+              {/* Modal Header */}
+              <div
+                className="px-6 py-4 border-b flex items-center justify-between shrink-0"
+                style={{
+                  borderColor: isDark ? 'rgba(148,163,184,0.14)' : '#E2E8F0',
+                  background: isDark ? 'rgba(30,41,59,0.55)' : '#F8FAFC',
+                }}
               >
-                {submitting ? 'Submitting...' : 'Submit Request'}
-              </button>
+                <div className="flex items-center gap-3">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: `${c.primary}20`, color: c.primary }}
+                  >
+                    <CreditCard size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-base font-bold leading-tight" style={{ color: c.text }}>
+                      Request Expense
+                    </h3>
+                    <p className="text-[11px]" style={{ color: c.muted }}>
+                      Log an operational expense for branch review & approval
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => !submitting && setShowModal(false)}
+                  className="p-2 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors"
+                  aria-label="Close modal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Scrollable Body */}
+              <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider block mb-1.5" style={{ color: c.muted }}>
+                      Category *
+                    </label>
+                    <select
+                      value={newExp.categoryId || expenseCategories[0]?.id || ''}
+                      onChange={e => setNewExp({ ...newExp, categoryId: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                      style={{
+                        background: isDark ? '#1E293B' : '#F8FAFC',
+                        borderColor: isDark ? 'rgba(148,163,184,0.2)' : '#CBD5E1',
+                        color: c.text,
+                      }}
+                      required
+                    >
+                      <option value="" disabled>Select a category</option>
+                      {expenseCategories.map(category => (
+                        <option key={category.id} value={category.id}>{category.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold uppercase tracking-wider block mb-1.5" style={{ color: c.muted }}>
+                      Date *
+                    </label>
+                    <input
+                      type="date"
+                      value={newExp.date}
+                      onChange={e => setNewExp({ ...newExp, date: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                      style={{
+                        background: isDark ? '#1E293B' : '#F8FAFC',
+                        borderColor: isDark ? 'rgba(148,163,184,0.2)' : '#CBD5E1',
+                        color: c.text,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider block mb-1.5" style={{ color: c.muted }}>
+                    Amount (GH₵) *
+                  </label>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={newExp.amount}
+                    onChange={e => setNewExp({ ...newExp, amount: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border text-sm font-semibold outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                    style={{
+                      background: isDark ? '#1E293B' : '#F8FAFC',
+                      borderColor: isDark ? 'rgba(148,163,184,0.2)' : '#CBD5E1',
+                      color: c.text,
+                    }}
+                    placeholder="e.g. 50.00"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider block mb-1.5" style={{ color: c.muted }}>
+                    Description *
+                  </label>
+                  <textarea
+                    id="expense-description"
+                    aria-label="Expense description"
+                    aria-describedby="expense-description-help"
+                    rows={3}
+                    value={newExp.desc}
+                    onFocus={() => setShowDescriptionSuggestions(true)}
+                    onClick={() => setShowDescriptionSuggestions(true)}
+                    onChange={e => setNewExp({ ...newExp, desc: e.target.value })}
+                    className="w-full min-h-24 resize-y px-3.5 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-sky-500/30 transition-all"
+                    style={{
+                      background: isDark ? '#1E293B' : '#F8FAFC',
+                      borderColor: isDark ? 'rgba(148,163,184,0.2)' : '#CBD5E1',
+                      color: c.text,
+                    }}
+                    placeholder="Describe the expense, purpose, and any relevant details…"
+                  />
+                  <p id="expense-description-help" className="mt-1 text-[11px]" style={{ color: c.muted }}>
+                    Write your own description or choose a suggestion and customise it. Drag the bottom corner to expand.
+                  </p>
+                  {showDescriptionSuggestions && (
+                    <div className="mt-2 rounded-xl border p-3" style={{ borderColor: c.border }}>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-xs font-semibold" style={{ color: c.muted }}>Suggested descriptions</p>
+                        <button type="button" onClick={() => setShowDescriptionSuggestions(false)} className="text-xs font-semibold" style={{ color: c.primary }}>
+                          Hide
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {expenseDescriptionSuggestions(expenseCategories.find(category => category.id === (newExp.categoryId || expenseCategories[0]?.id))?.name || '').map(suggestion => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => {
+                              setNewExp(current => ({ ...current, desc: suggestion }));
+                              document.getElementById('expense-description')?.focus();
+                            }}
+                            className="rounded-lg border px-3 py-2 text-left text-xs transition-colors hover:bg-sky-500/10 focus-visible:outline-2 focus-visible:outline-sky-500"
+                            style={{ borderColor: c.border, color: c.text }}
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Supporting Documents */}
+                <div
+                  className="rounded-xl border p-3.5 space-y-2.5"
+                  style={{
+                    borderColor: isDark ? 'rgba(148,163,184,0.18)' : '#E2E8F0',
+                    background: isDark ? 'rgba(30,41,59,0.4)' : '#F8FAFC',
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold" style={{ color: c.text }}>
+                      Supporting documents <span className="font-normal" style={{ color: c.muted }}>(optional)</span>
+                    </p>
+                    <span className="text-[10px]" style={{ color: c.muted }}>Max 5 MB each</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-2">
+                    {([
+                      ['receiptUrl', 'Receipt'],
+                      ['invoiceUrl', 'Invoice'],
+                      ['paymentReceiptUrl', 'Payment receipt'],
+                    ] as [ExpenseAttachmentKind, string][]).map(([kind, label]) => {
+                      const selectedFile = attachments[kind];
+                      const inputId = `expense-file-${kind}`;
+                      return (
+                        <div
+                          key={kind}
+                          className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                          style={{
+                            borderColor: selectedFile ? `${c.primary}60` : (isDark ? 'rgba(148,163,184,0.16)' : '#CBD5E1'),
+                            background: isDark ? '#0F172A' : '#FFFFFF',
+                          }}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileText size={14} style={{ color: selectedFile ? c.primary : c.muted }} className="shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold leading-tight" style={{ color: c.text }}>{label}</p>
+                              <p className="text-[10px] truncate" style={{ color: selectedFile ? c.primary : c.muted }}>
+                                {selectedFile
+                                  ? `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(0)} KB)`
+                                  : 'No file chosen'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {selectedFile && (
+                              <button
+                                type="button"
+                                onClick={() => setAttachments(current => {
+                                  const next = { ...current };
+                                  delete next[kind];
+                                  return next;
+                                })}
+                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-red-500 transition-colors"
+                                title="Remove file"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                            <label
+                              htmlFor={inputId}
+                              className="cursor-pointer inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-bold transition-colors hover:opacity-85"
+                              style={{
+                                borderColor: isDark ? 'rgba(148,163,184,0.25)' : '#CBD5E1',
+                                background: isDark ? '#1E293B' : '#F1F5F9',
+                                color: c.text,
+                              }}
+                            >
+                              <Upload size={12} />
+                              {selectedFile ? 'Change' : 'Choose'}
+                            </label>
+                            <input
+                              id={inputId}
+                              type="file"
+                              accept="application/pdf,image/jpeg,image/png,image/webp"
+                              onChange={event => {
+                                const file = event.target.files?.[0];
+                                if (!file) return;
+                                try {
+                                  validateExpenseAttachment(file);
+                                  setAttachments(current => ({ ...current, [kind]: file }));
+                                } catch (error) {
+                                  event.target.value = '';
+                                  alert(error instanceof Error ? error.message : 'Invalid attachment.');
+                                }
+                              }}
+                              className="hidden"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <p className="text-[10px] leading-relaxed" style={{ color: c.muted }}>
+                    PDF, JPEG, PNG, or WebP. Uploaded securely when online or queued with the request while offline.
+                  </p>
+                </div>
+              </div>
+
+              {/* Sticky Footer */}
+              <div
+                className="px-6 py-4 border-t flex items-center justify-end gap-3 shrink-0"
+                style={{
+                  borderColor: isDark ? 'rgba(148,163,184,0.14)' : '#E2E8F0',
+                  background: isDark ? 'rgba(30,41,59,0.55)' : '#F8FAFC',
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2.5 rounded-xl border text-xs font-bold transition-colors hover:opacity-80 disabled:opacity-50"
+                  style={{
+                    borderColor: isDark ? 'rgba(148,163,184,0.25)' : '#CBD5E1',
+                    color: c.text,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRequestExpense}
+                  disabled={submitting || !(activeBranchId || me?.branchId) || !(newExp.categoryId || expenseCategories[0]?.id) || !newExp.amount || Number(newExp.amount) <= 0 || !newExp.desc.trim()}
+                  className="px-5 py-2.5 rounded-xl font-bold uppercase tracking-wider text-xs transition-all disabled:opacity-50"
+                  style={{ background: c.primary, color: isDark ? '#060B14' : '#FFFFFF' }}
+                >
+                  {submitting ? 'Submitting...' : 'Submit Request'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </Portal>
       )}
     </div>
   );
