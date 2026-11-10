@@ -13,6 +13,7 @@ import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
 import { gql, M_RECEIVE_INVOICE, Q_INVOICES } from '@/lib/gql';
 import { isNetworkishError } from '@/lib/tauri-sync';
+import { forceProbe, getConnectivity } from '@/lib/connectivity';
 import { useToast } from '@/components/pharma-toast';
 import { useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
@@ -476,12 +477,24 @@ export default function InvoicesPage() {
       setShowManualLedger(true);
     } catch (error: any) {
       console.error('❌ [AI_UPLOAD] Upload failed:', error);
-      addToast({
-        type: 'error',
-        title: 'Upload Failed',
-        message: error?.message || 'Unknown error',
-        duration: 6000,
-      });
+      if (isNetworkishError(error) || getConnectivity() === 'OFFLINE') {
+        addToast({
+          type: 'warning',
+          title: 'AI Analysis Needs Internet',
+          message: 'The AI scanner requires a connection. You can still enter the invoice manually — it will sync when you\'re back online.',
+          duration: 8000,
+        });
+        setShowUploadModal(false);
+        setUploadData({ file: null, aiConfidence: 0 });
+        setShowManualLedger(true);
+      } else {
+        addToast({
+          type: 'error',
+          title: 'Upload Failed',
+          message: error?.message || 'Unknown error',
+          duration: 6000,
+        });
+      }
     } finally {
       setIsUploading(false);
     }
@@ -539,6 +552,27 @@ export default function InvoicesPage() {
         title: 'No Line Items',
         message: 'Please add at least one line item.',
         duration: 5000,
+      });
+      return;
+    }
+
+    // Offline invoice entries can only reference records that already exist on
+    // the server. A supplier/product created offline gets a temporary clientRef
+    // id that the queued invoice can't resolve later — block those cases.
+    const apiOnline = await forceProbe();
+    const needsNewSupplier = !manualData.supplierId
+      && Boolean(manualCreateSupplierOnSubmit && manualSupplierDraft.trim());
+    const needsNewProducts = manualLineItems.some(item =>
+      !item.productId && item.createProductOnSubmit && (item.productName || '').trim()
+    );
+    if (!apiOnline && (needsNewSupplier || needsNewProducts)) {
+      addToast({
+        type: 'warning',
+        title: 'Offline — Existing Records Only',
+        message: needsNewSupplier
+          ? 'You\'re offline. Select an existing supplier — new suppliers require internet.'
+          : 'You\'re offline. Link items to existing products — creating new products requires internet.',
+        duration: 7000,
       });
       return;
     }

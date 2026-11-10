@@ -2154,14 +2154,61 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const closeTerminal = useCallback(async (physicalCash?: number, digitalPayments?: number, notes?: string): Promise<TerminalReport> => {
     if (!me) throw new Error('Not authenticated');
-    const data = await gql<{ closeTerminal: TerminalReport }>(M_CLOSE_TERMINAL, {
-      userId: me.id,
-      physicalCash,
-      digitalPayments,
-      notes
-    });
-    return data.closeTerminal;
-  }, [me]);
+    const variables = { userId: me.id, physicalCash, digitalPayments, notes };
+    try {
+      const data = await gql<{ closeTerminal: TerminalReport }>(M_CLOSE_TERMINAL, variables);
+      return data.closeTerminal;
+    } catch (err: any) {
+      const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
+      if (!isNetworkishError(err)) throw err;
+
+      // Queue the real reconciliation — the server dedupes on pharmacist+branch
+      // +day, so retries and the auto-submit job can't double-create it.
+      const clientRef = `eod-${crypto.randomUUID()}`;
+      await enqueueOfflineOp({
+        clientRef,
+        mutation: M_CLOSE_TERMINAL,
+        variables,
+        flat: {
+          items: [],
+          total: 0,
+          cashier_name: me.name || 'Unknown',
+          cashier_id: me.id,
+          branch_name: me.branch?.name || (typeof me.branch === 'string' ? me.branch : 'Unknown'),
+          branch_id: me.branchId,
+        },
+      });
+
+      // Local report for immediate display — computed from cached sales so the
+      // cashier sees real numbers, flagged as queued for sync.
+      const today = new Date().toISOString().split('T')[0];
+      const myToday = sales.filter(s =>
+        new Date(s.createdAt).toISOString().split('T')[0] === today &&
+        (s.user?.id === me.id || (s as any).cashierId === me.id)
+      );
+      const sum = (pred: (s: Sale) => boolean) =>
+        myToday.filter(pred).reduce((acc, s) => acc + Number(s.totalAmount), 0);
+      const isCash = (s: Sale) => s.paymentMethod === 'CASH';
+      const isMomo = (s: Sale) => s.paymentMethod === 'MOMO';
+      const isCard = (s: Sale) => s.paymentMethod === 'CARD';
+      const report: TerminalReport & { status?: string; _isSynced?: boolean; _syncStatus?: string } = {
+        cashierName: me.name || 'Unknown',
+        branchName: me.branch?.name || (typeof me.branch === 'string' ? me.branch : 'Unknown'),
+        totalSales: myToday.reduce((acc, s) => acc + Number(s.totalAmount), 0),
+        cashSales: sum(isCash),
+        momoSales: sum(isMomo),
+        cardSales: sum(isCard),
+        nhisSales: sum(s => s.paymentMethod === 'NHIS'),
+        creditSales: sum(s => s.paymentMethod === 'CREDIT'),
+        transactionCount: myToday.length,
+        closingTime: new Date().toISOString(),
+        status: 'PENDING',
+        _isSynced: false,
+        _syncStatus: 'PENDING',
+      };
+      return report;
+    }
+  }, [me, sales]);
 
   const inviteStaff = useCallback(async (args: {
     email: string; name: string; role: string; branchId: string;
