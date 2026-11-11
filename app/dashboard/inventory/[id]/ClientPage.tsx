@@ -338,7 +338,9 @@ export default function ProductDetailedPaper() {
 
   const product = products.find(p => p.id === productId);
   const supplier = product ? suppliers.find(s => s.id === product.supplierId) : null;
-  const movements = stockMovements.filter(m => m.productId === productId);
+  const movements = stockMovements.filter(m =>
+    m.productId === productId && (!activeBranchId || m.branchId === activeBranchId)
+  );
 
   useEffect(() => {
     if (product) {
@@ -492,7 +494,9 @@ export default function ProductDetailedPaper() {
   const status = product.stockQuantity === 0 ? 'OUT' : product.stockQuantity <= 10 ? 'LOW' : 'OK';
   const potentialProfit = (product.sellingPrice - product.costPrice) * product.stockQuantity;
 
-  const activeStockItems = product?.stockItems?.filter(item => item.quantity > 0) || [];
+  const activeStockItems = product?.stockItems?.filter(item =>
+    item.quantity > 0 && (!activeBranchId || item.branchId === activeBranchId)
+  ) || [];
   const earliestExpiry = activeStockItems.length > 0
     ? new Date(Math.min(...activeStockItems.map(i => new Date(i.expiryDate).getTime())))
     : null;

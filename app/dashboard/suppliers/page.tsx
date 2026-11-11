@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/lib/store';
 import { usePagination } from '@/hooks/use-pagination';
+import { useBranch, useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 function ScoreBar({ score }: { score: number }) {
   const color = score >= 90 ? '#10B981' : score >= 80 ? '#0EA5E9' : score >= 70 ? '#F59E0B' : '#EF4444';
@@ -55,7 +57,7 @@ export default function SuppliersPage() {
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const { 
-    suppliers: storeSuppliers, 
+    suppliers: allStoreSuppliers, 
     loadingSuppliers, 
     products,
     createSupplier, 
@@ -69,6 +71,31 @@ export default function SuppliersPage() {
     refetchInvoices,
     me
   } = useStore();
+  const { activeBranchId, activeBranchName } = useBranch();
+  const branchFilter = useBranchFilter();
+  const storeSuppliers = useMemo(() => {
+    if (!activeBranchId) return allStoreSuppliers;
+    return allStoreSuppliers.filter(supplier =>
+      !supplier.branches?.length || supplier.branches.some(branch => branch.id === activeBranchId)
+    );
+  }, [allStoreSuppliers, activeBranchId]);
+
+  const branchProducts = useMemo(() => {
+    if (!activeBranchId) return products;
+    return products
+      .filter(product => product.branchId === activeBranchId || product.stockItems?.some(item => item.branchId === activeBranchId))
+      .map(product => {
+        if (!Array.isArray(product.stockItems)) return product;
+        const stockItems = product.stockItems.filter(item => item.branchId === activeBranchId);
+        return {
+          ...product,
+          stockItems,
+          stockQuantity: stockItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
+        };
+      });
+  }, [products, activeBranchId]);
+  const branchPurchases = useMemo(() => branchFilter(purchases), [branchFilter, purchases]);
+  const branchInvoices = useMemo(() => branchFilter(invoices), [branchFilter, invoices]);
 
   useEffect(() => {
     setMounted(true);
@@ -76,11 +103,13 @@ export default function SuppliersPage() {
 
   useEffect(() => {
     if (!mounted) return;
-    if (storeSuppliers.length === 0) refetchSuppliers();
-    if (products.length === 0) refetchProducts();
-    if (purchases.length === 0) refetchPurchases();
-    if (invoices.length === 0) refetchInvoices();
-  }, [mounted, refetchSuppliers, refetchProducts, refetchPurchases, refetchInvoices]);
+    void Promise.all([
+      refetchSuppliers(activeBranchId),
+      refetchProducts(activeBranchId),
+      refetchPurchases(),
+      refetchInvoices(activeBranchId),
+    ]);
+  }, [mounted, activeBranchId, refetchSuppliers, refetchProducts, refetchPurchases, refetchInvoices]);
 
   const isDark = mounted && (resolvedTheme === 'dark' || theme === 'dark');
   const isManager = ['SE_ADMIN', 'ROOT', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST', 'DEVELOPER'].includes(me?.role || '');
@@ -183,15 +212,15 @@ export default function SuppliersPage() {
     const maxSpend = Math.max(
       1,
       ...storeSuppliers.map(s => {
-        const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
+        const supplierPurchases = branchPurchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
         return supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
       })
     );
 
     return storeSuppliers.map(s => {
-      const supplierProducts = products.filter(p => p.supplierId === s.id || (p as any).supplier?.id === s.id);
-      const supplierPurchases = purchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
-      const supplierInvoices = invoices.filter(i => i.supplierId === s.id || i.supplier?.id === s.id);
+      const supplierProducts = branchProducts.filter(p => p.supplierId === s.id || (p as any).supplier?.id === s.id);
+      const supplierPurchases = branchPurchases.filter(p => p.supplier?.id === s.id || (p as any).supplierId === s.id);
+      const supplierInvoices = branchInvoices.filter(i => i.supplierId === s.id || i.supplier?.id === s.id);
       const totalPurchases = supplierPurchases.reduce((sum, p) => sum + Number(p.total || 0), 0);
       const totalProducts = supplierProducts.length;
 
@@ -261,7 +290,7 @@ export default function SuppliersPage() {
         aiScore,
       };
     });
-  }, [storeSuppliers, products, purchases, invoices]);
+  }, [storeSuppliers, branchProducts, branchPurchases, branchInvoices]);
 
   const filteredAndSorted = [...suppliers]
     .filter(s => s.name.toLowerCase().includes(search.toLowerCase()))
@@ -294,12 +323,13 @@ export default function SuppliersPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <BranchBanner />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold mb-1" style={{ color: c.text }}>Suppliers</h1>
           <p className="text-sm" style={{ color: c.muted }}>
-            {suppliers.length} pharmaceutical suppliers · AI-scored performance tracking
+            {suppliers.length} pharmaceutical suppliers · {activeBranchId ? activeBranchName : 'All branches'}
           </p>
         </div>
         {isManager && (
@@ -319,7 +349,7 @@ export default function SuppliersPage() {
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: 'Total Suppliers', value: suppliers.length, sub: 'All branches', icon: Truck, color: '#0EA5E9' },
+          { label: 'Total Suppliers', value: suppliers.length, sub: activeBranchId ? activeBranchName : 'All branches', icon: Truck, color: '#0EA5E9' },
           { label: 'Total Spend (YTD)', value: `GH₵ ${(totalSpend/1000).toFixed(1)}k`, sub: 'Inventory purchases', icon: TrendingUp, color: '#10B981' },
           { label: 'Avg AI Score', value: `${avgScore}/100`, sub: 'Clinical reliability', icon: Award, color: '#8B5CF6' },
           { label: 'Top Supplier', value: topSupplier.name.split(' ')[0], sub: `Score: ${topSupplier.aiScore}`, icon: Star, color: '#F59E0B' },

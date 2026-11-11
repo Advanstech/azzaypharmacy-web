@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
@@ -64,6 +64,36 @@ export default function SupplierProductsPage() {
   });
   const [showDeleteSupplierModal, setShowDeleteSupplierModal] = useState(false);
   const [isDeletingSupplier, setIsDeletingSupplier] = useState(false);
+  const loadProductsRequestId = useRef(0);
+
+  const loadLocalProducts = () => {
+    const localProducts = allProducts
+      .filter(product =>
+        product.supplierId === supplierId &&
+        (!activeBranchId || product.branchId === activeBranchId || product.stockItems?.some(item => item.branchId === activeBranchId))
+      )
+      .map(product => {
+        const stockItems = activeBranchId && Array.isArray(product.stockItems)
+          ? product.stockItems.filter(item => item.branchId === activeBranchId)
+          : product.stockItems;
+        return {
+          id: product.id,
+          name: product.name,
+          genericName: product.genericName || '',
+          brand: product.brand || '',
+          category: product.category,
+          requiresRx: product.requiresRx || false,
+          supplierId: product.supplierId || supplierId,
+          sell: product.sellingPrice,
+          cost: product.costPrice,
+          qty: activeBranchId && Array.isArray(product.stockItems)
+            ? stockItems?.reduce((total, item) => total + Number(item.quantity || 0), 0) ?? 0
+            : product.stockQuantity,
+          unit: 'units',
+        };
+      });
+    setProducts(localProducts);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -71,44 +101,29 @@ export default function SupplierProductsPage() {
   }, [supplierId, activeBranchId]);
 
   const loadProducts = async () => {
+    const requestId = ++loadProductsRequestId.current;
     setLoading(true);
     try {
       const data = await getProductsBySupplier(supplierId, activeBranchId || undefined);
-      if (data && data.length > 0) {
-        setProducts(data.map(p => ({
-          id: p.id,
-          name: p.name,
-          genericName: p.genericName || '',
-          brand: p.brand || '',
-          category: p.category,
-          requiresRx: p.requiresRx || false,
-          supplierId: p.supplierId || supplierId,
-          sell: p.sellingPrice,
-          cost: p.costPrice,
-          qty: p.stockQuantity,
-          unit: 'units'
-        })));
-      } else {
-        // Filter from local products if API returns empty but we have products in store
-        const local = allProducts.filter(p => p.supplierId === supplierId);
-        setProducts(local.map(p => ({
-          id: p.id,
-          name: p.name,
-          genericName: p.genericName || '',
-          brand: p.brand || '',
-          category: p.category,
-          requiresRx: p.requiresRx || false,
-          supplierId: p.supplierId || supplierId,
-          sell: p.sellingPrice,
-          cost: p.costPrice,
-          qty: p.stockQuantity,
-          unit: 'units'
-        })));
-      }
+      if (requestId !== loadProductsRequestId.current) return;
+      setProducts(data.map(p => ({
+        id: p.id,
+        name: p.name,
+        genericName: p.genericName || '',
+        brand: p.brand || '',
+        category: p.category,
+        requiresRx: p.requiresRx || false,
+        supplierId: p.supplierId || supplierId,
+        sell: p.sellingPrice,
+        cost: p.costPrice,
+        qty: p.stockQuantity,
+        unit: 'units'
+      })));
     } catch (err) {
       console.error('Failed to load supplier products:', err);
+      if (requestId === loadProductsRequestId.current) loadLocalProducts();
     } finally {
-      setLoading(false);
+      if (requestId === loadProductsRequestId.current) setLoading(false);
     }
   };
 
@@ -197,7 +212,7 @@ export default function SupplierProductsPage() {
 
       setShowEditModal(false);
       setEditingProduct(null);
-      refetchProducts();
+      refetchProducts(activeBranchId);
       loadProducts();
     } catch (err) {
       console.error('Failed to update product:', err);
@@ -231,7 +246,7 @@ export default function SupplierProductsPage() {
         branchId: activeBranchId || me?.branchId || undefined,
       });
       setShowAddModal(false);
-      refetchProducts();
+      refetchProducts(activeBranchId);
       loadProducts();
     } catch (err) {
       console.error('Failed to create product:', err);
@@ -244,7 +259,7 @@ export default function SupplierProductsPage() {
     try {
       await deleteProduct(id);
       setConfirmDelete(null);
-      refetchProducts();
+      refetchProducts(activeBranchId);
       loadProducts();
     } catch (error) {
       console.error('Failed to delete product:', error);

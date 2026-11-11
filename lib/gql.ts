@@ -1326,7 +1326,7 @@ export const M_RECEIVE_INVOICE = `
 export const Q_INVOICES = `
   query GetInvoices($branchId: String, $supplierId: String) {
     invoices(branchId: $branchId, supplierId: $supplierId) {
-      id invoiceNo type total paidAmount balance paymentStatus issueDate dueDate createdAt
+      id invoiceNo type total paidAmount balance paymentStatus issueDate dueDate createdAt branchId
       approvalStatus
       approvedBy { id name role }
       branch { id name }

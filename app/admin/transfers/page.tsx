@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTheme } from 'next-themes';
 import {
   ArrowRightLeft, Plus, Search, Calendar, X, CheckCircle, XCircle,
@@ -12,9 +12,8 @@ import {
 } from 'lucide-react';
 import { useStore, type StockTransfer, type Product, type Supplier } from '@/lib/store';
 import { useBranch } from '@/lib/branch-context';
-import { gql, Q_BRANCHES } from '@/lib/gql';
 import {
-  M_APPROVE_TRANSFER, M_REJECT_TRANSFER, M_DELETE_TRANSFER,
+  gql, M_APPROVE_TRANSFER, M_REJECT_TRANSFER, M_DELETE_TRANSFER,
 } from '@/lib/gql';
 import { onSyncEvent, retryQueuedOperation } from '@/lib/tauri-sync';
 
@@ -92,8 +91,6 @@ function printTransferInvoice(transfer: StockTransfer) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Branch { id: string; name: string; }
-
 interface TransferLineItem {
   product: Product;
   quantity: number;
@@ -166,19 +163,7 @@ export default function StockTransferPage() {
     products, me, refetchProducts, refetchLedger, refetchPurchases, refetchInvoices,
     createProduct, createStockTransfer,
   } = useStore();
-  const { activeBranchId } = useBranch();
-
-  // ── Branches ──────────────────────────────────────────────────────────────
-  const [branches, setBranches] = useState<Branch[]>([]);
-  useEffect(() => {
-    gql<{ branches: Branch[] }>(Q_BRANCHES).then(d => {
-      const list = d.branches ?? [];
-      setBranches(list);
-      // Default source to Main Branch
-      const main = list.find(b => b.name.toLowerCase().includes('main'));
-      if (main) setSourceBranchId(main.id);
-    }).catch(() => {});
-  }, []);
+  const { activeBranchId, branches } = useBranch();
 
   const isAdmin = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
   const canApprove = ['ROOT', 'SE_ADMIN', 'OWNER', 'MANAGER', 'HEAD_PHARMACIST'].includes(me?.role || '');
@@ -229,7 +214,7 @@ export default function StockTransferPage() {
 
   // ── New Transfer Modal ────────────────────────────────────────────────────
   const [showCreate, setShowCreate] = useState(false);
-  const [sourceBranchId, setSourceBranchId] = useState('');
+  const [sourceBranchOverride, setSourceBranchOverride] = useState<string | null>(null);
   const [destBranchId, setDestBranchId] = useState('');
   const [notes, setNotes] = useState('');
   const [lineItems, setLineItems] = useState<TransferLineItem[]>([]);
@@ -244,11 +229,31 @@ export default function StockTransferPage() {
   const [qaCategory, setQaCategory] = useState('MISCELLANEOUS');
   const [qaAdding, setQaAdding] = useState(false);
   const [qaError, setQaError] = useState('');
+  const sourceBranchId = sourceBranchOverride ?? branches.find(b => b.name.toLowerCase().includes('main'))?.id ?? '';
+
+  const sourceProducts = useMemo(() => {
+    if (!sourceBranchId) return [];
+    return products
+      .filter(p => p.branchId === sourceBranchId || p.stockItems?.some(item => item.branchId === sourceBranchId))
+      .map(p => {
+        if (!Array.isArray(p.stockItems)) return p;
+        const stockItems = p.stockItems.filter(item => item.branchId === sourceBranchId);
+        return {
+          ...p,
+          stockItems,
+          stockQuantity: stockItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
+        };
+      });
+  }, [products, sourceBranchId]);
+
+  useEffect(() => {
+    if (sourceBranchId) void refetchProducts(sourceBranchId);
+  }, [sourceBranchId, refetchProducts]);
 
   const productMatches = useMemo(() => {
     if (!productSearch.trim()) return [];
     const q = productSearch.toLowerCase();
-    return products
+    return sourceProducts
       .filter(p =>
         p.name.toLowerCase().includes(q) ||
         (p.genericName || '').toLowerCase().includes(q) ||
@@ -256,7 +261,7 @@ export default function StockTransferPage() {
         (p.category || '').toLowerCase().includes(q)
       )
       .slice(0, 12);
-  }, [products, productSearch]);
+  }, [sourceProducts, productSearch]);
 
   const addProduct = (p: Product) => {
     setLineItems(prev => {
@@ -344,7 +349,7 @@ export default function StockTransferPage() {
       setShowCreate(false);
       setLineItems([]);
       setNotes('');
-      setSourceBranchId('');
+      setSourceBranchOverride(null);
       setDestBranchId('');
       resetQuickAdd();
       setProductSearch('');
@@ -1031,7 +1036,15 @@ export default function StockTransferPage() {
                       <label className="block text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: c.muted }}>From (Source)</label>
                       <div className="relative">
                         <Building2 size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: c.primary }} />
-                        <select value={sourceBranchId} onChange={e => setSourceBranchId(e.target.value)}
+                        <select value={sourceBranchId} onChange={e => {
+                          const nextBranchId = e.target.value;
+                          if (nextBranchId !== sourceBranchId) {
+                            setSourceBranchOverride(nextBranchId);
+                            setLineItems([]);
+                            setProductSearch('');
+                            setCreateError('');
+                          }
+                        }}
                           className="w-full rounded-xl pl-8 pr-3 py-2.5 text-sm focus:outline-none appearance-none"
                           style={{ background: c.inputBg, border: `1px solid ${sourceBranchId ? c.primary : c.border}`, color: c.text }}>
                           <option value="">— Select source branch —</option>
@@ -1068,7 +1081,8 @@ export default function StockTransferPage() {
                     <input
                       value={productSearch}
                       onChange={e => setProductSearch(e.target.value)}
-                      placeholder="Type product name, generic name, or category..."
+                      disabled={!sourceBranchId}
+                      placeholder={sourceBranchId ? 'Type product name, generic name, or category...' : 'Select a source branch first'}
                       className="w-full pl-9 pr-4 py-3 rounded-xl text-sm focus:outline-none"
                       style={{
                         background: c.inputBg,

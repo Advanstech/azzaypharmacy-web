@@ -125,11 +125,17 @@ export interface Product {
   stockItems?: StockItem[];
 }
 
+function productsSnapshotKey(view: 'full' | 'pos', branchId: string | null) {
+  return `products_${view}_${branchId ?? 'all'}`;
+}
+
 function scopeProductToBranch(product: Product, branchId: string | null): Product {
-  if (!branchId || !product.stockItems?.length) return product;
+  if (!branchId || !Array.isArray(product.stockItems)) return product;
+  const stockItems = product.stockItems.filter(item => item.branchId === branchId);
   return {
     ...product,
-    stockItems: product.stockItems.filter(item => item.branchId === branchId),
+    stockItems,
+    stockQuantity: stockItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
   };
 }
 
@@ -159,6 +165,7 @@ export interface Supplier {
   tin?: string;
   aiScore?: number;
   categories: string[];
+  branches?: Array<{ id: string; name: string }>;
 }
 
 export interface SaleItem {
@@ -358,6 +365,7 @@ export interface InvoicePayment {
 export interface Invoice {
   id: string;
   invoiceNo: string;
+  branchId?: string;
   supplierId: string;
   purchaseId?: string;
   type: string;
@@ -573,7 +581,7 @@ interface StoreState {
   // Refetch helpers
   refetchProducts: (branchId?: string | null) => Promise<void>;
   refetchProductsPOS: (branchId?: string | null) => Promise<void>;
-  refetchSuppliers: () => Promise<void>;
+  refetchSuppliers: (branchId?: string | null) => Promise<void>;
   refetchSales: (branchId?: string, dateFrom?: string, dateTo?: string) => Promise<void>;
   refetchStaff: () => Promise<void>;
   refetchCustomers: () => Promise<void>;
@@ -806,6 +814,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   // (see refetchSales below for details).
   const salesRequestIdRef = useRef(0);
   const productsRequestIdRef = useRef(0);
+  const suppliersRequestIdRef = useRef(0);
+  const invoicesRequestIdRef = useRef(0);
   const transferRequestIdRef = useRef(0);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -983,18 +993,16 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     const requestId = ++productsRequestIdRef.current;
     setLoadingProducts(true);
     try {
-      // Try cache first. The IndexedDB products_cache store accumulates
-      // products across every branch ever viewed on this device (upsert-only,
-      // never pruned), so it must be filtered to the requested branch before
-      // being used as an instant paint — otherwise stale/other-branch stock
-      // levels flash (or persist if offline) alongside the real data.
-      const cached = await getFromCache('products_cache');
       const cacheScopeBranchId: string | null = branchId === undefined
         ? (MANAGERIAL_ROLES.includes(me?.role ?? '') ? null : me?.branchId ?? null)
         : branchId;
-      const scopedCached = cacheScopeBranchId
-        ? cached.filter((p: any) => p.branchId === cacheScopeBranchId || p.stockItems?.some((item: any) => item.branchId === cacheScopeBranchId))
-        : cached;
+      const branchSnapshot = await getKV(productsSnapshotKey('full', cacheScopeBranchId)) as Product[] | undefined;
+      const cached = branchSnapshot ?? await getFromCache('products_cache');
+      const scopedCached = branchSnapshot
+        ? branchSnapshot
+        : cacheScopeBranchId
+          ? cached.filter((p: any) => p.branchId === cacheScopeBranchId || p.stockItems?.some((item: any) => item.branchId === cacheScopeBranchId))
+          : cached;
       if (requestId === productsRequestIdRef.current) {
         setProducts(scopedCached.map((product: Product) => scopeProductToBranch(product, cacheScopeBranchId)));
       }
@@ -1003,6 +1011,8 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       if (data.products) {
         if (requestId === productsRequestIdRef.current) setProducts(data.products);
         await saveToCache('products_cache', data.products);
+        await saveKV(productsSnapshotKey('full', cacheScopeBranchId), data.products);
+        await saveKV(productsSnapshotKey('pos', cacheScopeBranchId), data.products);
       }
     } catch (e: any) {
       console.warn('[store] products fetch failed:', e.message);
@@ -1019,13 +1029,16 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     const requestId = ++productsRequestIdRef.current;
     setLoadingProducts(true);
     try {
-      const cached = await getFromCache('products_cache');
       const cacheScopeBranchId: string | null = branchId === undefined
         ? (MANAGERIAL_ROLES.includes(me?.role ?? '') ? null : me?.branchId ?? null)
         : branchId;
-      const scopedCached = cacheScopeBranchId
-        ? cached.filter((p: any) => p.branchId === cacheScopeBranchId || p.stockItems?.some((item: any) => item.branchId === cacheScopeBranchId))
-        : cached;
+      const branchSnapshot = await getKV(productsSnapshotKey('pos', cacheScopeBranchId)) as Product[] | undefined;
+      const cached = branchSnapshot ?? await getFromCache('products_cache');
+      const scopedCached = branchSnapshot
+        ? branchSnapshot
+        : cacheScopeBranchId
+          ? cached.filter((p: any) => p.branchId === cacheScopeBranchId || p.stockItems?.some((item: any) => item.branchId === cacheScopeBranchId))
+          : cached;
       if (requestId === productsRequestIdRef.current) {
         setProducts(scopedCached.map((product: Product) => scopeProductToBranch(product, cacheScopeBranchId)));
       }
@@ -1049,11 +1062,11 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
             return { ...p, stockItems };
           });
         };
-        if (requestId === productsRequestIdRef.current) {
-          setProducts(prev => preserveBatches(prev, cacheScopeBranchId));
-        }
+        const branchProducts = preserveBatches(scopedCached, cacheScopeBranchId);
+        if (requestId === productsRequestIdRef.current) setProducts(branchProducts);
         const cachedNow = await getFromCache('products_cache');
         await saveToCache('products_cache', preserveBatches(cachedNow, null));
+        await saveKV(productsSnapshotKey('pos', cacheScopeBranchId), branchProducts);
       }
     } catch (e: any) {
       console.warn('[store] products (POS) fetch failed:', e.message);
@@ -1065,20 +1078,37 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     }
   }, [me?.branchId, me?.role]);
 
-  const refetchSuppliers = useCallback(async () => {
+  const refetchSuppliers = useCallback(async (branchId?: string | null) => {
+    const requestId = ++suppliersRequestIdRef.current;
     setLoadingSuppliers(true);
     try {
-      const cached = await getKV('suppliers_cache');
-      if (cached?.length) setSuppliers(cached);
-      const data = await gql<{ suppliers: Supplier[] }>(Q_SUPPLIERS, { branchId: me?.branchId || undefined });
-      setSuppliers(data.suppliers ?? []);
-      await saveKV('suppliers_cache', data.suppliers ?? []);
+      const cacheScopeBranchId: string | null = branchId === undefined
+        ? (MANAGERIAL_ROLES.includes(me?.role ?? '') ? null : me?.branchId ?? null)
+        : branchId;
+      const cacheKey = `suppliers_cache_${cacheScopeBranchId ?? 'all'}`;
+      const branchSnapshot = await getKV(cacheKey) as Supplier[] | undefined;
+      const cached = branchSnapshot ?? await getKV('suppliers_cache') as Supplier[] | undefined;
+      const scopedCached = branchSnapshot
+        ? branchSnapshot
+        : cacheScopeBranchId
+          ? (cached ?? []).filter(supplier =>
+            !supplier.branches?.length || supplier.branches.some(branch => branch.id === cacheScopeBranchId)
+          )
+          : cached;
+      if (requestId === suppliersRequestIdRef.current && scopedCached) setSuppliers(scopedCached);
+      const data = await gql<{ suppliers: Supplier[] }>(Q_SUPPLIERS, { branchId: cacheScopeBranchId ?? undefined });
+      const nextSuppliers = data.suppliers ?? [];
+      if (requestId === suppliersRequestIdRef.current) setSuppliers(nextSuppliers);
+      await Promise.all([
+        saveKV(cacheKey, nextSuppliers),
+        saveKV('suppliers_cache', nextSuppliers),
+      ]);
     } catch (e: any) {
       console.warn('[store] suppliers fetch failed:', e.message);
     } finally {
-      setLoadingSuppliers(false);
+      if (requestId === suppliersRequestIdRef.current) setLoadingSuppliers(false);
     }
-  }, [me?.branchId]);
+  }, [me?.branchId, me?.role]);
 
   // Re-inject locally-held sales that haven't synced yet, and retire
   // placeholders whose clientRef now exists server-side (synced PENDING sale).
@@ -1302,6 +1332,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   }, []);
 
   const refetchInvoices = useCallback(async (branchId?: string | null) => {
+    const requestId = ++invoicesRequestIdRef.current;
     setLoadingInvoices(true);
     try {
       // Fetch branchId directly from Q_ME rather than relying on `me` React state
@@ -1318,14 +1349,14 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
       const cacheKey = `invoices_cache_${effectiveBranchId ?? 'all'}`;
       const cached = await getKV(cacheKey);
-      if (cached?.length) setInvoices(cached);
+      if (requestId === invoicesRequestIdRef.current && Array.isArray(cached)) setInvoices(cached);
       const data = await gql<{ invoices: Invoice[] }>(Q_INVOICES, { branchId: effectiveBranchId });
-      setInvoices(data.invoices ?? []);
+      if (requestId === invoicesRequestIdRef.current) setInvoices(data.invoices ?? []);
       await saveKV(cacheKey, data.invoices ?? []);
     } catch (e: any) {
       console.warn('[store] invoices fetch failed:', e.message);
     } finally {
-      setLoadingInvoices(false);
+      if (requestId === invoicesRequestIdRef.current) setLoadingInvoices(false);
     }
   }, [me?.branchId]);
 
@@ -2812,7 +2843,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
 
   const getProductsBySupplier = useCallback(async (supplierId: string, branchId?: string): Promise<Product[]> => {
     const data = await gql<{ productsBySupplier: Product[] }>(
-      Q_PRODUCTS_BY_SUPPLIER, { supplierId, branchId: branchId || undefined }
+      Q_PRODUCTS_BY_SUPPLIER, { supplierId, branchId: branchId ?? undefined }
     );
     return data.productsBySupplier ?? [];
   }, []);

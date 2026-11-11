@@ -78,7 +78,7 @@ export default function InventoryPage() {
   const [mounted, setMounted] = useState(false);
   const { 
     products: storeProducts, 
-    suppliers,
+    suppliers: storeSuppliers,
     purchases,
     invoices,
     stockMovements,
@@ -279,9 +279,28 @@ export default function InventoryPage() {
   const newInvoiceItems = invoiceItems.filter(i => !i.exists || !i.productId);
   const hasResolvableSupplier = Boolean(invoiceSupplier || (createSupplierOnConfirm && invoiceSupplierDraft.trim()));
 
-  const branchFilter = useBranchFilter();
-  const branchProducts = useMemo(() => branchFilter(storeProducts || []), [branchFilter, storeProducts]);
   const { branches, canSwitchBranch, activeBranchId, activeBranchName } = useBranch();
+  const branchFilter = useBranchFilter();
+  const suppliers = useMemo(() => {
+    if (!activeBranchId) return storeSuppliers;
+    return storeSuppliers.filter(supplier =>
+      !supplier.branches?.length || supplier.branches.some(branch => branch.id === activeBranchId)
+    );
+  }, [storeSuppliers, activeBranchId]);
+  const branchProducts = useMemo(() => {
+    if (!activeBranchId) return storeProducts || [];
+    return (storeProducts || [])
+      .filter(product => product.branchId === activeBranchId || product.stockItems?.some(item => item.branchId === activeBranchId))
+      .map(product => {
+        if (!Array.isArray(product.stockItems)) return product;
+        const stockItems = product.stockItems.filter(item => item.branchId === activeBranchId);
+        return {
+          ...product,
+          stockItems,
+          stockQuantity: stockItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
+        };
+      });
+  }, [storeProducts, activeBranchId]);
 
   const branchPurchases = useMemo(() => branchFilter(purchases || []), [branchFilter, purchases]);
   const branchMovements = useMemo(() => branchFilter(stockMovements || []), [branchFilter, stockMovements]);
@@ -456,10 +475,10 @@ export default function InventoryPage() {
   // Real data sync on mount and whenever the active branch changes
   useEffect(() => {
     Promise.all([
-      refetchProducts(),
-      refetchSuppliers(),
+      refetchProducts(activeBranchId),
+      refetchSuppliers(activeBranchId),
       refetchPurchases(),
-      refetchInvoices(),
+      refetchInvoices(activeBranchId),
     ]);
   }, [activeBranchId, refetchProducts, refetchSuppliers, refetchPurchases, refetchInvoices]);
 
@@ -1492,7 +1511,12 @@ export default function InventoryPage() {
           <button
             onClick={async () => {
               addToast?.({ type: 'info', title: 'Syncing...', message: 'Refreshing inventory data' });
-              await Promise.all([refetchProducts(), refetchSuppliers(), refetchPurchases(), refetchInvoices()]);
+              await Promise.all([
+                refetchProducts(activeBranchId),
+                refetchSuppliers(activeBranchId),
+                refetchPurchases(),
+                refetchInvoices(activeBranchId),
+              ]);
               addToast?.({ type: 'success', title: 'Sync Complete', message: 'Inventory data is up to date' });
             }}
             disabled={loadingProducts}
@@ -1508,7 +1532,7 @@ export default function InventoryPage() {
                 addToast?.({ type: 'info', title: 'Repairing...', message: 'Fixing stock branch assignments across all products' });
                 try {
                   const result = await gql<{ repairStockBranches: string }>(M_REPAIR_STOCK_BRANCHES, {});
-                  await refetchProducts();
+                  await refetchProducts(activeBranchId);
                   addToast?.({ type: 'success', title: 'Repair Complete', message: result.repairStockBranches, duration: 7000 });
                 } catch (err: any) {
                   addToast?.({ type: 'error', title: 'Repair Failed', message: err.message });

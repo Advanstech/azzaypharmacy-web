@@ -107,12 +107,18 @@ function POSInner() {
   const { addToast } = useToast();
 
   const liveProducts = useMemo(() => {
-    // Backend already filters products by branchId for non-global roles (PHARMACIST, CASHIER, etc.)
-    // No need for additional frontend filtering - use storeProducts as-is
     if (!posBranchId) return storeProducts;
-    return storeProducts.map(product => product.stockItems?.length
-      ? { ...product, stockItems: product.stockItems.filter(item => item.branchId === posBranchId) }
-      : product);
+    return storeProducts
+      .filter(product => product.branchId === posBranchId || product.stockItems?.some(item => item.branchId === posBranchId))
+      .map(product => {
+        if (!Array.isArray(product.stockItems)) return product;
+        const stockItems = product.stockItems.filter(item => item.branchId === posBranchId);
+        return {
+          ...product,
+          stockItems,
+          stockQuantity: stockItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
+        };
+      });
   }, [storeProducts, posBranchId]);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -589,7 +595,11 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       const controller = new AbortController();
       searchAbortRef.current = controller;
       try {
-        const data = await gql<{ searchProducts: any[] }>(Q_SEARCH_PRODUCTS, { query: q, limit: 50 });
+        const data = await gql<{ searchProducts: any[] }>(Q_SEARCH_PRODUCTS, {
+          query: q,
+          limit: 50,
+          branchId: posBranchId ?? undefined,
+        });
         if (requestId !== searchRequestIdRef.current || controller.signal.aborted) return;
         setSearchResults(data.searchProducts || []);
       } catch (e: any) {
@@ -604,7 +614,7 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
       clearTimeout(timer);
       if (searchAbortRef.current) searchAbortRef.current.abort();
     };
-  }, [search, liveProducts]);
+  }, [search, liveProducts, posBranchId]);
 
   const filteredProducts = useMemo(() => {
     const q = search.toLowerCase().trim();
@@ -627,12 +637,12 @@ Provide clinically accurate information. If specific data is unknown, use "Consu
   useEffect(() => {
     if (mounted && me?.id && liveProducts.length === 0 && !loadingProducts && !autoFetchedRef.current) {
       autoFetchedRef.current = true;
-      const t = setTimeout(() => refetchProducts(), 800);
+      const t = setTimeout(() => refetchProducts(posBranchId), 800);
       return () => clearTimeout(t);
     }
     // Reset the guard when products actually arrive so a later logout→login works
     if (liveProducts.length > 0) autoFetchedRef.current = false;
-  }, [mounted, me?.id, liveProducts.length, loadingProducts, refetchProducts]);
+  }, [mounted, me?.id, liveProducts.length, loadingProducts, refetchProducts, posBranchId]);
 
   const addToCart = (product: any) => {
     // Don't hard-block on zero stock — cached/offline stockQuantity can be

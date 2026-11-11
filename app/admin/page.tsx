@@ -17,6 +17,7 @@ import { gql, M_ASK_NEXUS_AI, Q_DASHBOARD_STATS } from '@/lib/gql';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { useBranch, useBranchFilter } from '@/lib/branch-context';
+import { BranchBanner } from '@/components/BranchBanner';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -43,17 +44,37 @@ export default function AdminDashboardPage() {
   const { session } = useCustomAuth();
   const { addToast } = useToast();
   const router = useRouter();
-  const { activeBranchId } = useBranch();
+  const { activeBranchId, activeBranchName } = useBranch();
   const branchFilter = useBranchFilter();
 
   const sales = useMemo(() => branchFilter(allSales), [branchFilter, allSales]);
   const staff = useMemo(() => branchFilter(allStaff), [branchFilter, allStaff]);
   const expenses = useMemo(() => branchFilter(allExpenses), [branchFilter, allExpenses]);
+  const branchInvoices = useMemo(() => branchFilter(invoices), [branchFilter, invoices]);
+  const branchProducts = useMemo(() => {
+    if (!activeBranchId) return products;
+    return products
+      .filter(product => product.branchId === activeBranchId || product.stockItems?.some(item => item.branchId === activeBranchId))
+      .map(product => {
+        if (!Array.isArray(product.stockItems)) return product;
+        const stockItems = product.stockItems.filter(item => item.branchId === activeBranchId);
+        return {
+          ...product,
+          stockItems,
+          stockQuantity: stockItems.reduce((total, item) => total + Number(item.quantity || 0), 0),
+        };
+      });
+  }, [products, activeBranchId]);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [insightLoading, setInsightLoading] = useState(false);
   const [insightText, setInsightText] = useState("Loading AI analytical forecast based on live database data...");
-  const [rangeStats, setRangeStats] = useState<any>(null);
+  const [rangeStatsSnapshot, setRangeStatsSnapshot] = useState<{
+    branchId: string | null;
+    dateFrom: string;
+    dateTo: string;
+    data: any;
+  } | null>(null);
   const [loadingRangeStats, setLoadingRangeStats] = useState(false);
 
   // Chart Metric Toggle
@@ -80,6 +101,13 @@ export default function AdminDashboardPage() {
     }
     return { start, end };
   }, [dateRange, customFrom, customTo]);
+  const dateFrom = rangeBounds.start.toISOString();
+  const dateTo = rangeBounds.end.toISOString();
+  const rangeStats = rangeStatsSnapshot?.branchId === activeBranchId
+    && rangeStatsSnapshot.dateFrom === dateFrom
+    && rangeStatsSnapshot.dateTo === dateTo
+    ? rangeStatsSnapshot.data
+    : null;
 
   const inRange = useCallback((dateStr: string | Date) => {
     const d = new Date(dateStr);
@@ -121,13 +149,15 @@ export default function AdminDashboardPage() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+    let insightTimer: ReturnType<typeof setTimeout> | undefined;
     const loadData = async () => {
-      await refetchSales(activeBranchId ?? undefined, rangeBounds.start.toISOString(), rangeBounds.end.toISOString());
-      if (invoices.length === 0) await refetchInvoices();
+      await refetchSales(activeBranchId ?? undefined, dateFrom, dateTo);
+      if (cancelled) return;
       if (allStaff.length === 0) await refetchStaff();
-      if (products.length === 0) await refetchProducts();
       if (customers.length === 0) await refetchCustomers();
       if (allExpenses.length === 0) await refetchExpenses();
+      if (cancelled) return;
 
       // Fetch server-aggregated stats for the selected date range —
       // avoids the 2,000 row cap and gives accurate 1Y/90D/Custom numbers.
@@ -135,35 +165,52 @@ export default function AdminDashboardPage() {
       try {
         const stats = await gql<{ dashboardStats: any }>(
           Q_DASHBOARD_STATS,
-          { branchId: activeBranchId ?? undefined, dateFrom: rangeBounds.start.toISOString(), dateTo: rangeBounds.end.toISOString() },
+          { branchId: activeBranchId ?? undefined, dateFrom, dateTo },
         );
-        setRangeStats(stats?.dashboardStats || null);
+        if (!cancelled) {
+          setRangeStatsSnapshot({
+            branchId: activeBranchId,
+            dateFrom,
+            dateTo,
+            data: stats?.dashboardStats || null,
+          });
+        }
       } catch (e) {
-        console.error('Failed to load range dashboard stats', e);
+        if (!cancelled) console.error('Failed to load range dashboard stats', e);
       } finally {
-        setLoadingRangeStats(false);
+        if (!cancelled) setLoadingRangeStats(false);
       }
 
-      setTimeout(() => {
-        fetchAiInsight();
-      }, 1500);
+      if (!cancelled) insightTimer = setTimeout(() => { void fetchAiInsight(); }, 1500);
     };
-    if (mounted && session?.access_token) loadData();
-  }, [mounted, rangeBounds.start, rangeBounds.end, session?.access_token, activeBranchId]);
+    if (mounted && session?.access_token) void loadData();
+    return () => {
+      cancelled = true;
+      if (insightTimer) clearTimeout(insightTimer);
+    };
+  }, [mounted, dateFrom, dateTo, session?.access_token, activeBranchId]);
+
+  useEffect(() => {
+    if (!mounted || !session?.access_token) return;
+    void Promise.all([
+      refetchInvoices(activeBranchId),
+      refetchProducts(activeBranchId),
+    ]);
+  }, [activeBranchId, mounted, session?.access_token, refetchInvoices, refetchProducts]);
 
   // Real KPIs calculation
-  const pendingInvoices = useMemo(() => invoices.filter(i => i.paymentStatus !== 'PAID').length, [invoices]);
+  const pendingInvoices = useMemo(() => branchInvoices.filter(i => i.paymentStatus !== 'PAID').length, [branchInvoices]);
   const activeStaffCount = useMemo(() => staff.filter(s => s.isActive).length, [staff]);
   const staffOnDuty = useMemo(() => staff.filter(s => s.isOnDuty).length, [staff]);
-  const stockValue = useMemo(() => products.reduce((acc, p) => acc + (p.stockQuantity * (p.costPrice || p.sellingPrice || 0)), 0), [products]);
+  const stockValue = useMemo(() => branchProducts.reduce((acc, p) => acc + (p.stockQuantity * (p.costPrice || p.sellingPrice || 0)), 0), [branchProducts]);
 
-  const criticalStock = useMemo(() => products.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 5), [products]);
-  const outOfStock = useMemo(() => products.filter(p => p.stockQuantity === 0), [products]);
+  const criticalStock = useMemo(() => branchProducts.filter(p => p.stockQuantity > 0 && p.stockQuantity <= 5), [branchProducts]);
+  const outOfStock = useMemo(() => branchProducts.filter(p => p.stockQuantity === 0), [branchProducts]);
   const expiringIn30 = useMemo(() => {
     const soon = new Date();
     soon.setDate(soon.getDate() + 30);
-    return products.filter(p => p.stockItems?.some((item: any) => item.expiryDate && new Date(item.expiryDate) <= soon && new Date(item.expiryDate) > new Date()));
-  }, [products]);
+    return branchProducts.filter(p => p.stockItems?.some((item: any) => item.expiryDate && new Date(item.expiryDate) <= soon && new Date(item.expiryDate) > new Date()));
+  }, [branchProducts]);
 
   // Metrics that respond to Date Range
   const periodSalesData = useMemo(() => sales.filter(s => inRange(s.createdAt)), [sales, inRange]);
@@ -239,7 +286,7 @@ export default function AdminDashboardPage() {
     return Object.values(counts).sort((a, b) => b.qty - a.qty)[0] || null;
   }, [periodSalesData]);
 
-  const totalSupplierDebt = useMemo(() => invoices.filter(i => i.paymentStatus !== 'PAID').reduce((acc, i) => acc + (i.balance || 0), 0), [invoices]);
+  const totalSupplierDebt = useMemo(() => branchInvoices.filter(i => i.paymentStatus !== 'PAID').reduce((acc, i) => acc + (i.balance || 0), 0), [branchInvoices]);
 
   const periodExpenses = useMemo(() => expenses.filter(e => inRange(e.date || e.createdAt)).reduce((acc, e) => acc + (e.amount || 0), 0), [expenses, inRange]);
 
@@ -262,7 +309,7 @@ export default function AdminDashboardPage() {
       });
     }
     if (activities.length < 5) {
-      const recentInvoices = [...invoices].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5 - activities.length);
+      const recentInvoices = [...branchInvoices].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5 - activities.length);
       for (const inv of recentInvoices) {
         activities.push({
           time: new Date(inv.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -273,7 +320,7 @@ export default function AdminDashboardPage() {
         });
       }
     }
-    const outOfStockItems = products.filter(p => p.stockQuantity === 0).slice(0, 2);
+    const outOfStockItems = branchProducts.filter(p => p.stockQuantity === 0).slice(0, 2);
     for (const p of outOfStockItems) {
       activities.push({
         time: 'Alert',
@@ -287,7 +334,7 @@ export default function AdminDashboardPage() {
       activities.push({ time: 'Just now', desc: 'System online and synced with NEXUS core', type: 'system', date: Date.now(), link: '/admin' });
     }
     return activities.sort((a, b) => b.date - a.date).slice(0, 5);
-  }, [sales, invoices, products]);
+  }, [sales, branchInvoices, branchProducts]);
 
   const cardStyle = {
     bg: isDark ? 'rgba(15,23,42,0.6)' : 'rgba(255,255,255,0.9)',
@@ -300,6 +347,7 @@ export default function AdminDashboardPage() {
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="show" className="space-y-8 pb-8">
+      <BranchBanner />
       {/* Header & Date Filters */}
       <motion.div variants={itemVariants} className="flex flex-col xl:flex-row xl:items-end justify-between gap-4">
         <div>
@@ -307,7 +355,7 @@ export default function AdminDashboardPage() {
             Command Center
           </h1>
           <p className="text-sm sm:text-base text-slate-500 dark:text-slate-400 font-medium mt-1">
-            Real-time operational intelligence — sales, stock, staff, and finances.
+            Real-time operational intelligence — {activeBranchId ? activeBranchName : 'all branches'}.
           </p>
         </div>
         
@@ -351,7 +399,14 @@ export default function AdminDashboardPage() {
             onClick={async () => {
               setIsSyncing(true);
               addToast?.({ type: 'info', title: 'Syncing...', message: 'Refreshing all data' });
-              await Promise.all([refetchSales(), refetchInvoices(), refetchStaff(), refetchProducts(), refetchCustomers(), refetchExpenses()]);
+              await Promise.all([
+                refetchSales(activeBranchId ?? undefined, dateFrom, dateTo),
+                refetchInvoices(activeBranchId),
+                refetchStaff(),
+                refetchProducts(activeBranchId),
+                refetchCustomers(),
+                refetchExpenses(),
+              ]);
               setIsSyncing(false);
               addToast?.({ type: 'success', title: 'Sync Complete', message: 'All data is up to date' });
             }}
@@ -425,7 +480,7 @@ export default function AdminDashboardPage() {
             { label: 'Revenue', value: formatCurrency(periodRevenue), sub: `${periodTransactions} transactions in ${dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}`, icon: DollarSign, color: '#10B981', gradient: 'from-emerald-500/20 to-teal-500/5', route: '/admin/reports/sales' },
             { label: 'Expenses', value: formatCurrency(periodExpenses), sub: `${expenses.filter(e => inRange(e.date || e.createdAt)).length} records in ${dateRange === 'custom' ? 'period' : dateRange === 'today' ? 'today' : dateRange.toUpperCase()}`, icon: TrendingDown, color: '#0EA5E9', gradient: 'from-sky-500/20 to-cyan-500/5', route: '/admin/reports/financial/expenses' },
             { label: 'Staff On Duty', value: `${staffOnDuty} / ${activeStaffCount}`, sub: 'active staff members', icon: UserCheck, color: '#8B5CF6', gradient: 'from-violet-500/20 to-purple-500/5', route: '/admin/staff' },
-            { label: 'Stock Value', value: formatCurrency(stockValue), sub: `${products.length} products`, icon: Package, color: '#F59E0B', gradient: 'from-amber-500/20 to-orange-500/5', route: '/dashboard/inventory' },
+            { label: 'Stock Value', value: formatCurrency(stockValue), sub: `${branchProducts.length} products`, icon: Package, color: '#F59E0B', gradient: 'from-amber-500/20 to-orange-500/5', route: '/dashboard/inventory' },
           ].map(s => {
             const Icon = s.icon;
             return (
