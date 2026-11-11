@@ -92,7 +92,7 @@ set public = false,
 
 The app stores signed document links with each expense; those links expire after one year. Re-upload a document if a link has expired.
 
-### Build release 2.0.8
+### Build release 2.0.9
 
 - PWA/web: run `npm run build` and deploy the web build. The service-worker cache version is bumped so installed PWAs replace the previous cached app shell when the new worker activates.
 - Windows desktop offline app: run `pnpm exec tauri build --config src-tauri/tauri.release.conf.json` to build manual MSI and NSIS installers without updater artifacts. The installers are unsigned when no Windows code-signing certificate is configured.

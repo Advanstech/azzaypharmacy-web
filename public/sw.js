@@ -1,8 +1,8 @@
-// Azzay Pharmacy NEXUS — Service Worker v7
+// Azzay Pharmacy NEXUS — Service Worker v8
 // Offline-first app shell: cache-first for hashed _next/static (immutable),
 // network-first for navigations (fresh online, cached offline), SWR for assets.
 
-const CACHE_NAME = 'azzay-nexus-v7';
+const CACHE_NAME = 'azzay-nexus-v8';
 
 // Precached at install — the guaranteed offline entry points
 const PRECACHE_ASSETS = [
