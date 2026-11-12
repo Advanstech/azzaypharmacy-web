@@ -726,7 +726,7 @@ interface StoreState {
     imageUrl?: string;
     expiryDate?: string;
     branchId?: string;
-  }) => Promise<Product>;
+  }, options?: { queueOffline?: boolean }) => Promise<Product>;
 
   deleteProduct: (productId: string) => Promise<void>;
 
@@ -742,7 +742,7 @@ interface StoreState {
     tin?: string;
     categories?: string[];
     paymentTerms?: string;
-  }) => Promise<Supplier>;
+  }, options?: { queueOffline?: boolean }) => Promise<Supplier>;
 
   updateSupplier: (args: {
     id: string;
@@ -2436,7 +2436,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
     imageUrl?: string;
     expiryDate?: string;
     branchId?: string;
-  }): Promise<Product> => {
+  }, options?: { queueOffline?: boolean }): Promise<Product> => {
     const clientRef = crypto.randomUUID();
     const variables = { ...args };
 
@@ -2463,6 +2463,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       }
       return newProduct;
     } catch (err: any) {
+      if (options?.queueOffline === false) throw err;
       const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
       if (!isNetworkishError(err)) throw err;
 
@@ -2580,7 +2581,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
   const createSupplier = useCallback(async (args: {
     name: string; contact?: string; phone?: string; email?: string;
     address?: string; tin?: string; categories?: string[]; paymentTerms?: string;
-  }): Promise<Supplier> => {
+  }, options?: { queueOffline?: boolean }): Promise<Supplier> => {
     const clientRef = crypto.randomUUID();
     const variables = { input: args };
 
@@ -2590,6 +2591,7 @@ export function StoreProvider({ children, token }: { children: ReactNode; token?
       setSuppliers(prev => [newSupplier, ...prev]);
       return newSupplier;
     } catch (err: any) {
+      if (options?.queueOffline === false) throw err;
       const { isNetworkishError, enqueueOfflineOp } = await import('./tauri-sync');
       if (!isNetworkishError(err)) throw err;
 

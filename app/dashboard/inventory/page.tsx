@@ -22,6 +22,7 @@ import { useBranchFilter, useBranch } from '@/lib/branch-context';
 import { BranchBanner } from '@/components/BranchBanner';
 import { ProductModalTabs } from '@/components/ProductModalTabs';
 import { Portal } from '@/components/portal';
+import { forceProbe } from '@/lib/connectivity';
 
 const STATUS_CONFIG = {
   OK: { label: 'In Stock', color: '#10B981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.25)' },
@@ -227,6 +228,7 @@ export default function InventoryPage() {
   const [openSuggestionItemId, setOpenSuggestionItemId] = useState<string | null>(null);
   const invoiceSearchRef = useRef<HTMLDivElement>(null);
   const [invoiceDuplicateStatus, setInvoiceDuplicateStatus] = useState<'idle' | 'checking' | 'duplicate' | 'ok'>('idle');
+  const receiveInvoiceInFlight = useRef(false);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -819,6 +821,16 @@ export default function InventoryPage() {
 
     setCreatingInvoiceProductId(itemId);
     try {
+      if (!(await forceProbe())) {
+        addToast({
+          type: 'warning',
+          title: 'Internet Required',
+          message: 'Products added to an invoice must be created online. Please reconnect and try again.',
+          duration: 7000,
+        });
+        return;
+      }
+
       let resolvedSupplierId = invoiceSupplier;
       if (!resolvedSupplierId && invoiceSupplierDraft.trim()) {
         const existing = getSupplierMatchByName(invoiceSupplierDraft);
@@ -830,7 +842,7 @@ export default function InventoryPage() {
           const createdSupplier = await createSupplier({
             name: invoiceSupplierDraft.trim(),
             categories: ['GENERAL'],
-          });
+          }, { queueOffline: false });
           resolvedSupplierId = createdSupplier.id;
           setInvoiceSupplier(createdSupplier.id);
           setCreateSupplierOnConfirm(false);
@@ -857,7 +869,7 @@ export default function InventoryPage() {
         supplierId: resolvedSupplierId,
         dosageForm: 'OTHER',
         branchId: activeBranchId || me?.branchId || undefined,
-      });
+      }, { queueOffline: false });
 
       setInvoiceItems(prev => prev.map(item => item.id === itemId
         ? { ...item, productId: createdProduct.id, exists: true, name: productName }
@@ -906,6 +918,16 @@ export default function InventoryPage() {
   const handleAddProduct = async () => {
     setIsCreatingProduct(true);
     try {
+      if (addModalFromInvoice && !(await forceProbe())) {
+        addToast({
+          type: 'warning',
+          title: 'Internet Required',
+          message: 'Products added to an invoice must be created online. Please reconnect and try again.',
+          duration: 7000,
+        });
+        return;
+      }
+
       const created = await createProduct({
         name: newProduct.name,
         genericName: newProduct.genericName || undefined,
@@ -924,7 +946,7 @@ export default function InventoryPage() {
         isControlled: newProduct.classification === 'CONTROLLED',
         imageUrl: newProduct.imageUrl || undefined,
         expiryDate: newProduct.expiryDate || undefined,
-      });
+      }, addModalFromInvoice ? { queueOffline: false } : undefined);
       if (addModalFromInvoice && created?.id) {
         setInvoiceItems(prev => [...prev, {
           id: Math.random().toString(36).substring(7),
@@ -1264,10 +1286,20 @@ export default function InventoryPage() {
         return;
       }
 
+      if (!(await forceProbe())) {
+        addToast({
+          type: 'warning',
+          title: 'Internet Required',
+          message: 'A new supplier must be created online. Please reconnect or select an existing supplier.',
+          duration: 7000,
+        });
+        return;
+      }
+
       const createdSupplier = await createSupplier({
         name: draftName,
         categories: ['GENERAL'],
-      });
+      }, { queueOffline: false });
       setInvoiceSupplier(createdSupplier.id);
       setCreateSupplierOnConfirm(false);
       addToast({
@@ -1309,17 +1341,43 @@ export default function InventoryPage() {
       return;
     }
 
+    if (receiveInvoiceInFlight.current) return;
+    receiveInvoiceInFlight.current = true;
     setIsSaving(true);
     try {
+      const supplierDraft = invoiceSupplierDraft.trim();
+      const matchingSupplier = !invoiceSupplier ? getSupplierMatchByName(supplierDraft) : undefined;
+      const needsNewSupplier = !invoiceSupplier
+        && createSupplierOnConfirm
+        && Boolean(supplierDraft)
+        && !matchingSupplier;
+      const needsNewProducts = invoiceItems.some(item => !item.exists || !item.productId);
+      const apiOnline = await forceProbe();
+      if (!apiOnline && (needsNewSupplier || needsNewProducts)) {
+        addToast({
+          type: 'warning',
+          title: 'Offline — Existing Records Only',
+          message: needsNewSupplier
+            ? 'You\'re offline. Select an existing supplier — new suppliers require internet.'
+            : 'You\'re offline. Link items to existing products — creating new products requires internet.',
+          duration: 7000,
+        });
+        return;
+      }
+
       const { gql: runGql, M_CREATE_PRODUCT } = await import('@/lib/gql');
       let resolvedSupplierId = invoiceSupplier;
 
-      if (!resolvedSupplierId && createSupplierOnConfirm && invoiceSupplierDraft.trim()) {
-        const createdSupplier = await createSupplier({
-          name: invoiceSupplierDraft.trim(),
-          categories: ['GENERAL'],
-        });
-        resolvedSupplierId = createdSupplier.id;
+      if (!resolvedSupplierId && supplierDraft) {
+        if (matchingSupplier) {
+          resolvedSupplierId = matchingSupplier.id;
+        } else if (createSupplierOnConfirm) {
+          const createdSupplier = await createSupplier({
+            name: supplierDraft,
+            categories: ['GENERAL'],
+          }, { queueOffline: false });
+          resolvedSupplierId = createdSupplier.id;
+        }
       }
 
       if (!resolvedSupplierId) {
@@ -1425,13 +1483,6 @@ export default function InventoryPage() {
         throw submitErr;
       }
 
-      // Refresh all relevant data to sync across all modules
-      await Promise.all([
-        refetchProducts(activeBranchId),
-        refetchPurchases(),
-        refetchInvoices(activeBranchId ?? undefined),
-      ]);
-      
       setShowUploadModal(false);
       setInvoiceStep('type');
       setInvoiceItems([]);
@@ -1444,12 +1495,26 @@ export default function InventoryPage() {
       setInvoiceNotes('');
       setInvoiceFile(null);
       setFilePreview(null);
-      
+
       addToast({
         type: 'success',
         title: 'Invoice Received',
-        message: 'Inventory, Purchase Orders, and Accounts Payable synced successfully.',
+        message: 'Inventory, Purchase Orders, and Accounts Payable were updated.',
         duration: 5000,
+      });
+
+      void Promise.all([
+        refetchProducts(activeBranchId),
+        refetchPurchases(),
+        refetchInvoices(activeBranchId ?? undefined),
+      ]).catch(error => {
+        console.error('Invoice was received but related data refresh failed:', error);
+        addToast({
+          type: 'warning',
+          title: 'Invoice Saved — Refresh Delayed',
+          message: 'The invoice was received, but some latest records could not be refreshed. Reload the page to see them.',
+          duration: 7000,
+        });
       });
     } catch (error: any) {
       console.error('Failed to receive invoice:', error);
@@ -1460,6 +1525,7 @@ export default function InventoryPage() {
         duration: 6000,
       });
     } finally {
+      receiveInvoiceInFlight.current = false;
       setIsSaving(false);
     }
   };

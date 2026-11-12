@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from 'next-themes';
 import {
   Upload, FileText, DollarSign, Calendar, AlertCircle, CheckCircle,
@@ -67,6 +67,7 @@ export default function InvoicesPage() {
   const [manualCreateSupplierOnSubmit, setManualCreateSupplierOnSubmit] = useState(false);
   const [manualLineItems, setManualLineItems] = useState<any[]>([]);
   const [isProcessingManual, setIsProcessingManual] = useState(false);
+  const manualSubmitInFlight = useRef(false);
   const [manualInvoiceDuplicateStatus, setManualInvoiceDuplicateStatus] = useState<'idle' | 'checking' | 'duplicate' | 'ok'>('idle');
 
   // Invoice Details Modal
@@ -525,7 +526,8 @@ export default function InvoicesPage() {
   };
 
   const handleManualSubmit = async () => {
-    if ((!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) || !manualData.invoiceNumber) {
+    const invoiceNo = manualData.invoiceNumber.trim();
+    if ((!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) || !invoiceNo) {
       addToast({
         type: 'warning',
         title: 'Missing Required Fields',
@@ -556,29 +558,32 @@ export default function InvoicesPage() {
       return;
     }
 
+    if (manualSubmitInFlight.current) return;
+    manualSubmitInFlight.current = true;
+
     // Offline invoice entries can only reference records that already exist on
     // the server. A supplier/product created offline gets a temporary clientRef
     // id that the queued invoice can't resolve later — block those cases.
-    const apiOnline = await forceProbe();
-    const needsNewSupplier = !manualData.supplierId
-      && Boolean(manualCreateSupplierOnSubmit && manualSupplierDraft.trim());
-    const needsNewProducts = manualLineItems.some(item =>
-      !item.productId && item.createProductOnSubmit && (item.productName || '').trim()
-    );
-    if (!apiOnline && (needsNewSupplier || needsNewProducts)) {
-      addToast({
-        type: 'warning',
-        title: 'Offline — Existing Records Only',
-        message: needsNewSupplier
-          ? 'You\'re offline. Select an existing supplier — new suppliers require internet.'
-          : 'You\'re offline. Link items to existing products — creating new products requires internet.',
-        duration: 7000,
-      });
-      return;
-    }
-
     setIsProcessingManual(true);
     try {
+      const apiOnline = await forceProbe();
+      const needsNewSupplier = !manualData.supplierId
+        && Boolean(manualCreateSupplierOnSubmit && manualSupplierDraft.trim());
+      const needsNewProducts = manualLineItems.some(item =>
+        !item.productId && item.createProductOnSubmit && (item.productName || '').trim()
+      );
+      if (!apiOnline && (needsNewSupplier || needsNewProducts)) {
+        addToast({
+          type: 'warning',
+          title: 'Offline — Existing Records Only',
+          message: needsNewSupplier
+            ? 'You\'re offline. Select an existing supplier — new suppliers require internet.'
+            : 'You\'re offline. Link items to existing products — creating new products requires internet.',
+          duration: 7000,
+        });
+        return;
+      }
+
       let resolvedSupplierId = manualData.supplierId;
       const supplierDraft = manualSupplierDraft.trim();
 
@@ -590,7 +595,7 @@ export default function InvoicesPage() {
           const createdSupplier = await createSupplier({
             name: supplierDraft,
             categories: ['GENERAL'],
-          });
+          }, { queueOffline: false });
           resolvedSupplierId = createdSupplier.id;
         }
       }
@@ -629,7 +634,7 @@ export default function InvoicesPage() {
               supplierId: resolvedSupplierId,
               dosageForm: 'OTHER',
               branchId: activeBranchId || me?.branchId || undefined,
-            });
+            }, { queueOffline: false });
             resolvedProductId = createdProduct.id;
           }
         }
@@ -660,7 +665,7 @@ export default function InvoicesPage() {
       const payload = {
         branchId,
         supplierId: resolvedSupplierId,
-        invoiceNo: manualData.invoiceNumber,
+        invoiceNo,
         invoiceDate: toIsoDateOrFallback(manualData.issueDate),
         dueDate: manualData.dueDate ? toIsoDateOrFallback(manualData.dueDate) : undefined,
         items: normalizedItems,
@@ -693,7 +698,7 @@ export default function InvoicesPage() {
           addToast({
             type: 'success',
             title: 'Invoice Saved Offline',
-            message: `Invoice ${manualData.invoiceNumber} will sync automatically when you're back online.`,
+            message: `Invoice ${invoiceNo} will sync automatically when you're back online.`,
             duration: 6000,
           });
           setShowManualLedger(false);
@@ -713,12 +718,6 @@ export default function InvoicesPage() {
         message: 'Manual invoice has been received and inventory updated.',
         duration: 5000,
       });
-      
-      if (me?.branchId) {
-        const data = await gql<{ invoices: any[] }>(Q_INVOICES, { branchId: activeBranchId || me.branchId });
-        setInvoiceRecords(data.invoices ?? []);
-      }
-      await refetchPurchases();
       setShowManualLedger(false);
       setManualData({
         supplierId: '',
@@ -729,6 +728,23 @@ export default function InvoicesPage() {
       setManualSupplierDraft('');
       setManualCreateSupplierOnSubmit(false);
       setManualLineItems([]);
+
+      const refreshTasks: Promise<unknown>[] = [refetchPurchases()];
+      if (me?.branchId) {
+        refreshTasks.push(
+          gql<{ invoices: any[] }>(Q_INVOICES, { branchId: activeBranchId || me.branchId })
+            .then(data => setInvoiceRecords(data.invoices ?? []))
+        );
+      }
+      void Promise.all(refreshTasks).catch(error => {
+        console.error('❌ [MANUAL_ENTRY] Invoice saved but refresh failed:', error);
+        addToast({
+          type: 'warning',
+          title: 'Invoice Saved — Refresh Delayed',
+          message: 'The invoice was created, but the latest records could not be refreshed. Reload the page to see it.',
+          duration: 7000,
+        });
+      });
     } catch (error: any) {
       console.error('❌ [MANUAL_ENTRY] Upload failed:', error);
       addToast({
@@ -738,6 +754,7 @@ export default function InvoicesPage() {
         duration: 6000,
       });
     } finally {
+      manualSubmitInFlight.current = false;
       setIsProcessingManual(false);
     }
   };
@@ -1445,7 +1462,7 @@ export default function InvoicesPage() {
                 disabled={
                   isProcessingManual ||
                   (!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) ||
-                  !manualData.invoiceNumber ||
+                  !manualData.invoiceNumber.trim() ||
                   manualInvoiceDuplicateStatus === 'duplicate' ||
                   manualLineItems.length === 0
                 }
@@ -1455,7 +1472,7 @@ export default function InvoicesPage() {
                   opacity: (
                     isProcessingManual ||
                     (!manualData.supplierId && !(manualCreateSupplierOnSubmit && manualSupplierDraft.trim())) ||
-                    !manualData.invoiceNumber ||
+                    !manualData.invoiceNumber.trim() ||
                     manualInvoiceDuplicateStatus === 'duplicate' ||
                     manualLineItems.length === 0
                   ) ? 0.5 : 1
